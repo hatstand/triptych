@@ -57,3 +57,5 @@ button.danger { background: var(--danger); }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0 0; font-size: .9rem; }
 .facts dt { color: var(--muted); } .facts dd { margin: 0; }
 .answer { margin-top: 12px; padding: 10px 12px; background: var(--bg); border-radius: 8px; white-space: pre-wrap; }
+.error { color: var(--danger); margin: 0; }
+.passkey { padding: 8px 0; border-top: 1px solid var(--line); }

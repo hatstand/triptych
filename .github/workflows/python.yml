@@ -12,6 +12,18 @@ concurrency:
 jobs:
   check:
     runs-on: ubuntu-26.04
+    services:
+      # For the DB and passkey tests, which build throwaway databases from db/schema.sql.
+      postgres:
+        image: docker.io/library/postgres:18.4-alpine
+        env:
+          POSTGRES_USER: triptych
+          POSTGRES_PASSWORD: triptych
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U triptych" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgresql://triptych:triptych@127.0.0.1:5432/postgres
     steps:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7

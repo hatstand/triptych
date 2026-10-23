@@ -14,12 +14,14 @@ from pathlib import Path
 from typing import Annotated, Any, cast
 
 import restate
-from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, RedirectResponse, Response
+from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from pydantic import BaseModel
+from starlette.middleware.base import RequestResponseEndpoint
 
-from triptych import db, ical, inbound, llm
+from triptych import auth, db, ical, inbound, llm
 from triptych.config import settings
 from triptych.models import (
     Answer,
@@ -60,9 +62,41 @@ def rs(request: Request) -> restate.RestateClient:
     return cast(restate.RestateClient, request.app.state.restate)
 
 
-def current_user(request: Request) -> str:
-    email = request.cookies.get("user")
-    if not email:
+# __Host- pins the cookie to this exact host over HTTPS (no Domain, Path=/); plain HTTP is local dev.
+SESSION_COOKIE = "__Host-session" if settings.secure_cookies else "session"
+CHALLENGE_COOKIE = "webauthn-challenge"
+
+
+@app.middleware("http")
+async def same_origin_writes(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    """Browsers send Origin with every POST, so a state change from someone else's page is refused
+    here (SameSite=Lax cookies already keep sessions off most of them). /inbound is server-to-server."""
+    if request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path != "/inbound":
+        origin = request.headers.get("origin")
+        if origin is not None and origin not in settings.allowed_origins:
+            return Response("cross-origin request refused", status_code=403)
+    return await call_next(request)
+
+
+@app.exception_handler(auth.AuthError)
+async def auth_error(request: Request, e: auth.AuthError) -> Response:
+    return JSONResponse({"error": str(e)}, status_code=400)
+
+
+def set_cookie(resp: Response, name: str, value: str, max_age: int, path: str = "/") -> None:
+    resp.set_cookie(
+        name, value, max_age=max_age, path=path, httponly=True, secure=settings.secure_cookies, samesite="lax"
+    )
+
+
+async def signed_in(request: Request) -> str | None:
+    token = request.cookies.get(SESSION_COOKIE)
+    return await auth.session_user(token) if token else None
+
+
+async def current_user(request: Request) -> str:
+    email = await signed_in(request)
+    if email is None:
         raise HTTPException(status_code=303, headers={"Location": "/login"})
     return email
 
@@ -98,21 +132,107 @@ def by_day(rs_: list[Reservation]) -> list[tuple[date, list[Reservation]]]:
 
 @app.get("/login", response_class=HTMLResponse)
 async def login_page(request: Request) -> Response:
+    if await signed_in(request):
+        return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(request, "login.html", {})
 
 
-@app.post("/login")
-async def login(email: Annotated[str, Form()]) -> Response:
-    resp = RedirectResponse("/", status_code=303)
-    resp.set_cookie("user", email.strip().lower(), httponly=True, samesite="lax", max_age=60 * 60 * 24 * 365)
-    return resp
+@app.get("/register/{invite}", response_class=HTMLResponse)
+async def register_page(request: Request, invite: str) -> Response:
+    email = await auth.invite_email(invite)
+    return templates.TemplateResponse(
+        request, "register.html", {"invite": invite, "invite_email": email}, status_code=200 if email else 404
+    )
 
 
 @app.post("/logout")
-async def logout() -> Response:
+async def logout(request: Request) -> Response:
+    if token := request.cookies.get(SESSION_COOKIE):
+        await auth.end_session(token)
     resp = RedirectResponse("/login", status_code=303)
-    resp.delete_cookie("user")
+    resp.delete_cookie(SESSION_COOKIE, path="/", secure=settings.secure_cookies, httponly=True)
     return resp
+
+
+async def render_account(request: Request, email: str, error: str | None = None) -> Response:
+    return templates.TemplateResponse(
+        request,
+        "account.html",
+        {"email": email, "passkeys": await auth.passkeys(email), "error": error},
+        status_code=400 if error else 200,
+    )
+
+
+@app.get("/account", response_class=HTMLResponse)
+async def account_page(request: Request, email: User) -> Response:
+    return await render_account(request, email)
+
+
+@app.post("/account/passkeys/{passkey_id}/delete", response_class=HTMLResponse)
+async def passkey_delete(request: Request, passkey_id: str, email: User) -> Response:
+    try:
+        await auth.delete_passkey(email, passkey_id)
+    except auth.AuthError as e:
+        return await render_account(request, email, str(e))
+    return RedirectResponse("/account", status_code=303)
+
+
+# --- passkey ceremonies (driven by static/passkey.js) ----------------------------------------
+
+
+def options_response(challenge_id: str, options_json: str) -> Response:
+    resp = Response(options_json, media_type="application/json")
+    set_cookie(resp, CHALLENGE_COOKIE, challenge_id, int(auth.CHALLENGE_TTL.total_seconds()), path="/auth")
+    return resp
+
+
+def signed_in_response(redirect: str, session_token: str | None = None) -> Response:
+    resp = JSONResponse({"redirect": redirect})
+    resp.delete_cookie(CHALLENGE_COOKIE, path="/auth")
+    if session_token is not None:
+        set_cookie(resp, SESSION_COOKIE, session_token, int(auth.SESSION_TTL.total_seconds()))
+    return resp
+
+
+class RegisterStart(BaseModel):
+    invite: str | None = None
+
+
+class RegisterFinish(BaseModel):
+    credential: dict[str, Any]
+    name: str = ""
+
+
+@app.post("/auth/login/options")
+async def login_options() -> Response:
+    return options_response(*await auth.start_login())
+
+
+@app.post("/auth/login/verify")
+async def login_verify(request: Request, credential: Annotated[dict[str, Any], Body()]) -> Response:
+    email = await auth.finish_login(request.cookies.get(CHALLENGE_COOKIE), credential)
+    return signed_in_response("/", await auth.create_session(email))
+
+
+@app.post("/auth/register/options")
+async def register_options(request: Request, body: RegisterStart) -> Response:
+    """With an invite: the first passkey for the invited address. Without: another passkey for
+    whoever is signed in."""
+    if body.invite is not None:
+        email = await auth.invite_email(body.invite)
+        if email is None:
+            raise auth.AuthError("This invite has expired or was already used.")
+    elif (email := await signed_in(request)) is None:
+        raise auth.AuthError("Sign in first.")
+    return options_response(*await auth.start_registration(email, body.invite))
+
+
+@app.post("/auth/register/verify")
+async def register_verify(request: Request, body: RegisterFinish) -> Response:
+    email = await auth.finish_registration(request.cookies.get(CHALLENGE_COOKIE), body.credential, body.name)
+    if await signed_in(request) == email:
+        return signed_in_response("/account")
+    return signed_in_response("/", await auth.create_session(email))
 
 
 @app.get("/", response_class=HTMLResponse)

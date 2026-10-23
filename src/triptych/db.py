@@ -75,7 +75,7 @@ def new_trip_id(ingest_id: str, n: int) -> str:
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"triptych:{ingest_id}/{n}"))
 
 
-async def _ensure_user(conn: AsyncConnection, owner: str) -> None:
+async def ensure_user(conn: AsyncConnection, owner: str) -> None:
     await conn.execute("INSERT INTO app_user (email) VALUES (%s) ON CONFLICT DO NOTHING", (owner,))
 
 
@@ -167,7 +167,7 @@ class Filed(BaseModel):
 async def file_reservations(owner: str, ingest_id: str, reservations: list[Reservation]) -> Filed:
     ids = [r.id for r in reservations]
     async with connection() as conn, conn.transaction():
-        await _ensure_user(conn, owner)
+        await ensure_user(conn, owner)
         await conn.execute("SELECT 1 FROM trip WHERE owner = %s FOR UPDATE", (owner,))
 
         cur = await conn.execute(
@@ -235,7 +235,7 @@ async def delete_trip(owner: str, trip_id: str) -> None:
 
 async def upsert_inbox(owner: str, item: InboxItem) -> None:
     async with connection() as conn, conn.transaction():
-        await _ensure_user(conn, owner)
+        await ensure_user(conn, owner)
         await conn.execute(
             """
             INSERT INTO inbox_item (ingest_id, owner, source, label, received_at, state, message, trip_ids)
@@ -250,7 +250,7 @@ async def upsert_inbox(owner: str, item: InboxItem) -> None:
 
 async def add_notification(owner: str, n: Notification) -> None:
     async with connection() as conn, conn.transaction():
-        await _ensure_user(conn, owner)
+        await ensure_user(conn, owner)
         await conn.execute(
             """INSERT INTO notification (id, owner, at, trip_id, text) VALUES (%s, %s, %s, %s, %s)
                ON CONFLICT (id) DO NOTHING""",

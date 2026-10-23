@@ -20,6 +20,17 @@ SET default_tablespace = '';
 SET default_table_access_method = heap;
 
 --
+-- Name: account; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.account (
+    email text NOT NULL,
+    webauthn_user_id bytea NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: app_user; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -46,6 +57,18 @@ CREATE TABLE public.inbox_item (
 
 
 --
+-- Name: invite; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.invite (
+    token_hash bytea NOT NULL,
+    email text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL
+);
+
+
+--
 -- Name: notification; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -55,6 +78,23 @@ CREATE TABLE public.notification (
     at timestamp with time zone NOT NULL,
     trip_id uuid,
     text text NOT NULL
+);
+
+
+--
+-- Name: passkey; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.passkey (
+    credential_id bytea NOT NULL,
+    email text NOT NULL,
+    public_key bytea NOT NULL,
+    sign_count bigint NOT NULL,
+    transports text[] DEFAULT '{}'::text[] NOT NULL,
+    backed_up boolean NOT NULL,
+    name text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_used_at timestamp with time zone
 );
 
 
@@ -110,6 +150,50 @@ CREATE TABLE public.trip (
 
 
 --
+-- Name: web_session; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.web_session (
+    token_hash bytea NOT NULL,
+    email text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL
+);
+
+
+--
+-- Name: webauthn_challenge; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.webauthn_challenge (
+    id uuid NOT NULL,
+    challenge bytea NOT NULL,
+    purpose text NOT NULL,
+    email text,
+    webauthn_user_id bytea,
+    invite_hash bytea,
+    expires_at timestamp with time zone NOT NULL,
+    CONSTRAINT webauthn_challenge_purpose_check CHECK ((purpose = ANY (ARRAY['register'::text, 'login'::text])))
+);
+
+
+--
+-- Name: account account_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account
+    ADD CONSTRAINT account_pkey PRIMARY KEY (email);
+
+
+--
+-- Name: account account_webauthn_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account
+    ADD CONSTRAINT account_webauthn_user_id_key UNIQUE (webauthn_user_id);
+
+
+--
 -- Name: app_user app_user_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -126,11 +210,27 @@ ALTER TABLE ONLY public.inbox_item
 
 
 --
+-- Name: invite invite_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invite
+    ADD CONSTRAINT invite_pkey PRIMARY KEY (token_hash);
+
+
+--
 -- Name: notification notification_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notification
     ADD CONSTRAINT notification_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: passkey passkey_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.passkey
+    ADD CONSTRAINT passkey_pkey PRIMARY KEY (credential_id);
 
 
 --
@@ -166,6 +266,22 @@ ALTER TABLE ONLY public.trip
 
 
 --
+-- Name: web_session web_session_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.web_session
+    ADD CONSTRAINT web_session_pkey PRIMARY KEY (token_hash);
+
+
+--
+-- Name: webauthn_challenge webauthn_challenge_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.webauthn_challenge
+    ADD CONSTRAINT webauthn_challenge_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: inbox_item_owner_received_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -180,6 +296,13 @@ CREATE INDEX notification_owner_at_idx ON public.notification USING btree (owner
 
 
 --
+-- Name: passkey_email_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX passkey_email_idx ON public.passkey USING btree (email);
+
+
+--
 -- Name: reservation_trip_start_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -191,6 +314,21 @@ CREATE INDEX reservation_trip_start_idx ON public.reservation USING btree (trip_
 --
 
 CREATE INDEX trip_owner_idx ON public.trip USING btree (owner);
+
+
+--
+-- Name: web_session_email_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX web_session_email_idx ON public.web_session USING btree (email);
+
+
+--
+-- Name: account account_email_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.account
+    ADD CONSTRAINT account_email_fkey FOREIGN KEY (email) REFERENCES public.app_user(email);
 
 
 --
@@ -218,6 +356,14 @@ ALTER TABLE ONLY public.notification
 
 
 --
+-- Name: passkey passkey_email_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.passkey
+    ADD CONSTRAINT passkey_email_fkey FOREIGN KEY (email) REFERENCES public.account(email) ON DELETE CASCADE;
+
+
+--
 -- Name: reservation reservation_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -234,10 +380,19 @@ ALTER TABLE ONLY public.trip
 
 
 --
+-- Name: web_session web_session_email_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.web_session
+    ADD CONSTRAINT web_session_email_fkey FOREIGN KEY (email) REFERENCES public.account(email) ON DELETE CASCADE;
+
+
+--
 -- PostgreSQL database dump complete
 --
 
 \unrestrict dbmate
+
 
 
 --
@@ -245,4 +400,5 @@ ALTER TABLE ONLY public.trip
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20261023120000');
+    ('20261023120000'),
+    ('20261023140000');
