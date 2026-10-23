@@ -1,0 +1,16 @@
+From: TableNow <bookings@tablenow.example>
+To: me@example.com
+Subject: You're booked at Taberna da Rua
+Message-ID: <sample-03-dinner@tablenow.example>
+Date: Sat, 24 Oct 2026 18:30:00 +0100
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Your table is confirmed.
+
+Taberna da Rua
+Saturday 14 November, 8:30 pm - party of 2
+Travessa do Fala-Só 8, Lisboa
+Booking ID: TN-448190
+
+Running late? Let the restaurant know on +351 21 000 0000.

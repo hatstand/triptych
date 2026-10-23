@@ -1,0 +1,35 @@
+# Ollama in a container + a one-shot job that pulls LLM_MODEL. Combine with exactly one gpu-*.yaml.
+services:
+  ollama:
+    image: docker.io/ollama/ollama:${OLLAMA_TAG:-0.40.9-rocm}
+    restart: unless-stopped
+    ports: ["${BIND_ADDR:-127.0.0.1}:11434:11434"]
+    environment:
+      # Sized for a 32 GB Strix Halo running a ~16 GB model next to the rest of the stack:
+      # one model resident, one generation at a time (Restate's `gpu` scope queues the rest),
+      # 16K context with a q8 KV cache keeps the cache to a few GB.
+      OLLAMA_MAX_LOADED_MODELS: "1"
+      OLLAMA_NUM_PARALLEL: ${LLM_CONCURRENCY:-1}
+      OLLAMA_CONTEXT_LENGTH: ${LLM_NUM_CTX:-16384}
+      OLLAMA_FLASH_ATTENTION: "1"
+      OLLAMA_KV_CACHE_TYPE: q8_0
+      OLLAMA_KEEP_ALIVE: 30m
+    volumes:
+      - ${OLLAMA_MODELS_DIR:-ollama-models}:/root/.ollama/models
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  ollama-pull:
+    image: docker.io/ollama/ollama:${OLLAMA_TAG:-0.40.9-rocm}
+    environment:
+      OLLAMA_HOST: http://ollama:11434
+    entrypoint: ["ollama", "pull", "${LLM_MODEL:-gemma4:26b-a4b-it-qat}"]
+    depends_on:
+      ollama: { condition: service_healthy }
+    restart: "no"
+
+volumes:
+  ollama-models:

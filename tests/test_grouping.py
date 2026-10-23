@@ -1,0 +1,103 @@
+import itertools
+from datetime import date, datetime
+
+from triptych.grouping import assign
+from triptych.models import Kind, Reservation, TripSummary
+
+
+def res(kind: Kind, start: str, end: str | None = None, city: str | None = None) -> Reservation:
+    return Reservation(
+        id=f"{kind}-{start}",
+        kind=kind,
+        title=kind.value,
+        start_local=datetime.fromisoformat(start),
+        end_local=datetime.fromisoformat(end) if end else None,
+        city=city,
+    )
+
+
+def ids() -> "itertools.count[int]":
+    return itertools.count(1)
+
+
+def test_outbound_hotel_and_return_form_one_trip() -> None:
+    counter = ids()
+    buckets = assign(
+        [
+            res(Kind.FLIGHT, "2026-11-12T15:40", "2026-11-13T11:25", "Lisbon"),
+            res(Kind.LODGING, "2026-11-13T15:00", "2026-11-17T11:00", "Lisbon"),
+            res(Kind.FLIGHT, "2026-11-17T13:05", "2026-11-17T16:50", "San Francisco"),
+        ],
+        [],
+        lambda: f"t{next(counter)}",
+    )
+    assert len(buckets) == 1
+    assert buckets[0].destination == "Lisbon"
+    assert (buckets[0].start, buckets[0].end) == (date(2026, 11, 12), date(2026, 11, 17))
+
+
+def test_new_reservation_joins_existing_trip_with_slack() -> None:
+    existing = [
+        TripSummary(
+            id="lis",
+            name="Lisbon",
+            destination="Lisbon",
+            start_date=date(2026, 11, 12),
+            end_date=date(2026, 11, 17),
+            reservation_count=3,
+        )
+    ]
+    buckets = assign([res(Kind.RESTAURANT, "2026-11-18T20:30")], existing, lambda: "new")
+    assert [b.trip_id for b in buckets] == ["lis"]
+
+
+def test_far_apart_reservations_make_separate_trips() -> None:
+    counter = ids()
+    buckets = assign(
+        [res(Kind.RAIL, "2027-01-21T08:31", city="Paris"), res(Kind.RESTAURANT, "2026-11-14T20:30")],
+        [],
+        lambda: f"t{next(counter)}",
+    )
+    assert len(buckets) == 2
+    assert {b.destination for b in buckets} == {"Paris", None}
+
+
+def test_empty_existing_trip_is_ignored() -> None:
+    existing = [
+        TripSummary(
+            id="x",
+            name="x",
+            destination=None,
+            start_date=date(2026, 11, 12),
+            end_date=date(2026, 11, 12),
+            reservation_count=0,
+        )
+    ]
+    buckets = assign([res(Kind.ACTIVITY, "2026-11-12T10:00")], existing, lambda: "new")
+    assert [b.trip_id for b in buckets] == ["new"]
+
+
+def test_round_trip_booking_stays_together_even_without_hotel() -> None:
+    out = res(Kind.FLIGHT, "2026-11-12T15:40", "2026-11-13T11:25", "Lisbon")
+    back = res(Kind.FLIGHT, "2026-11-27T13:05", "2026-11-27T16:50", "San Francisco")
+    out.confirmation_code = back.confirmation_code = "QZ7K2M"
+    buckets = assign([out, back], [], lambda: "t1")
+    assert len(buckets) == 1 and buckets[0].destination == "Lisbon"
+
+
+def test_bridging_reservation_merges_existing_trips() -> None:
+    def trip(id_: str, d0: date, d1: date) -> TripSummary:
+        return TripSummary(
+            id=id_, name=id_, destination=None, start_date=d0, end_date=d1, reservation_count=1
+        )
+
+    existing = [
+        trip("out", date(2026, 11, 12), date(2026, 11, 13)),
+        trip("back", date(2026, 11, 17), date(2026, 11, 17)),
+    ]
+    buckets = assign(
+        [res(Kind.LODGING, "2026-11-13T15:00", "2026-11-17T11:00", "Lisbon")], existing, lambda: "new"
+    )
+    assert len(buckets) == 1
+    assert buckets[0].trip_id == "out" and buckets[0].absorbed == ["back"]
+    assert (buckets[0].start, buckets[0].end) == (date(2026, 11, 12), date(2026, 11, 17))

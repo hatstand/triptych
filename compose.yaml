@@ -1,0 +1,53 @@
+# Core stack. The LLM backend is layered on with one of the files in compose/ — see .env.example
+# (COMPOSE_FILE) or the Tiltfile (`tilt up -- --llm=rocm|vulkan|nvidia|host`).
+name: triptych
+
+x-app: &app
+  image: triptych-app
+  build: .
+  restart: unless-stopped
+  environment: &app-env
+    RESTATE_INGRESS_URL: http://restate:8080
+    RESTATE_ADMIN_URL: http://restate:9070
+    WORKER_PUBLIC_URL: http://worker:9080
+    OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
+    LLM_MODEL: ${LLM_MODEL:-gemma4:26b-a4b-it-qat}
+    LLM_NUM_CTX: ${LLM_NUM_CTX:-16384}
+    LLM_CONCURRENCY: ${LLM_CONCURRENCY:-1}
+    PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}
+    SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
+    INBOUND_TOKEN: ${INBOUND_TOKEN:-}
+    INBOUND_ALLOWED_SENDERS: ${INBOUND_ALLOWED_SENDERS:-}
+
+services:
+  restate:
+    image: docker.io/restatedev/restate:1.8.1
+    restart: unless-stopped
+    ports:
+      # Host ports bind to loopback by default; the internet reaches only /inbound, via Funnel.
+      - "${BIND_ADDR:-127.0.0.1}:8080:8080"   # ingress
+      - "${BIND_ADDR:-127.0.0.1}:9070:9070"   # admin API + UI
+    environment:
+      RESTATE_NODE_NAME: triptych
+    volumes:
+      - restate-data:/restate-data
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "triptych.worker"]
+    depends_on: [restate]
+
+  web:
+    <<: *app
+    command: ["uvicorn", "triptych.web.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    ports: ["${BIND_ADDR:-127.0.0.1}:8000:8000"]
+    depends_on: [restate]
+
+  smtp:
+    <<: *app
+    command: ["python", "-m", "triptych.smtp"]
+    ports: ["${BIND_ADDR:-127.0.0.1}:2525:2525"]
+    depends_on: [restate]
+
+volumes:
+  restate-data:

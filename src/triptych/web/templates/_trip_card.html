@@ -1,0 +1,9 @@
+<a class="card trip-card" href="/trips/{{ t.id }}">
+  <div class="trip-dates">
+    <b>{{ t.start_date.strftime('%d %b') }}</b>
+    {% if t.end_date != t.start_date %}– {{ t.end_date.strftime('%d %b %Y') }}{% else %}{{ t.start_date.strftime('%Y') }}{% endif %}
+  </div>
+  <div class="trip-name">{{ t.name }}</div>
+  <div class="muted small">{{ t.reservation_count }} item{{ 's' if t.reservation_count != 1 }}
+    {% if t.start_date > today %}· in {{ (t.start_date - today).days }} days{% elif t.end_date >= today %}· now{% endif %}</div>
+</a>

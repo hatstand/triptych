@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "triptych-email",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "observability": { "enabled": true },
+  "vars": {
+    // Tailscale Funnel exposes only this path of zem's web app to the internet.
+    "INBOUND_URL": "https://zem.axolotl-goblin.ts.net/inbound",
+    // Comma-separated envelope senders allowed to file trips (checked again, with DKIM/ARC, on zem).
+    "ALLOWED_SENDERS": "john.maguire@gmail.com",
+    // Verified Email Routing destination used when zem can't be reached, so mail is never lost.
+    // A plus-address lets a Gmail filter skip it and avoid forwarding loops.
+    "FALLBACK_ADDRESS": "john.maguire+triptych-undelivered@gmail.com"
+  }
+  // Secret (not in source): `npx wrangler secret put INBOUND_TOKEN` — same value as INBOUND_TOKEN in ../../.env
+}

@@ -1,0 +1,14 @@
+# AMD via Vulkan (RADV) instead of ROCm. On Strix Halo this is often as fast or faster for token
+# generation and avoids ROCm version churn. Use the non-rocm image.
+services:
+  ollama:
+    image: docker.io/ollama/ollama:${OLLAMA_TAG:-0.40.9}
+    devices:
+      - /dev/dri
+    group_add:
+      - video
+      - render
+    environment:
+      OLLAMA_VULKAN: "1"
+  ollama-pull:
+    image: docker.io/ollama/ollama:${OLLAMA_TAG:-0.40.9}

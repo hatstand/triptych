@@ -1,0 +1,9 @@
+# Added by the Tiltfile: hot-reload the Python processes when Tilt live-syncs ./src.
+services:
+  worker:
+    command: ["watchfiles", "--filter", "python", "python -m triptych.worker", "/app/src"]
+  web:
+    command: ["uvicorn", "triptych.web.app:app", "--host", "0.0.0.0", "--port", "8000",
+              "--reload", "--reload-dir", "/app/src"]
+  smtp:
+    command: ["watchfiles", "--filter", "python", "python -m triptych.smtp", "/app/src"]

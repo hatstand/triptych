@@ -1,0 +1,10 @@
+# Use an Ollama already running on the host (e.g. `OLLAMA_HOST=0.0.0.0 ollama serve`).
+# No LLM container; the app reaches the host via host-gateway.
+x-host: &host
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  environment:
+    OLLAMA_URL: ${OLLAMA_URL:-http://host.docker.internal:11434}
+services:
+  worker: *host
+  web: *host

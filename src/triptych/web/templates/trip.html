@@ -1,0 +1,67 @@
+{% extends "base.html" %}
+{% block title %}{{ trip.name }} · Triptych{% endblock %}
+{% block content %}
+{% set icons = {'flight': '✈', 'lodging': '🛏', 'car': '🚗', 'rail': '🚆', 'restaurant': '🍽', 'activity': '🎟', 'other': '•'} %}
+<a href="/" class="small">← All trips</a>
+<div class="row trip-header">
+  <div>
+    <h1>{{ trip.name }}</h1>
+    <div class="muted">{{ summary.start_date.strftime('%a %d %b') }} – {{ summary.end_date.strftime('%a %d %b %Y') }}
+      {% if trip.destination %}· {{ trip.destination }}{% endif %}</div>
+  </div>
+  <div class="actions">
+    <a class="button secondary" href="/trips/{{ trip.id }}/calendar.ics">Export .ics</a>
+    <details class="menu"><summary class="button secondary">Edit</summary><div class="menu-panel stack">
+      <form method="post" action="/trips/{{ trip.id }}/rename" class="stack">
+        <input name="name" value="{{ trip.name }}"><button>Rename</button></form>
+      <form method="post" action="/trips/{{ trip.id }}/delete" onsubmit="return confirm('Delete this trip?')">
+        <button class="danger">Delete trip</button></form>
+    </div></details>
+  </div>
+</div>
+
+<div class="grid">
+  <section class="timeline">
+    {% for day, items in days %}
+      <h3 class="day">{{ day.strftime('%A, %d %B %Y') }}</h3>
+      {% for r in items %}
+      <article class="card segment {{ r.kind.value }}">
+        <div class="icon">{{ icons[r.kind.value] }}</div>
+        <div class="body">
+          <div class="row">
+            <b>{{ r.title }}</b>
+            <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/delete"
+                  onsubmit="return confirm('Remove this item?')"><button class="link small">remove</button></form>
+          </div>
+          <div class="when">
+            {{ r.start_local.strftime('%H:%M') }}{% if r.start_tz %} <span class="muted small">{{ r.start_tz }}</span>{% endif %}
+            {% if r.end_local %} → {% if r.end_local.date() != r.start_local.date() %}{{ r.end_local.strftime('%a %d %b') }} {% endif %}{{ r.end_local.strftime('%H:%M') }}{% if r.end_tz and r.end_tz != r.start_tz %} <span class="muted small">{{ r.end_tz }}</span>{% endif %}{% endif %}
+          </div>
+          {% if (r.start_location or r.end_location) and r.start_location != r.address %}<div>{{ r.start_location or '' }}{% if r.end_location %} → {{ r.end_location }}{% endif %}</div>{% endif %}
+          {% if r.address %}<div class="muted small">{{ r.address }}</div>{% endif %}
+          <dl class="facts">
+            {% if r.provider %}<dt>Provider</dt><dd>{{ r.provider }}</dd>{% endif %}
+            {% if r.confirmation_code %}<dt>Confirmation</dt><dd class="mono">{{ r.confirmation_code }}</dd>{% endif %}
+            {% if r.flight_number %}<dt>Flight</dt><dd>{{ r.flight_number }}</dd>{% endif %}
+            {% if r.seat %}<dt>Seat</dt><dd>{{ r.seat }}</dd>{% endif %}
+            {% if r.travelers %}<dt>Travelers</dt><dd>{{ r.travelers | join(', ') }}</dd>{% endif %}
+          </dl>
+          {% if r.notes %}<div class="muted small">{{ r.notes }}</div>{% endif %}
+        </div>
+      </article>
+      {% endfor %}
+    {% endfor %}
+  </section>
+
+  <aside>
+    <section class="card">
+      <h2>Ask about this trip</h2>
+      <form method="post" action="/trips/{{ trip.id }}/ask" class="stack">
+        <input name="question" value="{{ question or '' }}" placeholder="When do I need to leave for the airport?" required>
+        <button>Ask Gemma</button>
+      </form>
+      {% if answer %}<div class="answer">{{ answer }}</div>{% endif %}
+    </section>
+  </aside>
+</div>
+{% endblock %}

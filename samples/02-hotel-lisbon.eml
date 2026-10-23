@@ -1,0 +1,20 @@
+From: Casa do Miradouro <reservations@casadomiradouro.example>
+To: me@example.com
+Subject: Reservation confirmation HX55821
+Message-ID: <sample-02-hotel@casadomiradouro.example>
+Date: Fri, 23 Oct 2026 10:01:00 +0100
+MIME-Version: 1.0
+Content-Type: text/html; charset=utf-8
+
+<html><body>
+<h1>We look forward to welcoming you, John!</h1>
+<table>
+<tr><td>Confirmation number</td><td><b>HX55821</b></td></tr>
+<tr><td>Check-in</td><td>Friday, November 13, 2026 from 3:00 PM</td></tr>
+<tr><td>Check-out</td><td>Tuesday, November 17, 2026 until 11:00 AM</td></tr>
+<tr><td>Room</td><td>Superior Double, river view - 4 nights</td></tr>
+<tr><td>Address</td><td>Rua da Saudade 21, 1100-583 Lisboa, Portugal</td></tr>
+<tr><td>Total</td><td>EUR 712.00 (paid)</td></tr>
+</table>
+<p>Need an early check-in? Just reply to this email.</p>
+</body></html>

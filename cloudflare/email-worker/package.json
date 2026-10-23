@@ -1,0 +1,15 @@
+{
+  "name": "triptych-email-worker",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "deploy": "npm run typecheck && wrangler deploy",
+    "tail": "wrangler tail"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261009.1",
+    "typescript": "5.9.3",
+    "wrangler": "4.149.0"
+  }
+}

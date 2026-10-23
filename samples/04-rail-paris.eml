@@ -1,0 +1,17 @@
+From: EuroLink Rail <tickets@eurolink.example>
+To: me@example.com
+Subject: E-ticket: London St Pancras to Paris Gare du Nord, 21 Jan
+Message-ID: <sample-04-rail@eurolink.example>
+Date: Sun, 25 Oct 2026 08:00:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Booking reference: ELR9PX
+Traveller: John Maguire
+
+Train 9024 - Thursday 21 January 2027
+London St Pancras International  dep 08:31 (GMT)
+Paris Gare du Nord               arr 11:47 (CET)
+Coach 7, Seat 61 - Standard Premier
+
+Please arrive at least 60 minutes before departure for check-in and security.

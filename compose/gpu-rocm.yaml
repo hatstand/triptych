@@ -1,0 +1,16 @@
+# AMD Ryzen AI MAX (Strix Halo, Radeon 8050S/8060S = gfx1151) via ROCm. Default target.
+services:
+  ollama:
+    image: docker.io/ollama/ollama:${OLLAMA_TAG:-0.40.9-rocm}
+    devices:
+      - /dev/kfd
+      - /dev/dri
+    group_add:
+      - video
+      - render
+    security_opt:
+      - seccomp=unconfined
+    environment:
+      # Uncomment only if `docker compose logs ollama` says gfx1151 is unsupported / falls back to CPU.
+      # HSA_OVERRIDE_GFX_VERSION: "11.5.1"
+      OLLAMA_DEBUG: ${OLLAMA_DEBUG:-0}

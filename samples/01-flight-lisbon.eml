@@ -1,0 +1,26 @@
+From: Atlantica Air <noreply@atlantica-air.example>
+To: me@example.com
+Subject: Your booking is confirmed - SFO to Lisbon (ref QZ7K2M)
+Message-ID: <sample-01-flight@atlantica-air.example>
+Date: Fri, 23 Oct 2026 09:12:00 -0700
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Thanks for flying Atlantica Air!
+
+Booking reference: QZ7K2M
+Passenger: MAGUIRE/JOHN MR
+
+OUTBOUND
+  AQ 236   Thu 12 Nov 2026
+  Depart  San Francisco (SFO)   15:40
+  Arrive  Lisbon (LIS)          11:25 (+1 day)
+  Economy Plus, Seat 23A
+
+RETURN
+  AQ 237   Tue 17 Nov 2026
+  Depart  Lisbon (LIS)          13:05
+  Arrive  San Francisco (SFO)   16:50
+  Economy Plus, Seat 21C
+
+Online check-in opens 24 hours before departure.

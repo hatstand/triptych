@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block head %}{% if busy %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block content %}
+{% if notifications %}
+<section class="card alerts">
+  <div class="row"><h2>Alerts</h2>
+    <form method="post" action="/notifications/dismiss"><button class="link">Dismiss all</button></form></div>
+  <ul>{% for n in notifications %}
+    <li><span class="muted">{{ n.at.strftime('%d %b %H:%M') }} UTC</span>
+      {% if n.trip_id %}<a href="/trips/{{ n.trip_id }}">{{ n.text }}</a>{% else %}{{ n.text }}{% endif %}</li>
+  {% endfor %}</ul>
+</section>
+{% endif %}
+
+<div class="grid">
+  <section>
+    <h2>Upcoming trips</h2>
+    {% for t in upcoming %}
+      {% include "_trip_card.html" %}
+    {% else %}
+      <p class="muted">No upcoming trips yet. Forward a confirmation email or paste one on the right.</p>
+    {% endfor %}
+
+    {% if past %}
+    <h2>Past trips</h2>
+    {% for t in past %}{% include "_trip_card.html" %}{% endfor %}
+    {% endif %}
+  </section>
+
+  <aside>
+    <section class="card">
+      <h2>Add plans</h2>
+      <p class="muted small">Email <code>plans@localhost</code> on port 2525 from <b>{{ email }}</b>, or:</p>
+      <form method="post" action="/plans" enctype="multipart/form-data" class="stack">
+        <textarea name="text" rows="6" placeholder="Paste a confirmation email…"></textarea>
+        <input type="file" name="file" accept=".eml,.pdf,.html,.txt,image/*">
+        <button>Add to Triptych</button>
+      </form>
+    </section>
+
+    <section class="card">
+      <h2>Inbox</h2>
+      {% for i in inbox %}
+        <div class="inbox-item">
+          <span class="badge {{ i.state }}">{{ i.state.replace('_', ' ') }}</span>
+          <span class="label">{{ i.label }}</span>
+          {% if i.message %}<div class="muted small">{{ i.message }}</div>{% endif %}
+          {% for tid in i.trip_ids %}<a class="small" href="/trips/{{ tid }}">view trip →</a>{% endfor %}
+        </div>
+      {% else %}<p class="muted small">Nothing processed yet.</p>{% endfor %}
+    </section>
+
+    <section class="card">
+      <h2>Calendar feed</h2>
+      <p class="muted small">Subscribe in your calendar app:</p>
+      <input class="mono" readonly value="{{ feed_url }}" onclick="this.select()">
+    </section>
+  </aside>
+</div>
+{% endblock %}

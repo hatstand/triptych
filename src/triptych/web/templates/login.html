@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow">
+  <h1>Sign in</h1>
+  <p class="muted">Prototype: no password. Use the address you'll forward confirmation emails from.</p>
+  <form method="post" action="/login" class="stack">
+    <input type="email" name="email" placeholder="you@example.com" required autofocus>
+    <button>Continue</button>
+  </form>
+</section>
+{% endblock %}
