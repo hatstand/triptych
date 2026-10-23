@@ -10,7 +10,7 @@ import struct
 import time
 import uuid
 from collections.abc import AsyncIterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any
 
 import httpx
@@ -171,6 +171,12 @@ async def test_invite_works_once(browser: httpx.AsyncClient) -> None:
     resp = await browser.post("/auth/register/verify", json={"credential": Authenticator().create(first)})
     assert resp.status_code == 400
     assert (await browser.get(f"/register/{invite}")).status_code == 404
+
+
+async def test_pending_invites_hide_spent_and_expired_ones(browser: httpx.AsyncClient) -> None:
+    await auth.create_invite("old@example.com", timedelta(seconds=-1))
+    await auth.create_invite("new@example.com")
+    assert [i.email for i in await auth.pending_invites()] == ["new@example.com"]
 
 
 async def test_registration_without_invite_or_session_is_refused(browser: httpx.AsyncClient) -> None:

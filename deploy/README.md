@@ -98,6 +98,7 @@ cd /srv/triptych && sudo -u deploy docker compose exec web python -m triptych.in
 Open the printed link (it uses `PUBLIC_BASE_URL`, which must be the address you browse to, e.g.
 `https://triptych.axolotl-goblin.ts.net`) and create a passkey. Add a second one from the account
 page so a lost device doesn't lock you out; if it does, issue yourself another invite.
+Once the admin pages below are set up, the **Invites** form there does the same from a browser.
 
 ### Restate UI
 
@@ -130,8 +131,9 @@ The admin app accepts a request only if that login is listed in `ADMIN_TAILSCALE
 The header is only trustworthy if Serve is the only way in, so the admin app (`compose` service
 `admin`) listens on a Unix socket and nothing else. Funnel (`/inbound`), the compose network, and
 any future public route all reach the web app on port 8000, which ignores these headers. Never
-point a proxy at the admin socket. Being read-only, the admin page gives a cross-site request
-from another tab nothing to trigger.
+point a proxy at the admin socket. Because Serve vouches for any request from your device,
+including a form another site's tab posts, the invite form also requires a matching `Origin`
+(`PUBLIC_BASE_URL`).
 
 One-time setup on marvin (needs a Tailscale release whose `tailscale serve --help` lists
 `unix:` targets):

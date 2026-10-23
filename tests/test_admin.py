@@ -1,16 +1,18 @@
 from collections.abc import Iterator
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
-from triptych import db
+from triptych import auth, db
 from triptych.admin import app as admin
 
 OWNER = "john.maguire@gmail.com"
+SITE = "https://triptych.example.ts.net"
+invites: list[tuple[str, timedelta]] = []  # what create_invite was asked for, per test
 FAILED = db.AdminInboxItem(
     ingest_id="web-1", owner="you@example.com", source="upload", label="boarding pass.pdf",
     received_at=datetime(2026, 10, 23, 9, 30, tzinfo=UTC), state="failed", message="LLM timed out",
@@ -21,6 +23,7 @@ FAILED = db.AdminInboxItem(
 def filters(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str | None]]:
     """Stub out Postgres and Ollama; yields the state filters the page asked the db for."""
     seen: list[str | None] = []
+    invites.clear()
 
     async def ingest_counts(since: datetime) -> dict[str, int]:
         return {"failed": 2, "done": 5}
@@ -32,9 +35,29 @@ def filters(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str | None]]:
     async def health() -> dict[str, Any]:
         raise ConnectionError("ollama unreachable")
 
-    monkeypatch.setattr(
-        admin, "settings", replace(admin.settings, admin_logins=frozenset({OWNER}), restate_ui_url=None)
+    async def pending_invites() -> list[auth.PendingInvite]:
+        return [
+            auth.PendingInvite(
+                email="pending@example.com",
+                created_at=datetime(2026, 10, 23, 9, 0, tzinfo=UTC),
+                expires_at=datetime(2026, 10, 30, 9, 0, tzinfo=UTC),
+            )
+        ]
+
+    async def create_invite(email: str, ttl: timedelta = auth.INVITE_TTL) -> str:
+        invites.append((email, ttl))
+        return "tok3n"
+
+    settings = replace(
+        admin.settings,
+        admin_logins=frozenset({OWNER}),
+        restate_ui_url=None,
+        public_base_url=SITE,
+        allowed_origins=(SITE,),
     )
+    monkeypatch.setattr(admin, "settings", settings)
+    monkeypatch.setattr(admin.auth, "pending_invites", pending_invites)
+    monkeypatch.setattr(admin.auth, "create_invite", create_invite)
     monkeypatch.setattr(admin.db, "ingest_counts", ingest_counts)
     monkeypatch.setattr(admin.db, "recent_ingests", recent_ingests)
     monkeypatch.setattr(admin.llm, "health", health)
@@ -91,3 +114,40 @@ def test_web_app_never_reads_tailscale_identity_headers() -> None:
     """The web app listens on TCP, where anyone who reaches the port can send these headers."""
     web = Path(admin.__file__).parent.parent / "web"
     assert not any("tailscale-user" in p.read_text().lower() for p in web.rglob("*.py"))
+
+
+def test_dashboard_lists_pending_invites(filters: list[str | None]) -> None:
+    r = client.get("/", headers=as_login(OWNER))
+    assert "pending@example.com" in r.text
+    assert "Create invite" in r.text
+
+
+def test_invite_link_is_shown_once_created(filters: list[str | None]) -> None:
+    r = client.post(
+        "/", data={"email": " New@Example.com ", "days": "3"}, headers={**as_login(OWNER), "Origin": SITE}
+    )
+    assert r.status_code == 200
+    assert invites == [("new@example.com", timedelta(days=3))]
+    assert f'value="{SITE}/register/tok3n"' in r.text
+    assert "<b>new@example.com</b>" in r.text
+
+
+@pytest.mark.parametrize("origin", [None, "https://evil.example", "null"])
+def test_invite_from_another_origin_is_refused(filters: list[str | None], origin: str | None) -> None:
+    headers = as_login(OWNER) | ({"Origin": origin} if origin else {})
+    r = client.post("/", data={"email": "new@example.com"}, headers=headers)
+    assert r.status_code == 403
+    assert invites == []
+
+
+def test_invite_needs_an_allowlisted_login(filters: list[str | None]) -> None:
+    headers = {**as_login("someone@example.com"), "Origin": SITE}
+    assert client.post("/", data={"email": "new@example.com"}, headers=headers).status_code == 403
+    assert invites == []
+
+
+@pytest.mark.parametrize("data", [{"email": "not-an-address"}, {"email": "a@b.c", "days": "0"}])
+def test_invite_input_is_validated(filters: list[str | None], data: dict[str, str]) -> None:
+    r = client.post("/", data=data, headers={**as_login(OWNER), "Origin": SITE})
+    assert r.status_code in (400, 422)
+    assert invites == []

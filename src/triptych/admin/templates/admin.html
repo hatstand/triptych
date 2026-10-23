@@ -9,6 +9,9 @@
   .counts a { color: inherit; }
   .counts .on { outline: 2px solid var(--accent); }
   .counts .badge { animation: none; }
+  .invite-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
+  .invite-form input[type=email] { flex: 1; min-width: 220px; width: auto; }
+  .invite-form input[type=number] { width: 4.5em; }
 </style>
 {% endblock %}
 {% block content %}
@@ -21,6 +24,31 @@
 <p><a class="button secondary" href="{{ restate_ui_url }}" target="_blank" rel="noopener">Restate UI ↗</a>
   <span class="muted small">invocations, retries and workflow state</span></p>
 {% endif %}
+
+<section class="card">
+  <h2>Invites</h2>
+  {% if invite_link %}
+  <p>Send this link to <b>{{ invite_for }}</b>. It registers a passkey once, and isn't shown again:</p>
+  <input class="mono" readonly value="{{ invite_link }}">
+  {% endif %}
+  <form method="post" class="invite-form">
+    <input type="email" name="email" required placeholder="someone@example.com" aria-label="Email address">
+    <label class="muted small">valid for <input type="number" name="days" value="{{ invite_days }}" min="1" max="90" step="1"> days</label>
+    <button>Create invite</button>
+  </form>
+  {% if invites %}
+  <table class="ingests">
+    <tr><th>Pending for</th><th>Created</th><th>Expires</th></tr>
+    {% for i in invites %}
+    <tr>
+      <td>{{ i.email }}</td>
+      <td class="mono">{{ i.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td class="mono">{{ i.expires_at.strftime('%Y-%m-%d %H:%M') }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</section>
 
 <section class="card">
   <h2>LLM</h2>
