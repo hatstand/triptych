@@ -47,13 +47,14 @@ button.danger { background: var(--danger); }
 .menu-panel { position: absolute; right: 0; top: 44px; width: 260px; z-index: 2; background: var(--card);
   border: 1px solid var(--line); padding: 10px; border-radius: 8px; gap: 12px; }
 .day { margin: 18px 0 8px; font-size: .95rem; color: var(--muted); font-weight: 600; }
-.segment { display: flex; gap: 14px; border-left: 4px solid var(--other); }
-.segment .icon { font-size: 1.4rem; width: 28px; text-align: center; }
+.i { width: 1.25em; height: 1.25em; flex: none; vertical-align: -.25em; }
+.segment { --kind: var(--other); display: flex; gap: 14px; border-left: 4px solid var(--kind); }
+.segment .icon { width: 28px; padding-top: 2px; color: var(--kind); } .segment .icon .i { width: 24px; height: 24px; }
 .segment .body { flex: 1; min-width: 0; }
 .segment .when { font-size: 1.05rem; margin: 2px 0; }
-.segment.flight { border-left-color: var(--flight); } .segment.lodging { border-left-color: var(--lodging); }
-.segment.car { border-left-color: var(--car); } .segment.rail { border-left-color: var(--rail); }
-.segment.restaurant { border-left-color: var(--restaurant); } .segment.activity { border-left-color: var(--activity); }
+.segment.flight { --kind: var(--flight); } .segment.lodging { --kind: var(--lodging); }
+.segment.car { --kind: var(--car); } .segment.rail { --kind: var(--rail); }
+.segment.restaurant { --kind: var(--restaurant); } .segment.activity { --kind: var(--activity); }
 .facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0 0; font-size: .9rem; }
 .facts dt { color: var(--muted); } .facts dd { margin: 0; }
 .answer { margin-top: 12px; padding: 10px 12px; background: var(--bg); border-radius: 8px; white-space: pre-wrap; }

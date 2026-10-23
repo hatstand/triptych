@@ -124,7 +124,8 @@ def test_changing_airport_in_the_same_city_still_connects() -> None:
     html = web.templates.get_template("trip.html").render(
         email=None, trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
     )
-    assert '<div class="warning small">⚠ Airport change: LHR → LGW' in html
+    icon = '<svg class="i" aria-hidden="true"><use href="/static/js/icons.svg#warning"/></svg>'
+    assert f'<div class="warning small">{icon} Airport change: LHR → LGW' in html
 
 
 def test_different_cities_do_not_connect() -> None:
@@ -206,6 +207,6 @@ def test_trip_page_renders_journey_with_expandable_segments() -> None:
     )
     assert "LHR → SGN → SYD" in html
     assert "3h 15m layover in SGN" in html
-    assert "⚠" not in html
+    assert "icons.svg#warning" not in html
     assert html.count('<article class="card segment flight">') == 2
     assert "/reservations/VN773/delete" in html
