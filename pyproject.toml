@@ -21,6 +21,8 @@ dependencies = [
     "watchfiles>=1.0",
     "dkimpy[arc]>=1.1.8",
     "dnspython>=2.9.0",
+    "psycopg[binary]==3.3.6",
+    "psycopg-pool==3.3.3",
 ]
 
 [dependency-groups]
@@ -28,6 +30,7 @@ dev = [
     "ruff>=0.8",
     "pytest>=8.3",
     "ty==0.0.85",
+    "squawk-cli==2.68.0",
 ]
 
 [build-system]

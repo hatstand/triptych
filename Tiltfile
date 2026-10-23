@@ -30,8 +30,19 @@ docker_build(
 )
 
 dc_resource("restate", labels=["infra"], links=[link("http://localhost:9070", "Restate UI")])
-dc_resource("worker", labels=["app"], resource_deps=["restate"])
+dc_resource("postgres", labels=["infra"])
+dc_resource("migrate", labels=["infra"], resource_deps=["postgres"])
+dc_resource("worker", labels=["app"], resource_deps=["restate", "migrate"])
 dc_resource("web", labels=["app"], resource_deps=["worker"], links=[link("http://localhost:8000", "Triptych")])
+
+# Saving a new/edited migration applies it and refreshes db/schema.sql (commit both).
+local_resource(
+    "db-schema",
+    cmd="scripts/dbmate.sh --wait up",
+    deps=["db/migrations"],
+    labels=["infra"],
+    resource_deps=["migrate"],
+)
 dc_resource("smtp", labels=["app"], resource_deps=["restate"])
 
 if llm != "host":
@@ -49,8 +60,12 @@ local_resource(
 
 local_resource(
     "check",
-    cmd="uv run ruff check src tests && uv run ty check && uv run pytest -q",
-    deps=["src", "tests"],
+    cmd="uv run ruff check src tests scripts && uv run ty check"
+    + " && uv run python scripts/lint_migrations.py && uv run pytest -q",
+    # DB tests create and drop their own throwaway database on the compose Postgres.
+    env={"TEST_DATABASE_URL": "postgresql://triptych:triptych@127.0.0.1:5432/postgres"},
+    deps=["src", "tests", "db"],
+    resource_deps=["db-schema"],
     labels=["tools"],
     allow_parallel=True,
 )

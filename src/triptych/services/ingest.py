@@ -11,11 +11,11 @@ from datetime import timedelta
 
 import restate
 
-from triptych import enrich, parsing
+from triptych import db, enrich, parsing
 from triptych.models import FileRequest, InboxItem, IngestRequest, LlmExtractRequest, ParsedDocument
 from triptych.services.llm_service import GPU_SCOPE, limit_key
 from triptych.services.llm_service import extract as llm_extract
-from triptych.services.user import file_reservations, upsert_inbox
+from triptych.services.user import file_reservations
 
 ingest = restate.Workflow("Ingest")
 
@@ -30,21 +30,23 @@ async def run(ctx: restate.WorkflowContext, req: IngestRequest) -> InboxItem:
         ingest_id=ctx.key(), source=req.source, label=_label(req), received_at=req.received_at, state="queued"
     )
 
-    def publish(**changes: object) -> None:
+    async def publish(**changes: object) -> None:
         nonlocal item
         item = item.model_copy(update=changes)
         ctx.set("status", item)
-        ctx.object_send(upsert_inbox, req.user, item)
+        await ctx.run_typed(
+            f"inbox: {item.state}", db.upsert_inbox, restate.RunOptions[None](), req.user, item
+        )
 
     try:
-        publish(state="parsing")
+        await publish(state="parsing")
         doc = await ctx.run_typed(
             "parse", parsing.parse, restate.RunOptions[ParsedDocument](max_attempts=2), req
         )
         if doc.subject and not req.subject:
-            publish(label=doc.subject)
+            await publish(label=doc.subject)
 
-        publish(state="extracting")
+        await publish(state="extracting")
         extraction = await ctx.scope(GPU_SCOPE).service_call(
             llm_extract,
             LlmExtractRequest(document=doc, received_at=req.received_at),
@@ -57,17 +59,19 @@ async def run(ctx: restate.WorkflowContext, req: IngestRequest) -> InboxItem:
             if (r := enrich.normalise(x, reservation_id=str(ctx.uuid()), ingest_id=ctx.key())) is not None
         ]
         if not reservations:
-            publish(state="no_travel", message="No travel reservations found in this document.")
+            await publish(state="no_travel", message="No travel reservations found in this document.")
             return item
 
-        publish(state="filing")
+        await publish(state="filing")
         filed = await ctx.object_call(
             file_reservations, req.user, FileRequest(ingest_id=ctx.key(), reservations=reservations)
         )
         n = len(reservations)
-        publish(state="done", trip_ids=filed.trip_ids, message=f"Added {n} reservation{'s' * (n != 1)}.")
+        await publish(
+            state="done", trip_ids=filed.trip_ids, message=f"Added {n} reservation{'s' * (n != 1)}."
+        )
     except restate.TerminalError as e:
-        publish(state="failed", message=str(e)[:500])
+        await publish(state="failed", message=str(e)[:500])
     return item
 
 

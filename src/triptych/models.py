@@ -181,11 +181,8 @@ class FileResult(BaseModel):
     trip_ids: list[str]
 
 
-class AddToTrip(BaseModel):
-    owner: str
-    name: str
-    destination: str | None
-    reservations: list[Reservation]
+class TripRef(BaseModel):
+    trip_id: str
 
 
 class RemoveReservation(BaseModel):
@@ -199,6 +196,8 @@ class RenameTrip(BaseModel):
 
 
 class Reminder(BaseModel):
+    owner: str
+    trip_id: str
     reservation_id: str
     expected_start: datetime
     text: str
@@ -224,5 +223,7 @@ class Answer(BaseModel):
     text: str
 
 
-class Question(BaseModel):
-    text: str
+class AskTrip(BaseModel):
+    owner: str
+    trip_id: str
+    question: str

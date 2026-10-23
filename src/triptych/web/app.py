@@ -1,4 +1,5 @@
-"""Web UI + small JSON API. Stateless: every read and write goes through Restate's ingress."""
+"""Web UI + small JSON API. Reads come straight from Postgres; writes go through Restate (the
+`User` object serialises a user's trip changes, `Ingest` runs the pipeline)."""
 
 import asyncio
 import base64
@@ -18,21 +19,22 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 
-from triptych import ical, inbound, llm
+from triptych import db, ical, inbound, llm
 from triptych.config import settings
 from triptych.models import (
     Answer,
+    AskTrip,
     IngestRequest,
     Notification,
     Overview,
-    Question,
     RemoveReservation,
     RenameTrip,
     Reservation,
     Trip,
+    TripRef,
 )
+from triptych.services import assistant as assistant_svc
 from triptych.services import ingest as ingest_svc
-from triptych.services import trip as trip_svc
 from triptych.services import user as user_svc
 
 HERE = Path(__file__).parent
@@ -42,9 +44,11 @@ MAX_INBOUND = 25 * 1024 * 1024  # Cloudflare Email Routing's own limit
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    db.init()
     async with restate.create_client(settings.restate_ingress_url) as client:
         app.state.restate = client
         yield
+    await db.close()
 
 
 app = FastAPI(title="Triptych", lifespan=lifespan)
@@ -71,14 +75,18 @@ def feed_token(email: str) -> str:
     return hmac.new(settings.secret_key.encode(), email.encode(), hashlib.sha256).hexdigest()[:32]
 
 
-async def load_trip(client: restate.RestateClient, email: str, trip_id: str) -> Trip:
-    try:
-        t = await client.object_call(trip_svc.get, trip_id, None)
-    except restate.HttpError as e:
-        raise HTTPException(404, "trip not found") from e
-    if t.owner != email:
+async def load_trip(email: str, trip_id: str) -> Trip:
+    t = await db.get_trip(email, trip_id)
+    if t is None:
         raise HTTPException(404, "trip not found")
     return t
+
+
+async def overview(email: str) -> Overview:
+    trips, inbox, notifications = await asyncio.gather(
+        db.trip_summaries(email), db.inbox(email), db.notifications(email)
+    )
+    return Overview(trips=trips, inbox=inbox, notifications=notifications)
 
 
 def by_day(rs_: list[Reservation]) -> list[tuple[date, list[Reservation]]]:
@@ -108,8 +116,8 @@ async def logout() -> Response:
 
 
 @app.get("/", response_class=HTMLResponse)
-async def home(request: Request, email: User, client: Client) -> Response:
-    ov = await client.object_call(user_svc.overview, email, None)
+async def home(request: Request, email: User) -> Response:
+    ov = await overview(email)
     today = date.today()
     busy = any(i.state in ("queued", "parsing", "extracting", "filing") for i in ov.inbox)
     return templates.TemplateResponse(
@@ -162,8 +170,8 @@ async def add_plans(
 
 
 @app.get("/trips/{trip_id}", response_class=HTMLResponse)
-async def trip_page(request: Request, trip_id: str, email: User, client: Client) -> Response:
-    t = await load_trip(client, email, trip_id)
+async def trip_page(request: Request, trip_id: str, email: User) -> Response:
+    t = await load_trip(email, trip_id)
     return templates.TemplateResponse(
         request,
         "trip.html",
@@ -175,8 +183,10 @@ async def trip_page(request: Request, trip_id: str, email: User, client: Client)
 async def trip_ask(
     request: Request, trip_id: str, email: User, client: Client, question: Annotated[str, Form()]
 ) -> Response:
-    t = await load_trip(client, email, trip_id)
-    answer: Answer = await client.object_call(trip_svc.ask, trip_id, Question(text=question))
+    t = await load_trip(email, trip_id)
+    answer: Answer = await client.service_call(
+        assistant_svc.ask, AskTrip(owner=email, trip_id=trip_id, question=question)
+    )
     return templates.TemplateResponse(
         request,
         "trip.html",
@@ -199,23 +209,21 @@ async def trip_rename(trip_id: str, email: User, client: Client, name: Annotated
 
 @app.post("/trips/{trip_id}/delete")
 async def trip_delete(trip_id: str, email: User, client: Client) -> Response:
-    await client.object_call(user_svc.delete_trip, email, trip_id)
+    await client.object_call(user_svc.delete_trip, email, TripRef(trip_id=trip_id))
     return RedirectResponse("/", status_code=303)
 
 
 @app.post("/trips/{trip_id}/reservations/{reservation_id}/delete")
 async def reservation_delete(trip_id: str, reservation_id: str, email: User, client: Client) -> Response:
-    await client.object_call(
+    still_exists = await client.object_call(
         user_svc.remove_reservation, email, RemoveReservation(trip_id=trip_id, reservation_id=reservation_id)
     )
-    ov = await client.object_call(user_svc.overview, email, None)
-    still_exists = any(t.id == trip_id for t in ov.trips)
     return RedirectResponse(f"/trips/{trip_id}" if still_exists else "/", status_code=303)
 
 
 @app.post("/notifications/dismiss")
-async def notifications_dismiss(email: User, client: Client) -> Response:
-    await client.object_call(user_svc.dismiss_notifications, email, None)
+async def notifications_dismiss(email: User) -> Response:
+    await db.dismiss_notifications(email)
     return RedirectResponse("/", status_code=303)
 
 
@@ -245,8 +253,8 @@ async def inbound_mail(request: Request, client: Client) -> dict[str, str]:
         text = "Gmail forwarding confirmation"
         text += f" — code {result.code}" if result.code else ""
         text += f" — confirm at {result.link}" if result.link else ""
-        await client.object_send(
-            user_svc.notify, result.user, Notification(id=str(uuid.uuid4()), at=now, trip_id=None, text=text)
+        await db.add_notification(
+            result.user, Notification(id=str(uuid.uuid4()), at=now, trip_id=None, text=text)
         )
         return {"status": "forwarding-confirmation", "user": result.user}
 
@@ -272,31 +280,29 @@ def ics(body: bytes, filename: str) -> Response:
 
 
 @app.get("/trips/{trip_id}/calendar.ics")
-async def trip_ics(trip_id: str, email: User, client: Client) -> Response:
-    t = await load_trip(client, email, trip_id)
+async def trip_ics(trip_id: str, email: User) -> Response:
+    t = await load_trip(email, trip_id)
     return ics(ical.calendar([t], t.name), f"{trip_id}.ics")
 
 
 @app.get("/feed/{token}.ics")
-async def feed(token: str, u: str, client: Client) -> Response:
+async def feed(token: str, u: str) -> Response:
     if not hmac.compare_digest(token, feed_token(u)):
         raise HTTPException(404)
-    ov: Overview = await client.object_call(user_svc.overview, u, None)
-    trips = [await client.object_call(trip_svc.get, s.id, None) for s in ov.trips]
-    return ics(ical.calendar(trips, "Triptych"), "triptych.ics")
+    return ics(ical.calendar(await db.all_trips(u), "Triptych"), "triptych.ics")
 
 
 # --- JSON API --------------------------------------------------------------------------------
 
 
 @app.get("/api/overview")
-async def api_overview(email: User, client: Client) -> Overview:
-    return await client.object_call(user_svc.overview, email, None)
+async def api_overview(email: User) -> Overview:
+    return await overview(email)
 
 
 @app.get("/api/trips/{trip_id}")
-async def api_trip(trip_id: str, email: User, client: Client) -> Trip:
-    return await load_trip(client, email, trip_id)
+async def api_trip(trip_id: str, email: User) -> Trip:
+    return await load_trip(email, trip_id)
 
 
 @app.get("/healthz")

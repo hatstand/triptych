@@ -7,6 +7,7 @@ from dataclasses import dataclass
 @dataclass(frozen=True, slots=True)
 class Settings:
     restate_ingress_url: str
+    database_url: str
     restate_admin_url: str
     worker_public_url: str
     ollama_url: str
@@ -24,6 +25,7 @@ def load() -> Settings:
     env = os.environ.get
     return Settings(
         restate_ingress_url=env("RESTATE_INGRESS_URL", "http://localhost:8080"),
+        database_url=env("DATABASE_URL", "postgresql://triptych:triptych@localhost:5432/triptych"),
         restate_admin_url=env("RESTATE_ADMIN_URL", "http://localhost:9070"),
         worker_public_url=env("WORKER_PUBLIC_URL", "http://worker:9080"),
         ollama_url=env("OLLAMA_URL", "http://localhost:11434"),

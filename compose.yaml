@@ -8,6 +8,7 @@ x-app: &app
   restart: unless-stopped
   environment: &app-env
     RESTATE_INGRESS_URL: http://restate:8080
+    DATABASE_URL: postgresql://triptych:${POSTGRES_PASSWORD:-triptych}@postgres:5432/triptych
     RESTATE_ADMIN_URL: http://restate:9070
     WORKER_PUBLIC_URL: http://worker:9080
     OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
@@ -19,7 +20,45 @@ x-app: &app
     INBOUND_TOKEN: ${INBOUND_TOKEN:-}
     INBOUND_ALLOWED_SENDERS: ${INBOUND_ALLOWED_SENDERS:-}
 
+x-after-migrations: &after-migrations
+  restate:
+    condition: service_started
+  migrate:
+    condition: service_completed_successfully
+
 services:
+  postgres:
+    image: docker.io/library/postgres:18.4-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: triptych
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-triptych}
+      POSTGRES_DB: triptych
+    ports: ["${BIND_ADDR:-127.0.0.1}:5432:5432"]
+    volumes:
+      - postgres-data:/var/lib/postgresql   # PG 18 images keep PGDATA under a versioned subdir
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "triptych", "-d", "triptych"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Hand-written SQL migrations in db/migrations (lint: scripts/lint_migrations.py → squawk).
+  # The app services wait for this to finish. Schema dumps (db/schema.sql) are made by the
+  # Tiltfile / `scripts/dbmate.sh dump` so the file is owned by you, not root.
+  migrate:
+    image: ghcr.io/amacneil/dbmate:2.36.0
+    command: ["--wait", "--no-dump-schema", "up"]
+    environment:
+      DATABASE_URL: postgresql://triptych:${POSTGRES_PASSWORD:-triptych}@postgres:5432/triptych?sslmode=disable
+      DBMATE_MIGRATIONS_DIR: /db/migrations
+      DBMATE_SCHEMA_FILE: /db/schema.sql
+    volumes:
+      - ./db:/db
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: "no"
+
   restate:
     image: docker.io/restatedev/restate:1.8.1
     restart: unless-stopped
@@ -35,13 +74,13 @@ services:
   worker:
     <<: *app
     command: ["python", "-m", "triptych.worker"]
-    depends_on: [restate]
+    depends_on: *after-migrations
 
   web:
     <<: *app
     command: ["uvicorn", "triptych.web.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
     ports: ["${BIND_ADDR:-127.0.0.1}:8000:8000"]
-    depends_on: [restate]
+    depends_on: *after-migrations
 
   smtp:
     <<: *app
@@ -51,3 +90,4 @@ services:
 
 volumes:
   restate-data:
+  postgres-data:

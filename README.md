@@ -5,29 +5,36 @@ emails, PDFs or screenshots; a local **Gemma 4** model extracts the reservations
 into trips automatically. You get a day-by-day itinerary, an iCal feed, check-in reminders and
 "ask about my trip" Q&A.
 
-Typed Python 3.13 (checked with Astral's `ty`, pydantic models), **Restate** for durable workflows, state, queuing and
-retries, **Ollama** for the model, and **docker compose + Tilt** for the dev loop.
+Typed Python 3.13 (checked with Astral's `ty`, pydantic models). **Postgres** is the system of
+record, with hand-written migrations. **Restate** handles durable workflows, ordering, queuing,
+timers and retries. **Ollama** runs the model, and **docker compose + Tilt** drive the dev loop.
 
 ## Architecture
 
 ```
- email ──▶ smtp :2525 ─┐                       ┌───────────── Restate 1.8 (:8080 ingress, :9070 UI) ─────────────┐
-                       ├─ workflow_send ─────▶ │ Ingest workflow (key = ingest id)                                 │
- browser ─▶ web :8000 ─┘                       │   parse ─▶ Llm.extract ─▶ normalise ─▶ User.file_reservations     │
-       ▲     │                                 │             │  scope "gpu", limit key "batch/<user>"              │
-       │     └─ object_call (typed client) ──▶ │ User object (key = email): trip index, inbox, alerts            │
-       │                                       │ Trip object (key = trip id): itinerary, Q&A, delayed reminders  │
-       └──────────── HTML / JSON / .ics ───────│ Llm service ── ctx.run(retry policy) ──▶ Ollama (Gemma 4)       │
-                                               └──────────────────────────────────────────────────────────────────┘
+ email ──▶ smtp / /inbound ─┐                  ┌──────────── Restate 1.8 (:8080 ingress, :9070 UI) ────────────┐
+                            ├─ workflow_send ▶ │ Ingest workflow: parse ─▶ Llm.extract ─▶ normalise ─▶ User.file │
+ browser ─▶ web :8000 ──────┤                  │                         scope "gpu", limit key "batch/<user>"   │
+       ▲          │         └─ object_call ──▶ │ User object (key = email): one writer per user, no own state   │
+       │          │                            │ Reminders service: delayed sends, deduped by idempotency key   │
+       │          │                            │ Assistant service ─▶ Llm.ask (limit key "interactive/<user>")  │
+       │          │                            └───────────────── each write = one ctx.run ───────┬─────────────┘
+       │          └────────────── reads (plain SQL) ──────────────▶ Postgres 18 ◀─────────────────┘
+       └──────────────────────────── HTML / JSON / .ics
 ```
+
+**Who does what:** Postgres holds trips, reservations, the inbox and notifications, and answers
+every read, such as the calendar feed in two queries. Restate never stores app data. It
+guarantees each write happens exactly once and in order, and owns everything time- or
+failure-related.
 
 | Restate piece | What it does here |
 |---|---|
-| `Ingest` **workflow** | One per forwarded email or upload. Every step is journaled, so a crash resumes after the last finished step and a successful LLM call never repeats. Inbound mail is keyed by `hash(sender, Message-ID)`, so SMTP redeliveries are deduplicated. |
+| `Ingest` **workflow** | One per forwarded email or upload. Every step is journaled, so a crash resumes after the last finished step and a successful LLM call never repeats. Inbound mail is keyed by `hash(sender, Message-ID)`, so redeliveries are deduplicated. |
 | `Llm` **service** + **flow control** | All model calls go through `ctx.scope("gpu").service_call(..., limit_key="<lane>/<user>")`. On boot the worker writes the rule-book entry `gpu → concurrency = LLM_CONCURRENCY` (default 1). Restate's VQueue scheduler holds the backlog durably and runs it in a fair order: each (lane, user) pair gets its own queue, so one user's 40 emails don't starve anyone else, and interactive Q&A doesn't wait behind the batch backlog. |
 | `ctx.run` retry policy | Ollama errors (model still downloading, OOM, malformed JSON) retry with exponential backoff for up to 45 min. After that the inbox item is marked `failed`. |
-| `User` **virtual object** | Single writer per user, so two emails for the same trip arriving together can't race to create duplicate trips. Owns grouping (`grouping.py`), including **merging** two trips when a hotel booking bridges an outbound and a return flight. |
-| `Trip` **virtual object** | The itinerary state. Adding a flight schedules **delayed sends** to `Trip.remind` for 24 h and 3 h before departure. Reminders for deleted or rescheduled segments are dropped when they fire. |
+| `User` **virtual object** | Single writer per user, so two emails for the same trip can't race to create duplicate trips, and a web edit can't interleave with a filing. Each handler is one `ctx.run` around one idempotent Postgres transaction (`db.py`). Retries are safe because trip IDs are UUIDv5s derived from the ingest ID, and a filing that's already been applied is detected and returned as-is. Grouping (`grouping.py`) also **merges** trips when a hotel booking bridges an outbound and a return flight. |
+| `Reminders` **service** | Filing schedules **delayed sends** for 24 h and 3 h before a flight and the morning of check-in. It schedules for every reservation in the touched trips, keyed by `reminder:<reservation>:<fire time>`, so Restate deduplicates repeats. A hotel filed before its flight gets its reminder once the flight supplies the timezone. When a reminder fires it re-checks Postgres, so reminders for deleted or rescheduled segments are dropped. |
 
 What's deterministic and what's the LLM: Gemma only turns documents into a flat JSON schema
 (`ExtractedReservation`). Times, airport → city/timezone lookup (`airportsdata`), timezone
@@ -41,7 +48,8 @@ tilt up                       # or: docker compose up -d
 ```
 
 * App: <http://localhost:8000>. Sign in with the address you'll forward mail from (prototype, no password).
-* Restate UI: <http://localhost:9070>. Invocations, journals, state, and the `gpu` queue (`sys_vqueues`, `sys_user_limits`).
+* Restate UI: <http://localhost:9070>. Invocations, journals, scheduled reminders, and the `gpu` queue (`sys_vqueues`, `sys_user_limits`).
+* Postgres: `docker compose exec postgres psql -U triptych`, or `localhost:5432` with user/password `triptych`.
 * Tilt UI: <http://localhost:10350>. Use the `send-samples` button to forward the fictional emails in `samples/`.
 
 The first boot pulls the model (~16 GB). Mail sent before the download finishes simply waits in
@@ -137,17 +145,40 @@ be in the `video` and `render` groups.
 and `OLLAMA_NUM_PARALLEL` together, but on one iGPU that mostly adds KV-cache memory without
 adding throughput.
 
+## Database migrations
+
+The migrations are hand-written SQL in `db/migrations/`, applied by [dbmate](https://github.com/amacneil/dbmate)
+and linted by [squawk](https://squawkhq.com).
+
+```bash
+scripts/dbmate.sh new add_trip_notes     # creates db/migrations/<ts>_add_trip_notes.sql to fill in
+# Under Tilt, saving it applies it (db-schema resource) and refreshes db/schema.sql; commit both.
+scripts/dbmate.sh up | rollback | status
+uv run python scripts/lint_migrations.py
+```
+
+* **Startup:** the compose `migrate` service applies pending migrations, and `worker`/`web` wait for it.
+* **Linting:** `scripts/lint_migrations.py` runs squawk with dbmate's semantics. Only the
+  `-- migrate:up` section is linted, and each file counts as transactional unless it's marked
+  `transaction:false`. So squawk demands `CONCURRENTLY` for indexes on existing tables, and
+  re-runnable statements outside a transaction.
+* **Conventions:** start each file with `SET lock_timeout` and `SET statement_timeout`. Put each
+  `CONCURRENTLY` operation in its own `-- migrate:up transaction:false` file, and
+  `DROP INDEX CONCURRENTLY IF EXISTS` first, because a failed build leaves an INVALID index behind.
+
 ## Development
 
 ```bash
 uv sync                          # Python 3.13 venv with dev tools
-uv run pytest -q                 # unit tests (grouping, parsing, enrichment, iCal)
+uv run pytest -q                 # unit tests; DB tests too if TEST_DATABASE_URL is set
+TEST_DATABASE_URL=postgresql://triptych:triptych@127.0.0.1:5432/postgres uv run pytest -q
 uv run ty check && uv run ruff check src tests
 ```
 
 Under Tilt, `./src` is live-synced into the containers. The worker restarts and **re-registers
 with Restate on every start**, so new or changed handlers are picked up within a second or two.
-The `check` resource runs ruff, ty and pytest on every save.
+The `check` resource runs ruff, ty, the migration linter and pytest on every save. The DB tests
+build a throwaway database from `db/schema.sql` on the compose Postgres and drop it afterwards.
 
 Layout:
 
@@ -159,11 +190,13 @@ src/triptych/
   enrich.py        times, airports → city/tz, tz inheritance
   grouping.py      reservation → trip assignment and trip merging (pure)
   ical.py          .ics export
-  services/        Restate handlers: ingest.py, llm_service.py, user.py, trip.py, endpoint.py
+  db.py            Postgres access: plain SQL → pydantic, idempotent writes for ctx.run
+  services/        Restate handlers: ingest, llm_service, user, reminders, assistant, endpoint
   worker.py        Restate endpoint (hypercorn h2c) + self-registration + flow-control rules
   web/             FastAPI + Jinja UI and JSON API
   smtp.py          inbound mail gateway
-compose.yaml       restate, worker, web, smtp
+db/                migrations/ (hand-written SQL) + schema.sql (generated, committed)
+compose.yaml       postgres, migrate, restate, worker, web, smtp
 compose/           ollama.yaml + gpu-{rocm,vulkan,nvidia}.yaml | host-llm.yaml, dev.yaml (hot reload)
 ```
 
