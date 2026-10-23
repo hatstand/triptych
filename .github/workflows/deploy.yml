@@ -1,7 +1,8 @@
 name: Deploy
 
-# On every push to main: build the app image into GHCR, then join the tailnet as an ephemeral
-# tag:ci node (workload identity federation, no stored secret) and tell marvin to roll to it.
+# On every push to main: run the Python checks, build the app image into GHCR, then join the
+# tailnet as an ephemeral tag:ci node (workload identity federation, no stored secret) and tell
+# marvin to roll to it.
 # One-time setup is in deploy/README.md.
 
 on:
@@ -14,7 +15,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    uses: ./.github/workflows/python.yml
+
   image:
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
