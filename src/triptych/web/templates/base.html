@@ -17,5 +17,13 @@
     {% endif %}
   </header>
   <main>{% block content %}{% endblock %}</main>
+  {% if email %}
+  <div id="dropzone" class="dropzone" hidden>
+    <div class="dropzone-panel"><b>Drop to add to Triptych</b>
+      <span class="muted small">Emails (.eml), PDFs, screenshots, HTML or text</span></div>
+  </div>
+  <div id="drop-status" class="drop-status" role="status" hidden></div>
+  <script type="module" src="/static/js/drop.js"></script>
+  {% endif %}
 </body>
 </html>

@@ -59,3 +59,11 @@ button.danger { background: var(--danger); }
 .answer { margin-top: 12px; padding: 10px 12px; background: var(--bg); border-radius: 8px; white-space: pre-wrap; }
 .error { color: var(--danger); margin: 0; }
 .passkey { padding: 8px 0; border-top: 1px solid var(--line); }
+.dropzone { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
+  background: color-mix(in srgb, var(--accent) 18%, transparent); outline: 3px dashed var(--accent); outline-offset: -12px; }
+.dropzone[hidden], .drop-status[hidden] { display: none; }
+.dropzone-panel { display: flex; flex-direction: column; gap: 4px; align-items: center; padding: 18px 26px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 10px; pointer-events: none; }
+.drop-status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 11; padding: 10px 16px;
+  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .15); }
+.drop-status.error { border-color: var(--danger); color: var(--danger); }
