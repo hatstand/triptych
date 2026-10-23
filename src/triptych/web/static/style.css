@@ -3,7 +3,7 @@
   --accent: #1f6feb; --accent-ink: #fff; --danger: #c62828;
   --flight: #1f6feb; --lodging: #8e44ad; --car: #e67e22; --rail: #16a085;
   --restaurant: #c0392b; --activity: #d4a017; --other: #7f8c8d;
-  --topbar-h: 50px;
+  --topbar-h: 50px; --fade: 24px;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #11141a; --card: #1a1f28; --ink: #e6e9ef; --muted: #9aa3b2; --line: #2a313d; }
@@ -27,8 +27,17 @@ main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
     max-height: calc(100dvh - var(--topbar-h) - 40px); overflow-y: auto; }
   .sidebar > .card { flex: none; } .sidebar > .card:last-child { margin-bottom: 0; }
   .sidebar > .inbox { flex: 0 1 auto; min-height: 6rem; display: flex; flex-direction: column; }
-  .inbox-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .sidebar > .inbox { padding-bottom: 0; }
+  /* Fade the list out at the bottom instead of cutting it off; the padding gives the last item room to
+     scroll clear of the fade. Where supported, a matching fade appears at the top once scrolled. */
+  .inbox-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: var(--fade);
+    mask-image: linear-gradient(transparent, #000 var(--fade-top), #000 calc(100% - var(--fade)), transparent); }
+  @supports (animation-timeline: scroll()) {
+    .inbox-scroll { animation: inbox-fade-top linear both; animation-timeline: scroll(self); animation-range: 0 var(--fade); }
+  }
 }
+@property --fade-top { syntax: "<length>"; inherits: false; initial-value: 0px; }
+@keyframes inbox-fade-top { to { --fade-top: var(--fade); } }
 .card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; color: inherit; }
 .narrow { max-width: 420px; margin: 60px auto; }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
