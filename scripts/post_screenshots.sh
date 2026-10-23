@@ -20,8 +20,8 @@ dir=$(realpath "$1")
 target=$2
 branch=screenshots
 marker='<!-- screenshots -->'
-# How wide each screenshot is shown; they're 1280 wide.
-width=400
+# How wide each screenshot is shown, four to a row; they're 1280 wide.
+width=240
 
 if ! compgen -G "$dir/light/*.png" > /dev/null; then
   echo "No screenshots to post"
@@ -64,15 +64,9 @@ echo "Screenshots are on $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/$sha/$folder
 raw="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/raw/$sha"
 img() { echo "<img src=\"$raw/$1\" width=\"$width\">"; }
 
-# The rows of a table of the $1 (light or dark) screenshots.
-rows() {
-  local scheme=$1 shot name before
-  for shot in "$work/$folder/$scheme"/*.png; do
-    name=$(basename "$shot" .png)
-    before="–"
-    if [ -f "$work/main/$scheme/$name.png" ]; then before=$(img "main/$scheme/$name.png"); fi
-    echo "| \`${name#*-}\` | $before | $(img "$folder/$scheme/$name.png") |"
-  done
+# A cell with main's $1 (light/01-login.png, say), or a dash if main has none yet.
+main_cell() {
+  if [ -f "$work/main/$1" ]; then img "main/$1"; else echo "–"; fi
 }
 
 run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
@@ -80,17 +74,19 @@ run="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
   echo "$marker"
   echo "### Screenshots"
   echo
-  echo "From [run $GITHUB_RUN_ID]($run), with the fixture data in \`scripts/screenshots.py\`. Left: main. Right: this pull request."
-  for scheme in light dark; do
-    open=$([ "$scheme" = light ] && echo " open" || true)
-    echo
-    echo "<details$open><summary><b>${scheme^}</b></summary>"
-    echo
-    echo "| Page | main | This PR |"
-    echo "| --- | --- | --- |"
-    rows "$scheme"
-    echo
-    echo "</details>"
+  echo "From [run $GITHUB_RUN_ID]($run), with the fixture data in \`scripts/screenshots.py\`. Light, then dark: main next to this pull request."
+  echo
+  echo "| Page | main | This PR | main, dark | This PR, dark |"
+  echo "| --- | --- | --- | --- | --- |"
+  for shot in "$work/$folder/light"/*.png; do
+    name=$(basename "$shot")
+    cells=""
+    for scheme in light dark; do
+      cells+=" $(main_cell "$scheme/$name") |"
+      if [ -f "$work/$folder/$scheme/$name" ]; then cells+=" $(img "$folder/$scheme/$name") |"; else cells+=" – |"; fi
+    done
+    base=${name%.png}
+    echo "| \`${base#*-}\` |$cells"
   done
 } > "$RUNNER_TEMP/screenshots-comment.md"
 
