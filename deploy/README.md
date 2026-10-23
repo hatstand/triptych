@@ -116,6 +116,39 @@ echo 'net.ipv4.ip_nonlocal_bind = 1' | sudo tee /etc/sysctl.d/99-triptych.conf &
 
 Without `RESTATE_ADMIN_BIND`, tunnel instead: `ssh -L 9070:127.0.0.1:9070 marvin`.
 
+## Admin pages
+
+`https://triptych.axolotl-goblin.ts.net/admin` shows ingest status across every user and whether
+the LLM is up. There is no app login: who you are comes from Tailscale.
+
+`tailscale serve` deletes any `Tailscale-User-*` headers a client sends and, for requests from a
+user-owned tailnet device, sets `Tailscale-User-Login` to that user's login. Tagged devices and
+Funnel traffic get no identity header. This works the same for a Tailscale Service as for a
+machine's own name; what matters is the device the request comes from, not that marvin is tagged.
+The admin app accepts a request only if that login is listed in `ADMIN_TAILSCALE_LOGINS`.
+
+The header is only trustworthy if Serve is the only way in, so the admin app (`compose` service
+`admin`) listens on a Unix socket and nothing else. Funnel (`/inbound`), the compose network, and
+any future public route all reach the web app on port 8000, which ignores these headers. Never
+point a proxy at the admin socket. Being read-only, the admin page gives a cross-site request
+from another tab nothing to trigger.
+
+One-time setup on marvin (needs a Tailscale release whose `tailscale serve --help` lists
+`unix:` targets):
+
+```bash
+sudo install -d -o 10001 -g 10001 -m 0700 /srv/triptych/run    # the image's `app` user
+sudo tee -a /srv/triptych/.env <<'ENV'
+COMPOSE_PROFILES=admin
+ADMIN_TAILSCALE_LOGINS=john.maguire@gmail.com
+ENV
+sudo tailscale serve --service=svc:triptych --https=443 --set-path=/admin unix:/srv/triptych/run/admin.sock
+```
+
+The next deploy starts the `admin` service. The socket's directory is mode 0700, so only root
+(which includes tailscaled) and the container can connect to it. `ADMIN_TAILSCALE_LOGINS` is a
+comma-separated list; leaving it empty locks everyone out.
+
 ## Manual deploy / rollback
 
 Run the **Deploy** workflow from the Actions tab, or from a tailnet device that can SSH as

@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Admin · Triptych{% endblock %}
+{% block head %}
+<style>
+  .ingests { width: 100%; border-collapse: collapse; font-size: .9rem; }
+  .ingests th, .ingests td { text-align: left; padding: 6px 8px; border-top: 1px solid var(--line); vertical-align: top; }
+  .ingests th { color: var(--muted); font-weight: 600; border-top: 0; }
+  .counts { display: flex; flex-wrap: wrap; gap: 8px; }
+  .counts a { color: inherit; }
+  .counts .on { outline: 2px solid var(--accent); }
+  .counts .badge { animation: none; }
+</style>
+{% endblock %}
+{% block content %}
+<div class="row">
+  <h1>Admin</h1>
+  <span class="muted small">Signed in to Tailscale as <b>{{ login }}</b></span>
+</div>
+
+<section class="card">
+  <h2>LLM</h2>
+  {% if llm.error %}
+  <p><span class="badge failed">down</span> <span class="mono">{{ llm.error }}</span></p>
+  {% else %}
+  <p>
+    <span class="badge {{ 'done' if llm.available else 'failed' }}">{{ 'ready' if llm.available else 'model missing' }}</span>
+    <span class="mono">{{ llm.model }}</span>
+    <span class="muted small">· installed: {{ llm.models | join(', ') or 'none' }}</span>
+  </p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Ingests in the last 7 days</h2>
+  <div class="counts">
+    <a href="?" class="badge {{ 'on' if not state }}">all</a>
+    {% for s in states %}
+    <a href="?state={{ s }}" class="badge {{ s }} {{ 'on' if s == state }}">{{ s | replace('_', ' ') }} {{ counts.get(s, 0) }}</a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
+  <h2>{{ 'Latest ' ~ state | replace('_', ' ') if state else 'Latest' }} ingests</h2>
+  {% if ingests %}
+  <table class="ingests">
+    <tr><th>Received</th><th>User</th><th>Source</th><th>Item</th><th>State</th></tr>
+    {% for i in ingests %}
+    <tr>
+      <td class="mono">{{ i.received_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ i.owner }}</td>
+      <td>{{ i.source }}</td>
+      <td>{{ i.label }}<div class="muted small mono">{{ i.ingest_id }}</div></td>
+      <td><span class="badge {{ i.state }}">{{ i.state | replace('_', ' ') }}</span>
+        {% if i.message %}<div class="muted small">{{ i.message }}</div>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Nothing yet.</p>
+  {% endif %}
+</section>
+{% endblock %}
