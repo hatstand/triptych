@@ -39,6 +39,8 @@ Add to the tailnet policy file:
 ],
 "ssh": [
   {"action": "accept", "src": ["tag:ci"], "dst": ["tag:marvin"], "users": ["deploy"]},
+  // autogroup:self no longer covers marvin once it's tagged.
+  {"action": "check", "src": ["autogroup:member"], "dst": ["tag:marvin"], "users": ["autogroup:nonroot", "root"]},
 ],
 "nodeAttrs": [
   // Funnel for /inbound keeps working once marvin is tagged.
