@@ -23,6 +23,7 @@ dependencies = [
     "dnspython>=2.9.0",
     "psycopg[binary]==3.3.6",
     "psycopg-pool==3.3.3",
+    "webauthn>=3.0.1",
 ]
 
 [dependency-groups]

@@ -137,7 +137,7 @@ IngestState = Literal["queued", "parsing", "extracting", "filing", "done", "no_t
 
 
 class IngestRequest(BaseModel):
-    user: str
+    user: str  # app_user id
     source: IngestSource
     subject: str | None = None
     filename: str | None = None

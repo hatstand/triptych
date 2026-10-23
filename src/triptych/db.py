@@ -13,6 +13,7 @@ from datetime import datetime
 
 import restate
 from psycopg import AsyncConnection
+from psycopg.errors import UniqueViolation
 from psycopg.rows import class_row
 from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
@@ -73,10 +74,6 @@ def dedupe_key(r: Reservation) -> str:
 def new_trip_id(ingest_id: str, n: int) -> str:
     """Deterministic, so a retried filing step creates the same trips."""
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"triptych:{ingest_id}/{n}"))
-
-
-async def _ensure_user(conn: AsyncConnection, owner: str) -> None:
-    await conn.execute("INSERT INTO app_user (email) VALUES (%s) ON CONFLICT DO NOTHING", (owner,))
 
 
 async def _summaries(conn: AsyncConnection, owner: str) -> list[TripSummary]:
@@ -149,6 +146,46 @@ async def _fill_timezones(conn: AsyncConnection, trip_id: str) -> None:
             )
 
 
+# --- users -----------------------------------------------------------------------------------
+# A user is an app_user id. Email addresses (and, later, other identities) point at it; everything
+# a user owns is keyed by the id, which is what `owner` means throughout.
+
+
+def normalise_email(email: str) -> str:
+    return email.strip().lower()
+
+
+async def user_for_email(email: str) -> str:
+    """The user an address belongs to. A new address gets a new user: mail can arrive before its
+    owner has signed up, and invites can name an address that has never sent any."""
+    email = normalise_email(email)
+    while True:
+        async with connection() as conn:
+            cur = await conn.execute("SELECT user_id::text FROM user_email WHERE email = %s", (email,))
+            if row := await cur.fetchone():
+                return row[0]
+            try:
+                async with conn.transaction():
+                    user_id = str(uuid.uuid4())
+                    await conn.execute("INSERT INTO app_user (id) VALUES (%s)", (user_id,))
+                    await conn.execute(
+                        "INSERT INTO user_email (email, user_id) VALUES (%s, %s)", (email, user_id)
+                    )
+                    return user_id
+            except UniqueViolation:
+                continue  # someone else claimed the address first; use theirs
+
+
+async def primary_email(user_id: str) -> str | None:
+    """The address to show for a user: their first one."""
+    async with connection() as conn:
+        cur = await conn.execute(
+            "SELECT email FROM user_email WHERE user_id = %s ORDER BY created_at, email LIMIT 1", (user_id,)
+        )
+        row = await cur.fetchone()
+    return row[0] if row else None
+
+
 # --- writes (called from Restate handlers inside ctx.run) -------------------------------------
 
 
@@ -167,7 +204,6 @@ class Filed(BaseModel):
 async def file_reservations(owner: str, ingest_id: str, reservations: list[Reservation]) -> Filed:
     ids = [r.id for r in reservations]
     async with connection() as conn, conn.transaction():
-        await _ensure_user(conn, owner)
         await conn.execute("SELECT 1 FROM trip WHERE owner = %s FOR UPDATE", (owner,))
 
         cur = await conn.execute(
@@ -235,7 +271,6 @@ async def delete_trip(owner: str, trip_id: str) -> None:
 
 async def upsert_inbox(owner: str, item: InboxItem) -> None:
     async with connection() as conn, conn.transaction():
-        await _ensure_user(conn, owner)
         await conn.execute(
             """
             INSERT INTO inbox_item (ingest_id, owner, source, label, received_at, state, message, trip_ids)
@@ -250,7 +285,6 @@ async def upsert_inbox(owner: str, item: InboxItem) -> None:
 
 async def add_notification(owner: str, n: Notification) -> None:
     async with connection() as conn, conn.transaction():
-        await _ensure_user(conn, owner)
         await conn.execute(
             """INSERT INTO notification (id, owner, at, trip_id, text) VALUES (%s, %s, %s, %s, %s)
                ON CONFLICT (id) DO NOTHING""",
@@ -272,7 +306,7 @@ async def reminder_target(reservation_id: str, expected_start: datetime) -> Remi
     """Who to notify, or empty if the segment was deleted or rescheduled since we scheduled it."""
     async with connection() as conn:
         cur = await conn.execute(
-            """SELECT t.owner, t.id::text FROM reservation r JOIN trip t ON t.id = r.trip_id
+            """SELECT t.owner::text, t.id::text FROM reservation r JOIN trip t ON t.id = r.trip_id
                WHERE r.id = %s AND r.start_local = %s""",
             (reservation_id, expected_start),
         )

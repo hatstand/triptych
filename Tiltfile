@@ -22,9 +22,9 @@ docker_compose(files, env_file=".env" if os.path.exists(".env") else None)
 docker_build(
     "triptych-app",
     ".",
-    only=["pyproject.toml", "uv.lock", "src"],
+    only=["pyproject.toml", "uv.lock", "src", "frontend"],
     live_update=[
-        fall_back_on(["pyproject.toml", "uv.lock"]),
+        fall_back_on(["pyproject.toml", "uv.lock", "frontend/package.json", "frontend/package-lock.json"]),
         sync("src", "/app/src"),  # watchfiles / uvicorn --reload restart the process
     ],
 )
@@ -48,6 +48,14 @@ dc_resource("smtp", labels=["app"], resource_deps=["restate"])
 if llm != "host":
     dc_resource("ollama", labels=["llm"])
     dc_resource("ollama-pull", labels=["llm"], resource_deps=["ollama"])
+
+# Recompiles frontend/src/*.ts into src/triptych/web/static/js, which the sync above ships.
+local_resource(
+    "frontend",
+    serve_cmd="npm ci && npm run watch -- --preserveWatchOutput",
+    serve_dir="frontend",
+    labels=["tools"],
+)
 
 local_resource(
     "send-samples",

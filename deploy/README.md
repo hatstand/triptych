@@ -87,6 +87,18 @@ project name.
 Membership in the `docker` group is effectively root on marvin. The restricted login shell and the
 `environment: marvin` trust subject are what keep that down to "deploy a commit from main".
 
+### First sign-in
+
+The UI only accepts passkeys, and the first one needs an invite. On marvin:
+
+```bash
+cd /srv/triptych && sudo -u deploy docker compose exec web python -m triptych.invite you@example.com
+```
+
+Open the printed link (it uses `PUBLIC_BASE_URL`, which must be the address you browse to, e.g.
+`https://triptych.axolotl-goblin.ts.net`) and create a passkey. Add a second one from the account
+page so a lost device doesn't lock you out; if it does, issue yourself another invite.
+
 ## Manual deploy / rollback
 
 Run the **Deploy** workflow from the Actions tab, or from a tailnet device that can SSH as

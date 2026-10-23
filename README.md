@@ -47,7 +47,8 @@ cp .env.example .env          # defaults target Strix Halo / ROCm
 tilt up                       # or: docker compose up -d
 ```
 
-* App: <http://localhost:8000>. Sign in with the address you'll forward mail from (prototype, no password).
+* App: <http://localhost:8000>. Sign-in is by passkey only. Get your first one from an invite link:
+  `docker compose exec web python -m triptych.invite you@example.com` (see [Accounts](#accounts-and-sign-in)).
 * Restate UI: <http://localhost:9070>. Invocations, journals, scheduled reminders, and the `gpu` queue (`sys_vqueues`, `sys_user_limits`).
 * Postgres: `docker compose exec postgres psql -U triptych`, or `localhost:5432` with user/password `triptych`.
 * Tilt UI: <http://localhost:10350>. Use the `send-samples` button to forward the fictional emails in `samples/`.
@@ -166,6 +167,44 @@ uv run python scripts/lint_migrations.py
   `CONCURRENTLY` operation in its own `-- migrate:up transaction:false` file, and
   `DROP INDEX CONCURRENTLY IF EXISTS` first, because a failed build leaves an INVALID index behind.
 
+## Accounts and sign-in
+
+Users sign in with passkeys (WebAuthn) and nothing else: no passwords, no email links.
+
+A **user** is an `app_user` id (a UUID). Everything a user owns (trips, inbox, notifications,
+passkeys, sessions) is keyed by that id, as is the Restate `User` object. Email addresses live in
+`user_email` and point at a user, so a user can have several, and SSO identities can be added the
+same way later. Inbound mail is matched on its DKIM-verified sender address: an address nobody has
+seen before gets a new user, so mail can be filed before its owner ever signs in, and those trips
+are there when they do.
+
+Nothing proves that someone controls an address, so the first passkey needs an **invite**: a
+one-time link, valid for 7 days, for one of the user's addresses, printed by
+
+```bash
+docker compose exec web python -m triptych.invite you@example.com [--days 1]
+```
+
+That's how the first user signs up, how anyone else is let in, and how someone who has lost every
+passkey gets back in. Signed-in users add more passkeys (a phone, a security key) from the account
+page, and can remove any passkey except their last.
+
+* **RP ID and origins.** Passkeys are bound to the RP ID: by default the hostname of
+  `PUBLIC_BASE_URL`, which must be exactly what the browser's address bar shows. Ceremonies from
+  any other origin fail, so passkeys don't work via a bare IP or another hostname. Set
+  `WEBAUTHN_RP_ID` to a parent domain if the UI might move between subdomains, because changing
+  the RP ID later strands every registered passkey. `ts.net` is a public suffix, so it can't be
+  the RP ID itself. `WEBAUTHN_ORIGINS` (comma-separated) lists extra origins to accept.
+* **Sessions** are random tokens in an HttpOnly, SameSite=Lax cookie, `__Host-session` over
+  HTTPS. Only their SHA-256 is stored (`web_session`), so signing out ends them server-side. They
+  last 30 days.
+* **CSRF.** POSTs whose `Origin` isn't one of the allowed origins get a 403 (`/inbound` excepted).
+* **Challenges** are stateless: the challenge, its purpose, the user and the invite travel in a
+  5-minute cookie signed with `SECRET_KEY` (so set a real one). A challenge isn't strictly
+  single-use within that window, but replaying one needs both that cookie and the authenticator's
+  response from the same ceremony. Invites are still spent in the database.
+* **WebAuthn user handle** is the 16 bytes of the user's UUID: stable, random, and not an address.
+
 ## Development
 
 ```bash
@@ -181,8 +220,14 @@ The `check` resource runs ruff, ty, the migration linter and pytest on every sav
 build a throwaway database from `db/schema.sql` on the compose Postgres and drop it afterwards.
 
 GitHub Actions runs the same checks on every pull request: ruff (lint + format check), ty and
-pytest for the Python code, and Biome lint, `tsc` and `node --test` for the Email Worker
-(`npm run lint && npm run typecheck && npm test` in `cloudflare/email-worker`).
+pytest (against a Postgres service container, so the DB tests run too) for the Python code,
+Biome lint and `tsc` for the browser code in `frontend/`, and Biome lint, `tsc` and `node --test`
+for the Email Worker (`npm run lint && npm run typecheck && npm test` in `cloudflare/email-worker`).
+
+The browser code is TypeScript in `frontend/src`, compiled by `tsc` (no bundler) into
+`src/triptych/web/static/js/`, which is gitignored. The Dockerfile builds it in a Node stage;
+under Tilt the `frontend` resource runs `tsc --watch` and the output is live-synced like any other
+file in `src`. Without Tilt: `cd frontend && npm ci && npm run build`.
 
 Layout:
 
@@ -195,10 +240,13 @@ src/triptych/
   grouping.py      reservation → trip assignment and trip merging (pure)
   ical.py          .ics export
   db.py            Postgres access: plain SQL → pydantic, idempotent writes for ctx.run
+  auth.py          passkeys (WebAuthn ceremonies), sessions, invites
+  invite.py        CLI: print a one-time passkey registration link for an address
   services/        Restate handlers: ingest, llm_service, user, reminders, assistant, endpoint
   worker.py        Restate endpoint (hypercorn h2c) + self-registration + flow-control rules
-  web/             FastAPI + Jinja UI and JSON API
+  web/             FastAPI + Jinja UI and JSON API (static/js/ is built from frontend/)
   smtp.py          inbound mail gateway
+frontend/          TypeScript for the browser (tsc → src/triptych/web/static/js)
 db/                migrations/ (hand-written SQL) + schema.sql (generated, committed)
 compose.yaml       postgres, migrate, restate, worker, web, smtp
 compose/           ollama.yaml + gpu-{rocm,vulkan,nvidia}.yaml | host-llm.yaml, dev.yaml (hot reload)
@@ -206,8 +254,8 @@ compose/           ollama.yaml + gpu-{rocm,vulkan,nvidia}.yaml | host-llm.yaml, 
 
 ## Prototype limitations
 
-* No real auth: the login is a cookie holding your email, and inbound mail trusts the `From`
-  address. The calendar feed is HMAC-signed with `SECRET_KEY`.
+* A user can have several addresses, but nothing in the UI adds a second one yet (insert into
+  `user_email`). The calendar feed is HMAC-signed with `SECRET_KEY`.
 * No live flight status. Alerts are time-based reminders only.
 * Trip grouping is date-based with a 1-day slack, plus confirmation-code and bridging merges.
   Edit or delete segments in the UI when it guesses wrong.

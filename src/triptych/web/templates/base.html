@@ -12,7 +12,7 @@
     <a class="brand" href="/">▲ Triptych</a>
     {% if email %}
     <form method="post" action="/logout" class="who">
-      <span>{{ email }}</span><button class="link">Sign out</button>
+      <a href="/account">{{ email }}</a><button class="link">Sign out</button>
     </form>
     {% endif %}
   </header>

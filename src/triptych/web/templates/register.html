@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow stack">
+  {% if invite_email %}
+  <h1>Create your passkey</h1>
+  <p>This sets up sign-in for <strong>{{ invite_email }}</strong>. Trips from emails sent from that
+    address will show up in your account.</p>
+  <label class="stack small">Name this passkey (optional)
+    <input name="passkey-name" placeholder="e.g. iPhone, YubiKey" maxlength="60">
+  </label>
+  <button type="button" data-passkey="register" data-invite="{{ invite }}">Create passkey</button>
+  <p class="error" data-passkey-error hidden></p>
+  <p class="muted small">The link works once. You can add more passkeys from your account page afterwards.</p>
+  {% else %}
+  <h1>Invite expired</h1>
+  <p class="muted">This invite link has expired or was already used. Ask for a new one.</p>
+  <a class="button" href="/login">Sign in</a>
+  {% endif %}
+</section>
+<script type="module" src="/static/js/passkey.js"></script>
+{% endblock %}

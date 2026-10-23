@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow stack">
+  <h1>Account</h1>
+  <p class="muted">Signed in as {{ email }}.</p>
+
+  <h2>Passkeys</h2>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  {% for p in passkeys %}
+  <div class="row passkey">
+    <div>
+      <div>{{ p.name }}{% if p.backed_up %} <span class="badge">synced</span>{% endif %}</div>
+      <div class="muted small">Added {{ p.created_at.strftime('%d %b %Y') }}
+        · {% if p.last_used_at %}last used {{ p.last_used_at.strftime('%d %b %Y') }}{% else %}never used{% endif %}</div>
+    </div>
+    {% if passkeys|length > 1 %}
+    <form method="post" action="/account/passkeys/{{ p.id }}/delete"
+          onsubmit="return confirm('Remove this passkey? It will stop working for Triptych.')">
+      <button class="link">Remove</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+
+  <p class="muted small">Add a second passkey (another device, or a security key) so losing one doesn't lock you out.</p>
+  <input name="passkey-name" placeholder="Name, e.g. MacBook" maxlength="60">
+  <button type="button" data-passkey="register">Add a passkey</button>
+  <p class="error" data-passkey-error hidden></p>
+</section>
+<script type="module" src="/static/js/passkey.js"></script>
+{% endblock %}

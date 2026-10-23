@@ -1,4 +1,4 @@
-"""`User` virtual object (key = email address): the single writer for a user's trips.
+"""`User` virtual object (key = app_user id): the single writer for a user's trips.
 
 The data lives in Postgres; this object exists for ordering. Exclusive handlers run one at a time
 per user, so two confirmation emails arriving together can't both decide to create "the Lisbon

@@ -24,8 +24,8 @@ SET default_table_access_method = heap;
 --
 
 CREATE TABLE public.app_user (
-    email text NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    id uuid DEFAULT gen_random_uuid() NOT NULL
 );
 
 
@@ -35,7 +35,7 @@ CREATE TABLE public.app_user (
 
 CREATE TABLE public.inbox_item (
     ingest_id text NOT NULL,
-    owner text NOT NULL,
+    owner uuid NOT NULL,
     source text NOT NULL,
     label text NOT NULL,
     received_at timestamp with time zone NOT NULL,
@@ -46,15 +46,44 @@ CREATE TABLE public.inbox_item (
 
 
 --
+-- Name: invite; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.invite (
+    token_hash bytea NOT NULL,
+    email text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL
+);
+
+
+--
 -- Name: notification; Type: TABLE; Schema: public; Owner: -
 --
 
 CREATE TABLE public.notification (
     id uuid NOT NULL,
-    owner text NOT NULL,
+    owner uuid NOT NULL,
     at timestamp with time zone NOT NULL,
     trip_id uuid,
     text text NOT NULL
+);
+
+
+--
+-- Name: passkey; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.passkey (
+    credential_id bytea NOT NULL,
+    user_id uuid NOT NULL,
+    public_key bytea NOT NULL,
+    sign_count bigint NOT NULL,
+    transports text[] DEFAULT '{}'::text[] NOT NULL,
+    backed_up boolean NOT NULL,
+    name text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    last_used_at timestamp with time zone
 );
 
 
@@ -102,10 +131,33 @@ CREATE TABLE public.schema_migrations (
 
 CREATE TABLE public.trip (
     id uuid NOT NULL,
-    owner text NOT NULL,
+    owner uuid NOT NULL,
     name text NOT NULL,
     destination text,
     created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: user_email; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_email (
+    email text NOT NULL,
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: web_session; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.web_session (
+    token_hash bytea NOT NULL,
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL
 );
 
 
@@ -114,7 +166,7 @@ CREATE TABLE public.trip (
 --
 
 ALTER TABLE ONLY public.app_user
-    ADD CONSTRAINT app_user_pkey PRIMARY KEY (email);
+    ADD CONSTRAINT app_user_pkey PRIMARY KEY (id);
 
 
 --
@@ -126,11 +178,27 @@ ALTER TABLE ONLY public.inbox_item
 
 
 --
+-- Name: invite invite_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.invite
+    ADD CONSTRAINT invite_pkey PRIMARY KEY (token_hash);
+
+
+--
 -- Name: notification notification_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.notification
     ADD CONSTRAINT notification_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: passkey passkey_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.passkey
+    ADD CONSTRAINT passkey_pkey PRIMARY KEY (credential_id);
 
 
 --
@@ -166,6 +234,22 @@ ALTER TABLE ONLY public.trip
 
 
 --
+-- Name: user_email user_email_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_email
+    ADD CONSTRAINT user_email_pkey PRIMARY KEY (email);
+
+
+--
+-- Name: web_session web_session_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.web_session
+    ADD CONSTRAINT web_session_pkey PRIMARY KEY (token_hash);
+
+
+--
 -- Name: inbox_item_owner_received_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -177,6 +261,13 @@ CREATE INDEX inbox_item_owner_received_idx ON public.inbox_item USING btree (own
 --
 
 CREATE INDEX notification_owner_at_idx ON public.notification USING btree (owner, at DESC);
+
+
+--
+-- Name: passkey_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX passkey_user_idx ON public.passkey USING btree (user_id);
 
 
 --
@@ -194,11 +285,25 @@ CREATE INDEX trip_owner_idx ON public.trip USING btree (owner);
 
 
 --
+-- Name: user_email_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX user_email_user_idx ON public.user_email USING btree (user_id);
+
+
+--
+-- Name: web_session_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX web_session_user_idx ON public.web_session USING btree (user_id);
+
+
+--
 -- Name: inbox_item inbox_item_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.inbox_item
-    ADD CONSTRAINT inbox_item_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(email);
+    ADD CONSTRAINT inbox_item_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id);
 
 
 --
@@ -206,7 +311,7 @@ ALTER TABLE ONLY public.inbox_item
 --
 
 ALTER TABLE ONLY public.notification
-    ADD CONSTRAINT notification_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(email);
+    ADD CONSTRAINT notification_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id);
 
 
 --
@@ -215,6 +320,14 @@ ALTER TABLE ONLY public.notification
 
 ALTER TABLE ONLY public.notification
     ADD CONSTRAINT notification_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.trip(id) ON DELETE SET NULL;
+
+
+--
+-- Name: passkey passkey_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.passkey
+    ADD CONSTRAINT passkey_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(id) ON DELETE CASCADE;
 
 
 --
@@ -230,7 +343,23 @@ ALTER TABLE ONLY public.reservation
 --
 
 ALTER TABLE ONLY public.trip
-    ADD CONSTRAINT trip_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(email);
+    ADD CONSTRAINT trip_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id);
+
+
+--
+-- Name: user_email user_email_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_email
+    ADD CONSTRAINT user_email_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
+-- Name: web_session web_session_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.web_session
+    ADD CONSTRAINT web_session_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(id) ON DELETE CASCADE;
 
 
 --
@@ -240,9 +369,12 @@ ALTER TABLE ONLY public.trip
 \unrestrict dbmate
 
 
+
 --
 -- Dbmate schema migrations
 --
 
 INSERT INTO public.schema_migrations (version) VALUES
-    ('20261023120000');
+    ('20261023120000'),
+    ('20261023140000'),
+    ('20261023150000');

@@ -6,3 +6,4 @@
 .pytest_cache
 samples
 tests
+frontend/node_modules
