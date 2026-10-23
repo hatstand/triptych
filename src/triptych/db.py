@@ -4,6 +4,10 @@ Postgres is the system of record for trips, reservations, inbox items and notifi
 handlers call the write functions from inside `ctx.run`, so each one must be safe to re-run:
 writes are upserts keyed by ids that Restate generated deterministically, and `file_reservations`
 detects that it has already been applied.
+
+Every write also announces itself with `pg_notify` on CHANGES, naming the user whose data changed,
+so the web app can push fresh pages to that user's open tabs (web/live.py). NOTIFY is delivered on
+commit, so a rolled-back or retried step announces nothing it didn't do.
 """
 
 import uuid
@@ -23,12 +27,14 @@ from triptych.config import settings
 from triptych.models import InboxItem, Notification, Reservation, Trip, TripSummary
 
 _pool: AsyncConnectionPool | None = None
+_url: str | None = None
 
 
 def init(url: str | None = None) -> None:
     """Point the module at a database (tests use a throwaway one). Opened lazily on first use."""
-    global _pool
-    _pool = AsyncConnectionPool(url or settings.database_url, min_size=1, max_size=5, open=False)
+    global _pool, _url
+    _url = url or settings.database_url
+    _pool = AsyncConnectionPool(_url, min_size=1, max_size=5, open=False)
 
 
 @asynccontextmanager
@@ -45,6 +51,25 @@ async def connection() -> AsyncGenerator[AsyncConnection]:
 async def close() -> None:
     if _pool is not None and not _pool.closed:
         await _pool.close()
+
+
+# --- change notifications --------------------------------------------------------------------
+
+
+async def _changed(conn: AsyncConnection, owner: str) -> None:
+    """Tell listeners `owner`'s trips, inbox or notifications changed, once this transaction commits."""
+    await conn.execute("SELECT pg_notify('triptych_changes', %s)", (owner,))
+
+
+async def changes() -> AsyncGenerator[str | None]:
+    """The users whose data changed, as writes commit. Yields None first, once listening: anything
+    committed before that was missed, so whoever holds stale state should refresh it. Runs on its
+    own connection (a LISTEN can't share a pooled one) until that connection fails."""
+    async with await AsyncConnection.connect(_url or settings.database_url, autocommit=True) as conn:
+        await conn.execute("LISTEN triptych_changes")
+        yield None
+        async for n in conn.notifies():
+            yield n.payload
 
 
 # --- shared SQL ------------------------------------------------------------------------------
@@ -228,6 +253,7 @@ async def file_reservations(owner: str, ingest_id: str, reservations: list[Reser
                     await _upsert_reservation(conn, b.trip_id, r)
                 await _fill_timezones(conn, b.trip_id)
             already = [b.trip_id for b in buckets]
+            await _changed(conn, owner)
 
         stored = [
             FiledReservation(trip_id=tid, reservation=r)
@@ -250,6 +276,7 @@ async def remove_reservation(owner: str, trip_id: str, reservation_id: str) -> b
         await conn.execute(
             "DELETE FROM reservation WHERE id = %s AND trip_id = %s", (reservation_id, trip_id)
         )
+        await _changed(conn, owner)
         cur = await conn.execute("SELECT 1 FROM reservation WHERE trip_id = %s LIMIT 1", (trip_id,))
         if await cur.fetchone() is None:
             await conn.execute("DELETE FROM trip WHERE id = %s", (trip_id,))
@@ -262,11 +289,13 @@ async def rename_trip(owner: str, trip_id: str, name: str) -> None:
         await _owned(conn, owner, trip_id)
         if name.strip():
             await conn.execute("UPDATE trip SET name = %s WHERE id = %s", (name.strip(), trip_id))
+            await _changed(conn, owner)
 
 
 async def delete_trip(owner: str, trip_id: str) -> None:
-    async with connection() as conn:
+    async with connection() as conn, conn.transaction():
         await conn.execute("DELETE FROM trip WHERE id = %s AND owner = %s", (trip_id, owner))
+        await _changed(conn, owner)
 
 
 async def upsert_inbox(owner: str, item: InboxItem) -> None:
@@ -281,6 +310,23 @@ async def upsert_inbox(owner: str, item: InboxItem) -> None:
             (item.ingest_id, owner, item.source, item.label, item.received_at, item.state, item.message,
              item.trip_ids),
         )  # fmt: skip
+        await _changed(conn, owner)
+
+
+async def add_inbox_item(owner: str, item: InboxItem) -> None:
+    """The row for an ingest that was only just started, unless the workflow got there first."""
+    async with connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            """
+            INSERT INTO inbox_item (ingest_id, owner, source, label, received_at, state, message, trip_ids)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s::uuid[])
+            ON CONFLICT (ingest_id) DO NOTHING
+            """,
+            (item.ingest_id, owner, item.source, item.label, item.received_at, item.state, item.message,
+             item.trip_ids),
+        )  # fmt: skip
+        if cur.rowcount:
+            await _changed(conn, owner)
 
 
 async def add_notification(owner: str, n: Notification) -> None:
@@ -290,11 +336,13 @@ async def add_notification(owner: str, n: Notification) -> None:
                ON CONFLICT (id) DO NOTHING""",
             (n.id, owner, n.at, n.trip_id, n.text),
         )
+        await _changed(conn, owner)
 
 
 async def dismiss_notifications(owner: str) -> None:
-    async with connection() as conn:
+    async with connection() as conn, conn.transaction():
         await conn.execute("DELETE FROM notification WHERE owner = %s", (owner,))
+        await _changed(conn, owner)
 
 
 class ReminderTarget(BaseModel):

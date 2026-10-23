@@ -1,31 +1,11 @@
 {% extends "base.html" %}
-{% block head %}{% if busy %}<meta http-equiv="refresh" content="3">{% endif %}{% endblock %}
+{% block head %}<script type="module" src="/static/js/live.js"></script>{% endblock %}
 {% block content %}
-{% if notifications %}
-<section class="card alerts">
-  <div class="row"><h2>Alerts</h2>
-    <form method="post" action="/notifications/dismiss"><button class="link">Dismiss all</button></form></div>
-  <ul>{% for n in notifications %}
-    <li><span class="muted">{{ n.at.strftime('%d %b %H:%M') }} UTC</span>
-      {% if n.trip_id %}<a href="/trips/{{ n.trip_id }}">{{ n.text }}</a>{% else %}{{ n.text }}{% endif %}</li>
-  {% endfor %}</ul>
-</section>
-{% endif %}
+{# data-live sections are re-rendered from the same partials and swapped in by live.ts #}
+<div data-live="alerts">{% include "_alerts.html" %}</div>
 
 <div class="grid">
-  <section>
-    <h2>Upcoming trips</h2>
-    {% for t in upcoming %}
-      {% include "_trip_card.html" %}
-    {% else %}
-      <p class="muted">No upcoming trips yet. Forward a confirmation email or paste one on the right.</p>
-    {% endfor %}
-
-    {% if past %}
-    <h2>Past trips</h2>
-    {% for t in past %}{% include "_trip_card.html" %}{% endfor %}
-    {% endif %}
-  </section>
+  <section data-live="trips">{% include "_trips.html" %}</section>
 
   <aside>
     <section class="card">
@@ -39,17 +19,7 @@
       </form>
     </section>
 
-    <section class="card">
-      <h2>Inbox</h2>
-      {% for i in inbox %}
-        <div class="inbox-item">
-          <span class="badge {{ i.state }}">{{ i.state.replace('_', ' ') }}</span>
-          <span class="label">{{ i.label }}</span>
-          {% if i.message %}<div class="muted small">{{ i.message }}</div>{% endif %}
-          {% for tid in i.trip_ids %}<a class="small" href="/trips/{{ tid }}">view trip →</a>{% endfor %}
-        </div>
-      {% else %}<p class="muted small">Nothing processed yet.</p>{% endfor %}
-    </section>
+    <section class="card" data-live="inbox">{% include "_inbox.html" %}</section>
 
     <section class="card">
       <h2>Calendar feed</h2>

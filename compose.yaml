@@ -81,7 +81,10 @@ services:
 
   web:
     <<: *app
-    command: ["uvicorn", "triptych.web.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
+    # Live-update streams (/events) never finish on their own; cut them on shutdown so a deploy
+    # doesn't wait out Docker's stop timeout. Browsers reconnect to the new process.
+    command: ["uvicorn", "triptych.web.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers",
+              "--timeout-graceful-shutdown", "2"]
     ports: ["${BIND_ADDR:-127.0.0.1}:8000:8000"]
     depends_on: *after-migrations
 

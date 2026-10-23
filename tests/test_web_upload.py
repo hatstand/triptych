@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from triptych.auth import Me
-from triptych.models import IngestRequest
+from triptych.models import InboxItem, IngestRequest
 from triptych.web import app as web
 
 SAMPLES = Path(__file__).parents[1] / "samples"
@@ -15,14 +15,23 @@ SAMPLES = Path(__file__).parents[1] / "samples"
 class FakeRestate:
     def __init__(self) -> None:
         self.sent: list[IngestRequest] = []
+        self.keys: list[str] = []
+        self.inbox: list[InboxItem] = []
 
-    async def workflow_send(self, _handler: Any, _key: str, req: IngestRequest) -> None:
+    async def workflow_send(self, _handler: Any, key: str, req: IngestRequest) -> None:
         self.sent.append(req)
+        self.keys.append(key)
 
 
 @pytest.fixture
-def restate_client() -> Iterator[FakeRestate]:
+def restate_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeRestate]:
     fake = FakeRestate()
+
+    async def add_inbox_item(owner: str, item: InboxItem) -> None:
+        assert owner == ME.id
+        fake.inbox.append(item)
+
+    monkeypatch.setattr(web.db, "add_inbox_item", add_inbox_item)
     web.app.dependency_overrides[web.rs] = lambda: fake
     yield fake
     web.app.dependency_overrides.clear()
@@ -47,6 +56,21 @@ def test_dropped_emails_each_become_an_ingest(client: TestClient, restate_client
     assert {(r.user, r.source, r.content_type) for r in restate_client.sent} == {
         (ME.id, "upload", "message/rfc822")
     }
+
+
+def test_uploads_are_in_the_inbox_before_the_workflow_runs(
+    client: TestClient, restate_client: FakeRestate
+) -> None:
+    files = [
+        ("file", ("01-flight-lisbon.eml", (SAMPLES / "01-flight-lisbon.eml").read_bytes(), "message/rfc822"))
+    ]
+    client.post("/plans", files=files)
+    [item] = restate_client.inbox
+    assert (item.ingest_id, item.label, item.state) == (
+        restate_client.keys[0],
+        "01-flight-lisbon.eml",
+        "queued",
+    )
 
 
 def test_paste_still_works(client: TestClient, restate_client: FakeRestate) -> None:

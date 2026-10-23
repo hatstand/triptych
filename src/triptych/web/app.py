@@ -16,7 +16,7 @@ from typing import Annotated, Any, cast
 
 import restate
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -39,6 +39,7 @@ from triptych.models import (
 from triptych.services import assistant as assistant_svc
 from triptych.services import ingest as ingest_svc
 from triptych.services import user as user_svc
+from triptych.web import live
 
 HERE = Path(__file__).parent
 log = logging.getLogger("triptych.web")
@@ -49,9 +50,11 @@ MAX_INBOUND = 25 * 1024 * 1024  # Cloudflare Email Routing's own limit
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     db.init()
+    changes = asyncio.create_task(live.hub.run())
     async with restate.create_client(settings.restate_ingress_url) as client:
         app.state.restate = client
         yield
+    changes.cancel()
     await db.close()
 
 
@@ -254,24 +257,41 @@ async def register_verify(request: Request, body: RegisterFinish) -> Response:
     return signed_in_response("/", await auth.create_session(user_id))
 
 
-@app.get("/", response_class=HTMLResponse)
-async def home(request: Request, me: User) -> Response:
+async def home_context(me: auth.Me) -> dict[str, Any]:
     ov = await overview(me.id)
     today = date.today()
-    busy = any(i.state in ("queued", "parsing", "extracting", "filing") for i in ov.inbox)
-    return templates.TemplateResponse(
-        request,
-        "index.html",
-        {
-            "email": me.email,
-            "upcoming": [t for t in ov.trips if t.end_date >= today],
-            "past": [t for t in reversed(ov.trips) if t.end_date < today],
-            "inbox": ov.inbox[:10],
-            "notifications": ov.notifications,
-            "busy": busy,
-            "feed_url": f"{settings.public_base_url}/feed/{feed_token(me.id)}.ics?u={me.id}",
-            "today": today,
-        },
+    return {
+        "email": me.email,
+        "upcoming": [t for t in ov.trips if t.end_date >= today],
+        "past": [t for t in reversed(ov.trips) if t.end_date < today],
+        "inbox": ov.inbox[:10],
+        "notifications": ov.notifications,
+        "feed_url": f"{settings.public_base_url}/feed/{feed_token(me.id)}.ics?u={me.id}",
+        "today": today,
+    }
+
+
+# The home page's data-live sections, by name.
+HOME_SECTIONS = {"alerts": "_alerts.html", "trips": "_trips.html", "inbox": "_inbox.html"}
+
+
+async def home_sections(me: auth.Me) -> dict[str, str]:
+    ctx = await home_context(me)
+    return {name: templates.get_template(t).render(ctx) for name, t in HOME_SECTIONS.items()}
+
+
+@app.get("/", response_class=HTMLResponse)
+async def home(request: Request, me: User) -> Response:
+    return templates.TemplateResponse(request, "index.html", await home_context(me))
+
+
+@app.get("/events")
+async def events(me: User) -> Response:
+    """The home page's live sections, re-sent whenever they change (see live.py, live.ts)."""
+    return StreamingResponse(
+        live.stream(me.id, lambda: home_sections(me)),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
     )
 
 
@@ -313,7 +333,10 @@ async def add_plans(
             )
         )
     for req in reqs:
-        await client.workflow_send(ingest_svc.run, f"web-{uuid.uuid4()}", req)
+        key = f"web-{uuid.uuid4()}"
+        await client.workflow_send(ingest_svc.run, key, req)
+        # Show it in the inbox now rather than when the workflow first runs.
+        await db.add_inbox_item(me.id, ingest_svc.queued_item(key, req))
     return RedirectResponse("/", status_code=303)
 
 

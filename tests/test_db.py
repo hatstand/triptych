@@ -136,3 +136,22 @@ async def test_addresses_map_to_one_user_each(database: None) -> None:
     assert await db.user_for_email("me@example.com") == me
     assert await db.user_for_email("someone@example.com") != me
     assert await db.primary_email(me) == "me@example.com"
+
+
+async def test_writes_announce_whose_data_changed(me: str) -> None:
+    feed = db.changes()
+    assert await anext(feed) is None  # listening: the caller should resync
+    other = await db.user_for_email("someone-else@example.com")
+
+    item = InboxItem(
+        ingest_id="i1", source="upload", label="a", received_at=datetime.now(UTC), state="queued"
+    )
+    await db.add_inbox_item(me, item)
+    await db.add_inbox_item(me, item.model_copy(update={"state": "done"}))  # already there: no-op, no news
+    await db.upsert_inbox(other, item.model_copy(update={"ingest_id": "i2", "state": "parsing"}))
+    await db.dismiss_notifications(me)
+
+    assert [await anext(feed) for _ in range(3)] == [me, other, me]
+    [row] = await db.inbox(me)
+    assert row.state == "queued"
+    await feed.aclose()
