@@ -134,7 +134,8 @@ CREATE TABLE public.trip (
     owner uuid NOT NULL,
     name text NOT NULL,
     destination text,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    name_edited boolean DEFAULT false NOT NULL
 );
 
 
@@ -377,4 +378,5 @@ ALTER TABLE ONLY public.web_session
 INSERT INTO public.schema_migrations (version) VALUES
     ('20261023120000'),
     ('20261023140000'),
-    ('20261023150000');
+    ('20261023150000'),
+    ('20261023170000');

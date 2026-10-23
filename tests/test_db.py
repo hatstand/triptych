@@ -97,6 +97,26 @@ async def test_bridging_hotel_merges_trips_and_repoints_references(me: str) -> N
     assert n.trip_id == summary.id
 
 
+def porto() -> Reservation:
+    return res(Kind.LODGING, "2026-11-15T15:00", "2026-11-17T11:00", "Porto", "H4")
+
+
+async def test_title_follows_the_itinerary_until_renamed(me: str) -> None:
+    # The flight home arrives first: until there's a hotel, the trip is named for where it lands.
+    [trip_id] = (await db.file_reservations(me, "ingest-home", [home()])).trip_ids
+    assert [s.name for s in await db.trip_summaries(me)] == ["San Francisco, November 2026"]
+
+    await db.file_reservations(me, "ingest-hotel", [hotel()])
+    await db.file_reservations(me, "ingest-porto", [porto()])
+    trip = await db.get_trip(me, trip_id)
+    assert trip and (trip.name, trip.destination) == ("Lisbon & Porto, November 2026", "Lisbon")
+
+    await db.rename_trip(me, trip_id, "Portugal with Sam")
+    await db.file_reservations(me, "ingest-out", [outbound()])
+    trip = await db.get_trip(me, trip_id)
+    assert trip and (trip.name, len(trip.reservations)) == ("Portugal with Sam", 4)
+
+
 async def test_resent_confirmation_replaces_segment_keeping_its_id(me: str) -> None:
     first = await db.file_reservations(me, "ingest-1", [hotel()])
     again = await db.file_reservations(me, "ingest-2", [hotel()])  # same booking, new ids
