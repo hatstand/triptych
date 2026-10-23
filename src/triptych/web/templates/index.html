@@ -8,7 +8,7 @@
 <div class="grid">
   <section sse-swap="trips">{% include "_trips.html" %}</section>
 
-  <aside>
+  <aside class="sidebar">
     <section class="card">
       <h2>Add plans</h2>
       <p class="muted small">Email <code>plans@localhost</code> on port 2525 from <b>{{ email }}</b>, or:</p>
@@ -20,7 +20,11 @@
       </form>
     </section>
 
-    <section class="card" sse-swap="inbox">{% include "_inbox.html" %}</section>
+    {# The scroll container sits outside the swapped element so live updates keep its position #}
+    <section class="card inbox">
+      <h2>Inbox</h2>
+      <div class="inbox-scroll"><div sse-swap="inbox">{% include "_inbox.html" %}</div></div>
+    </section>
 
     <section class="card">
       <h2>Calendar feed</h2>

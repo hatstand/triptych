@@ -3,6 +3,7 @@
   --accent: #1f6feb; --accent-ink: #fff; --danger: #c62828;
   --flight: #1f6feb; --lodging: #8e44ad; --car: #e67e22; --rail: #16a085;
   --restaurant: #c0392b; --activity: #d4a017; --other: #7f8c8d;
+  --topbar-h: 50px;
 }
 @media (prefers-color-scheme: dark) {
   :root { --bg: #11141a; --card: #1a1f28; --ink: #e6e9ef; --muted: #9aa3b2; --line: #2a313d; }
@@ -12,13 +13,22 @@ body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-ser
 a { color: var(--accent); text-decoration: none; }
 h1 { margin: .2em 0; font-size: 1.6rem; } h2 { font-size: 1.05rem; margin: 0 0 .6em; } h3 { margin: 0; }
 code, .mono { font-family: ui-monospace, monospace; font-size: .9em; }
-.topbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 24px;
+.topbar { display: flex; justify-content: space-between; align-items: center; padding: 0 24px; height: var(--topbar-h);
   background: var(--card); border-bottom: 1px solid var(--line); }
 .brand { font-weight: 700; color: var(--ink); letter-spacing: .02em; }
 .who { display: flex; gap: 10px; align-items: center; color: var(--muted); }
 main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
 .grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
 @media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+/* Wide screens: the sidebar is pinned to the viewport, so only the inbox scrolls and the calendar feed
+   stays in view. Its height leaves room for the topbar and main's padding at the top of the page. */
+@media (min-width: 821px) {
+  .sidebar { position: sticky; top: 20px; display: flex; flex-direction: column;
+    max-height: calc(100dvh - var(--topbar-h) - 40px); overflow-y: auto; }
+  .sidebar > .card { flex: none; } .sidebar > .card:last-child { margin-bottom: 0; }
+  .sidebar > .inbox { flex: 0 1 auto; min-height: 6rem; display: flex; flex-direction: column; }
+  .inbox-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+}
 .card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; color: inherit; }
 .narrow { max-width: 420px; margin: 60px auto; }
 .row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
