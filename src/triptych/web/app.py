@@ -12,7 +12,7 @@ from collections.abc import AsyncGenerator, AsyncIterable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Annotated, Any, cast
+from typing import Annotated, Any, TypedDict, cast
 
 import restate
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -48,14 +48,20 @@ MAX_UPLOAD = 15 * 1024 * 1024
 MAX_INBOUND = 25 * 1024 * 1024  # Cloudflare Email Routing's own limit
 
 
+class AppState(TypedDict):
+    """What the lifespan hands every request (Starlette's lifespan state). Read it with `state()`."""
+
+    restate: restate.RestateClient
+    hub: live.Hub
+
+
 @asynccontextmanager
-async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+async def lifespan(_app: FastAPI) -> AsyncGenerator[AppState]:
     db.init()
-    app.state.hub = live.Hub(settings.database_url)
-    changes = asyncio.create_task(app.state.hub.run())
+    hub = live.Hub(settings.database_url)
+    changes = asyncio.create_task(hub.run())
     async with restate.create_client(settings.restate_ingress_url) as client:
-        app.state.restate = client
-        yield
+        yield {"restate": client, "hub": hub}
     changes.cancel()
     await db.close()
 
@@ -65,12 +71,18 @@ app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 
 
+def state(request: Request) -> AppState:
+    # Starlette would type this as Request[AppState].state, but FastAPI only injects a plain
+    # Request, so this is the one place that says what the lifespan put there.
+    return cast(AppState, request.state)
+
+
 def rs(request: Request) -> restate.RestateClient:
-    return cast(restate.RestateClient, request.app.state.restate)
+    return state(request)["restate"]
 
 
 def live_hub(request: Request) -> live.Hub:
-    return cast(live.Hub, request.app.state.hub)
+    return state(request)["hub"]
 
 
 # __Host- pins the cookie to this exact host over HTTPS (no Domain, Path=/); plain HTTP is local dev.
