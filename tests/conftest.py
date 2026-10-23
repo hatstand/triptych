@@ -24,7 +24,8 @@ def anyio_backend() -> str:
 
 
 @pytest.fixture
-async def database() -> AsyncIterator[None]:
+async def database() -> AsyncIterator[str]:
+    """The URL of a fresh database, which `db` is pointed at."""
     assert ADMIN_URL
     name = f"triptych_test_{uuid.uuid4().hex[:12]}"
     with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
@@ -36,7 +37,7 @@ async def database() -> AsyncIterator[None]:
         conn.execute(cast(LiteralString, ddl))  # our own generated schema dump, not user input
     db.init(url)
     try:
-        yield
+        yield url
     finally:
         await db.close()
         with psycopg.connect(ADMIN_URL, autocommit=True) as admin:

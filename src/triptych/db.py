@@ -27,14 +27,12 @@ from triptych.config import settings
 from triptych.models import InboxItem, Notification, Reservation, Trip, TripSummary
 
 _pool: AsyncConnectionPool | None = None
-_url: str | None = None
 
 
 def init(url: str | None = None) -> None:
     """Point the module at a database (tests use a throwaway one). Opened lazily on first use."""
-    global _pool, _url
-    _url = url or settings.database_url
-    _pool = AsyncConnectionPool(_url, min_size=1, max_size=5, open=False)
+    global _pool
+    _pool = AsyncConnectionPool(url or settings.database_url, min_size=1, max_size=5, open=False)
 
 
 @asynccontextmanager
@@ -61,11 +59,11 @@ async def _changed(conn: AsyncConnection, owner: str) -> None:
     await conn.execute("SELECT pg_notify('triptych_changes', %s)", (owner,))
 
 
-async def changes() -> AsyncGenerator[str | None]:
+async def changes(url: str) -> AsyncGenerator[str | None]:
     """The users whose data changed, as writes commit. Yields None first, once listening: anything
     committed before that was missed, so whoever holds stale state should refresh it. Runs on its
     own connection (a LISTEN can't share a pooled one) until that connection fails."""
-    async with await AsyncConnection.connect(_url or settings.database_url, autocommit=True) as conn:
+    async with await AsyncConnection.connect(url, autocommit=True) as conn:
         await conn.execute("LISTEN triptych_changes")
         yield None
         async for n in conn.notifies():

@@ -30,8 +30,8 @@ def sent(e: ServerSentEvent) -> tuple[str | None, str | None]:
 
 
 async def test_starts_with_everything_then_sends_only_what_changed() -> None:
-    hub, page = live.Hub(), Page()
-    s = live.stream("u1", page.render, hub)
+    hub, page = live.Hub("postgresql://unused"), Page()
+    s = live.stream(hub, "u1", page.render)
     assert (await anext(s)).retry == live.RETRY_MS
     assert [sent(await anext(s)), sent(await anext(s))] == list(page.sections.items())
 
@@ -47,8 +47,8 @@ async def test_starts_with_everything_then_sends_only_what_changed() -> None:
 
 
 async def test_resync_with_no_changes_sends_nothing() -> None:
-    hub, page = live.Hub(), Page()
-    s = live.stream("u1", page.render, hub)
+    hub, page = live.Hub("postgresql://unused"), Page()
+    s = live.stream(hub, "u1", page.render)
     for _ in range(3):
         await anext(s)
     nxt = asyncio.ensure_future(anext(s))
@@ -60,8 +60,8 @@ async def test_resync_with_no_changes_sends_nothing() -> None:
 
 
 async def test_closed_streams_unsubscribe() -> None:
-    hub, page = live.Hub(), Page()
-    s = live.stream("u1", page.render, hub)
+    hub, page = live.Hub("postgresql://unused"), Page()
+    s = live.stream(hub, "u1", page.render)
     await anext(s)
     await s.aclose()
     assert not hub._streams

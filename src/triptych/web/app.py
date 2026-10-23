@@ -51,7 +51,8 @@ MAX_INBOUND = 25 * 1024 * 1024  # Cloudflare Email Routing's own limit
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
     db.init()
-    changes = asyncio.create_task(live.hub.run())
+    app.state.hub = live.Hub(settings.database_url)
+    changes = asyncio.create_task(app.state.hub.run())
     async with restate.create_client(settings.restate_ingress_url) as client:
         app.state.restate = client
         yield
@@ -66,6 +67,10 @@ templates = Jinja2Templates(directory=HERE / "templates")
 
 def rs(request: Request) -> restate.RestateClient:
     return cast(restate.RestateClient, request.app.state.restate)
+
+
+def live_hub(request: Request) -> live.Hub:
+    return cast(live.Hub, request.app.state.hub)
 
 
 # __Host- pins the cookie to this exact host over HTTPS (no Domain, Path=/); plain HTTP is local dev.
@@ -287,9 +292,9 @@ async def home(request: Request, me: User) -> Response:
 
 
 @app.get("/events", response_class=EventSourceResponse)
-async def events(me: User) -> AsyncIterable[ServerSentEvent]:
+async def events(me: User, hub: Annotated[live.Hub, Depends(live_hub)]) -> AsyncIterable[ServerSentEvent]:
     """The home page's live sections, re-sent whenever they change (see live.py, index.html)."""
-    async for e in live.stream(me.id, lambda: home_sections(me)):
+    async for e in live.stream(hub, me.id, lambda: home_sections(me)):
         yield e
 
 

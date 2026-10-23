@@ -31,7 +31,10 @@ Render = Callable[[], Awaitable[dict[str, str]]]
 
 
 class Hub:
-    def __init__(self) -> None:
+    """Which streams are open for which user. One per app, made by its lifespan (web/app.py)."""
+
+    def __init__(self, database_url: str) -> None:
+        self._database_url = database_url
         self._streams: defaultdict[str, set[asyncio.Event]] = defaultdict(set)
 
     @contextmanager
@@ -62,7 +65,7 @@ class Hub:
         delay = 1.0
         while True:
             try:
-                async for user in db.changes():
+                async for user in db.changes(self._database_url):
                     if user is None:
                         delay = 1.0
                         self.resync()
@@ -74,12 +77,9 @@ class Hub:
             delay = min(delay * 2, 30.0)
 
 
-hub = Hub()
-
-
-async def stream(user: str, render: Render, h: Hub = hub) -> AsyncGenerator[ServerSentEvent]:
+async def stream(hub: Hub, user: str, render: Render) -> AsyncGenerator[ServerSentEvent]:
     """The events of one /events response: the HTML of each section that changed."""
-    with h.subscribe(user) as ev:
+    with hub.subscribe(user) as ev:
         yield ServerSentEvent(retry=RETRY_MS, comment="connected")
         sent: dict[str, str] = {}
         while True:
