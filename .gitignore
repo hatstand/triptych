@@ -8,3 +8,5 @@ node_modules/
 *.swp
 *.swo
 *~
+# Compiled from frontend/ (npm run build, or the Dockerfile).
+src/triptych/web/static/js/

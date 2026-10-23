@@ -1,12 +1,16 @@
 """Passkey sign-up and sign-in end to end, through the web app, with a software authenticator
 standing in for the browser + device."""
 
+import base64
 import hashlib
 import json
 import os
 import secrets
 import struct
+import time
+import uuid
 from collections.abc import AsyncIterator
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -17,6 +21,7 @@ from webauthn.helpers import base64url_to_bytes, bytes_to_base64url, encode_cbor
 
 from triptych import auth, db
 from triptych.config import settings
+from triptych.models import Kind, Reservation
 from triptych.web.app import SESSION_COOKIE, app
 
 pytestmark = [
@@ -26,6 +31,17 @@ pytestmark = [
 
 ME = "me@example.com"
 ORIGIN = settings.allowed_origins[0]
+
+
+def hotel() -> Reservation:
+    return Reservation(
+        id=str(uuid.uuid4()),
+        kind=Kind.LODGING,
+        title="Hotel",
+        start_local=datetime(2026, 11, 13, 15),
+        end_local=datetime(2026, 11, 17, 11),
+        city="Lisbon",
+    )
 
 
 def b64(b: bytes) -> str:
@@ -124,13 +140,15 @@ async def test_unauthenticated_requests_go_to_login(browser: httpx.AsyncClient) 
 
 
 async def test_invite_sign_up_then_sign_in_with_passkey(browser: httpx.AsyncClient) -> None:
-    # Mail filed for the address before it had an account stays with it.
-    await db.file_reservations(ME, "ingest-1", [])
+    # Mail filed for the address before anyone signed in as its user shows up after sign-up.
+    owner = await db.user_for_email(ME)
+    await db.file_reservations(owner, "ingest-1", [hotel()])
     device = Authenticator()
     resp = await sign_up(browser, device)
     assert resp.status_code == 200, resp.text
     assert resp.json() == {"redirect": "/"}
-    assert (await browser.get("/api/overview")).status_code == 200
+    [trip] = (await browser.get("/api/overview")).json()["trips"]
+    assert trip["destination"] == "Lisbon"
 
     await browser.post("/logout")
     assert SESSION_COOKIE not in browser.cookies
@@ -192,14 +210,37 @@ async def test_assertion_for_another_origin_is_refused(browser: httpx.AsyncClien
     assert resp.status_code == 400 and "origin" in resp.json()["error"]
 
 
-async def test_challenge_is_single_use(browser: httpx.AsyncClient) -> None:
+async def test_ceremony_state_must_be_ours_fresh_and_for_this_step(browser: httpx.AsyncClient) -> None:
     device = Authenticator()
     await sign_up(browser, device)
-    challenge_id, options = await auth.start_login()
+    state, options = auth.start_login()
     assertion = device.get(json.loads(options))
-    assert await auth.finish_login(challenge_id, assertion) == ME
+
+    payload, _, sig = state.partition(".")
+    forged = auth.Ceremony.model_validate_json(base64.urlsafe_b64decode(payload + "=="))
+    forged.challenge = "AAAA"
+    for bad in (None, "", payload + ".0" * 32, auth.seal(forged).partition(".")[0] + "." + sig):
+        with pytest.raises(auth.AuthError, match="expired"):
+            await auth.finish_login(bad, assertion)
+    stale = auth.unseal(state, "login").model_copy(update={"expires": time.time() - 1})
     with pytest.raises(auth.AuthError, match="expired"):
-        await auth.finish_login(challenge_id, assertion)
+        await auth.finish_login(auth.seal(stale), assertion)
+    with pytest.raises(auth.AuthError, match="expired"):
+        await auth.finish_registration(state, assertion, "x")
+
+    assert await auth.finish_login(state, assertion) == await db.user_for_email(ME)
+
+
+async def test_invite_for_another_address_of_the_same_user(browser: httpx.AsyncClient) -> None:
+    owner = await db.user_for_email(ME)
+    async with db.connection() as conn:
+        await conn.execute(
+            "INSERT INTO user_email (email, user_id) VALUES ('alias@example.com', %s)", (owner,)
+        )
+    await sign_up(browser, Authenticator(), email="alias@example.com")
+    assert [k.name for k in await auth.passkeys(owner)] == ["Laptop"]
+    page = await browser.get("/account")
+    assert ME in page.text  # shown by the user's first address
 
 
 async def test_add_and_remove_passkeys_but_never_the_last(browser: httpx.AsyncClient) -> None:
@@ -213,7 +254,7 @@ async def test_add_and_remove_passkeys_but_never_the_last(browser: httpx.AsyncCl
     )
     assert resp.json() == {"redirect": "/account"}
 
-    keys = await auth.passkeys(ME)
+    keys = await auth.passkeys(await db.user_for_email(ME))
     assert [k.name for k in keys] == ["Laptop", "Phone"]
     assert (await browser.post(f"/account/passkeys/{keys[0].id}/delete")).status_code == 303
     resp = await browser.post(f"/account/passkeys/{keys[1].id}/delete")
@@ -228,7 +269,7 @@ async def test_add_and_remove_passkeys_but_never_the_last(browser: httpx.AsyncCl
 async def test_cross_origin_posts_are_refused(browser: httpx.AsyncClient) -> None:
     device = Authenticator()
     await sign_up(browser, device)
-    keys = await auth.passkeys(ME)
+    keys = await auth.passkeys(await db.user_for_email(ME))
     resp = await browser.post(
         f"/account/passkeys/{keys[0].id}/delete", headers={"Origin": "https://evil.example"}
     )

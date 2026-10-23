@@ -1,3 +1,11 @@
+# The browser code is TypeScript (frontend/), compiled to plain JS served from /static/js.
+FROM docker.io/library/node:22.23.4-slim AS frontend
+WORKDIR /frontend
+COPY frontend/package.json frontend/package-lock.json ./
+RUN --mount=type=cache,target=/root/.npm npm ci
+COPY frontend ./
+RUN npm run build -- --outDir /out
+
 # One image for all three Python processes (worker, web, smtp); compose picks the command.
 FROM python:3.13.13-slim-trixie
 
@@ -13,6 +21,7 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-install-proj
 
 # The project is installed editable, so Tilt can live-sync ./src (owned by `app`) without a rebuild.
 COPY --chown=app src ./src
+COPY --chown=app --from=frontend /out ./src/triptych/web/static/js
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 
 USER app

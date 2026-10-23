@@ -169,13 +169,17 @@ uv run python scripts/lint_migrations.py
 
 ## Accounts and sign-in
 
-Users sign in with passkeys (WebAuthn) and nothing else: no passwords, no email links. An
-account is the email address trips are filed under, which is also the address inbound mail is
-matched on. Mail can be filed for an address before it has an account, and those trips show up
-once someone registers a passkey for that address.
+Users sign in with passkeys (WebAuthn) and nothing else: no passwords, no email links.
+
+A **user** is an `app_user` id (a UUID). Everything a user owns (trips, inbox, notifications,
+passkeys, sessions) is keyed by that id, as is the Restate `User` object. Email addresses live in
+`user_email` and point at a user, so a user can have several, and SSO identities can be added the
+same way later. Inbound mail is matched on its DKIM-verified sender address: an address nobody has
+seen before gets a new user, so mail can be filed before its owner ever signs in, and those trips
+are there when they do.
 
 Nothing proves that someone controls an address, so the first passkey needs an **invite**: a
-one-time link, valid for 7 days, printed by
+one-time link, valid for 7 days, for one of the user's addresses, printed by
 
 ```bash
 docker compose exec web python -m triptych.invite you@example.com [--days 1]
@@ -195,7 +199,11 @@ page, and can remove any passkey except their last.
   HTTPS. Only their SHA-256 is stored (`web_session`), so signing out ends them server-side. They
   last 30 days.
 * **CSRF.** POSTs whose `Origin` isn't one of the allowed origins get a 403 (`/inbound` excepted).
-* **Challenges** live in Postgres for 5 minutes and work once.
+* **Challenges** are stateless: the challenge, its purpose, the user and the invite travel in a
+  5-minute cookie signed with `SECRET_KEY` (so set a real one). A challenge isn't strictly
+  single-use within that window, but replaying one needs both that cookie and the authenticator's
+  response from the same ceremony. Invites are still spent in the database.
+* **WebAuthn user handle** is the 16 bytes of the user's UUID: stable, random, and not an address.
 
 ## Development
 
@@ -212,8 +220,14 @@ The `check` resource runs ruff, ty, the migration linter and pytest on every sav
 build a throwaway database from `db/schema.sql` on the compose Postgres and drop it afterwards.
 
 GitHub Actions runs the same checks on every pull request: ruff (lint + format check), ty and
-pytest (against a Postgres service container, so the DB tests run too) for the Python code, and Biome lint, `tsc` and `node --test` for the Email Worker
-(`npm run lint && npm run typecheck && npm test` in `cloudflare/email-worker`).
+pytest (against a Postgres service container, so the DB tests run too) for the Python code,
+Biome lint and `tsc` for the browser code in `frontend/`, and Biome lint, `tsc` and `node --test`
+for the Email Worker (`npm run lint && npm run typecheck && npm test` in `cloudflare/email-worker`).
+
+The browser code is TypeScript in `frontend/src`, compiled by `tsc` (no bundler) into
+`src/triptych/web/static/js/`, which is gitignored. The Dockerfile builds it in a Node stage;
+under Tilt the `frontend` resource runs `tsc --watch` and the output is live-synced like any other
+file in `src`. Without Tilt: `cd frontend && npm ci && npm run build`.
 
 Layout:
 
@@ -226,12 +240,13 @@ src/triptych/
   grouping.py      reservation → trip assignment and trip merging (pure)
   ical.py          .ics export
   db.py            Postgres access: plain SQL → pydantic, idempotent writes for ctx.run
-  auth.py          accounts, passkeys (WebAuthn ceremonies), sessions, invites
+  auth.py          passkeys (WebAuthn ceremonies), sessions, invites
   invite.py        CLI: print a one-time passkey registration link for an address
   services/        Restate handlers: ingest, llm_service, user, reminders, assistant, endpoint
   worker.py        Restate endpoint (hypercorn h2c) + self-registration + flow-control rules
-  web/             FastAPI + Jinja UI and JSON API
+  web/             FastAPI + Jinja UI and JSON API (static/js/ is built from frontend/)
   smtp.py          inbound mail gateway
+frontend/          TypeScript for the browser (tsc → src/triptych/web/static/js)
 db/                migrations/ (hand-written SQL) + schema.sql (generated, committed)
 compose.yaml       postgres, migrate, restate, worker, web, smtp
 compose/           ollama.yaml + gpu-{rocm,vulkan,nvidia}.yaml | host-llm.yaml, dev.yaml (hot reload)
@@ -239,8 +254,8 @@ compose/           ollama.yaml + gpu-{rocm,vulkan,nvidia}.yaml | host-llm.yaml, 
 
 ## Prototype limitations
 
-* Users are keyed by email address, one address per user. Inbound mail is matched on the
-  DKIM-verified sender. The calendar feed is HMAC-signed with `SECRET_KEY`.
+* A user can have several addresses, but nothing in the UI adds a second one yet (insert into
+  `user_email`). The calendar feed is HMAC-signed with `SECRET_KEY`.
 * No live flight status. Alerts are time-based reminders only.
 * Trip grouping is date-based with a 1-day slack, plus confirmation-code and bridging merges.
   Edit or delete segments in the UI when it guesses wrong.

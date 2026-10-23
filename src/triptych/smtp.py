@@ -18,6 +18,7 @@ import restate
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import SMTP, Envelope, Session
 
+from triptych import db
 from triptych.config import settings
 from triptych.inbound import ingest_id_for
 from triptych.models import IngestRequest
@@ -36,14 +37,14 @@ class Handler:
             return "550 sender address required"
         msg = email.message_from_bytes(raw, policy=email.policy.default)
         req = IngestRequest(
-            user=sender.lower(),
+            user=await db.user_for_email(sender),
             source="email",
             subject=str(msg.get("subject") or "") or None,
             content_type="message/rfc822",
             data_b64=base64.b64encode(raw).decode(),
             received_at=datetime.now(UTC),
         )
-        key = ingest_id_for(raw, req.user)
+        key = ingest_id_for(raw, sender.lower())
         try:
             async with restate.create_client(settings.restate_ingress_url) as client:
                 await client.workflow_send(ingest_run, key, req)

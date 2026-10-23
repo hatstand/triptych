@@ -88,7 +88,7 @@ services:
     <<: *app
     command: ["python", "-m", "triptych.smtp"]
     ports: ["${BIND_ADDR:-127.0.0.1}:2525:2525"]
-    depends_on: [restate]
+    depends_on: *after-migrations  # maps the sender's address to a user in Postgres
 
 volumes:
   restate-data:
