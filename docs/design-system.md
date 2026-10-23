@@ -6,7 +6,8 @@ included, at the end), so a new page or component can match it without reverse-e
 CSS. If you change a token or a component, change this file in the same PR.
 
 Everything lives in one stylesheet, `/static/style.css`, loaded by `base.html`. There is no CSS
-framework and no build step for CSS. Pages may add a small `<style>` block in `{% block head %}`
+framework and no build step for CSS. Biome formats and lints it (`src/triptych/web/biome.json`), and
+CI fails a PR whose CSS isn't formatted: run `npm run format:css` in `frontend/` before pushing. Pages may add a small `<style>` block in `{% block head %}`
 for page-only rules (the admin page does).
 
 ## Colour
@@ -85,6 +86,8 @@ There is no spacing scale variable; values in use cluster around a 2/4px rhythm:
 - **Radius:** `10px` cards and panels, `8px` inputs, buttons, menus and toasts, `99px` badges.
 - **Borders:** `1px solid var(--line)` everywhere; a `4px` left border marks a card's kind or
   an alert.
+- **Layout tokens:** `--topbar-h` (`50px`, the top bar's fixed height, which the sticky sidebar
+  subtracts) and `--fade` (`24px`, the length of the inbox's scroll fade).
 - **Shadow:** only floating things get one (the drop toast: `0 4px 16px rgb(0 0 0 / .15)`).
   Cards are flat.
 
@@ -93,13 +96,16 @@ Layout:
 - `main` is centred, max `1100px` wide, padded `20px 16px 60px`.
 - `.grid` is the two-column page: content plus a `340px` sidebar, collapsing to one column
   under `820px`. Home and trip pages use it.
+- On the home page the sidebar (`aside.sidebar`) is sticky above `820px` and capped at the
+  viewport height, so the inbox scrolls inside its card and the calendar feed stays on screen.
+  If the viewport is too short even for a minimum-height inbox, the sidebar itself scrolls.
 - `.narrow` is a single `420px` column for sign-in and registration.
 - Utilities: `.row` (space-between flex row), `.stack` (vertical flex, 8px gap), `.actions`
   (button group), `.muted`, `.small`, `.mono`.
 
 ## Components
 
-**Top bar** `.topbar`: card-coloured strip with the brand (`▲ Triptych`) on the left and the
+**Top bar** `.topbar`: `--topbar-h` tall, card-coloured strip with the brand (`▲ Triptych`) on the left and the
 signed-in email plus a "Sign out" link button on the right.
 
 **Card** `.card`: the basic container. Every sidebar section, trip card and timeline item is
@@ -124,6 +130,11 @@ then the body: title row with a remove link, times (`.when`, with the zone in `.
 route or address, and a `.facts` definition list (two columns: muted label, value).
 
 **Alerts** `.card.alerts`: amber left border and a plain list of timestamped notifications.
+
+**Inbox** `.card.inbox`: the heading, then `.inbox-scroll`, which wraps the live-swapped list
+(`sse-swap="inbox"`) so its scroll position survives updates. On wide screens the list scrolls,
+fading out over `--fade` at the bottom, and also at the top once scrolled where scroll-driven
+animations are supported.
 
 **Inbox item** `.inbox-item`: badge, label, optional message and "view trip →" links, divided
 by `--line` rules.

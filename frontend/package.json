@@ -6,7 +6,9 @@
     "build": "vite build",
     "watch": "vite build --watch",
     "typecheck": "tsc",
-    "lint": "biome lint ."
+    "lint": "biome lint .",
+    "check:css": "cd ../src/triptych/web && biome check .",
+    "format:css": "cd ../src/triptych/web && biome check --write ."
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
