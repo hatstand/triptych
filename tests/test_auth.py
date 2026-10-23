@@ -109,7 +109,7 @@ class Authenticator:
 
 
 @pytest.fixture
-async def browser(database: None) -> AsyncIterator[httpx.AsyncClient]:
+async def browser(database: str) -> AsyncIterator[httpx.AsyncClient]:
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
         yield c

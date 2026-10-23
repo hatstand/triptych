@@ -49,10 +49,10 @@ if llm != "host":
     dc_resource("ollama", labels=["llm"])
     dc_resource("ollama-pull", labels=["llm"], resource_deps=["ollama"])
 
-# Recompiles frontend/src/*.ts into src/triptych/web/static/js, which the sync above ships.
+# Vite rebuilds frontend/src/*.ts into src/triptych/web/static/js, which the sync above ships.
 local_resource(
     "frontend",
-    serve_cmd="npm ci && npm run watch -- --preserveWatchOutput",
+    serve_cmd="npm ci && npm run watch",
     serve_dir="frontend",
     labels=["tools"],
 )

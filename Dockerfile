@@ -1,4 +1,5 @@
-# The browser code is TypeScript (frontend/), compiled to plain JS served from /static/js.
+# The browser code is TypeScript (frontend/), bundled by Vite with its npm dependencies (htmx)
+# into plain JS served from /static/js.
 FROM docker.io/library/node:22.23.4-slim AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./

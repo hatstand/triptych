@@ -221,13 +221,15 @@ build a throwaway database from `db/schema.sql` on the compose Postgres and drop
 
 GitHub Actions runs the same checks on every pull request: ruff (lint + format check), ty and
 pytest (against a Postgres service container, so the DB tests run too) for the Python code,
-Biome lint and `tsc` for the browser code in `frontend/`, and Biome lint, `tsc` and `node --test`
+Biome lint, `tsc` and a Vite build for the browser code in `frontend/`, and Biome lint, `tsc` and `node --test`
 for the Email Worker (`npm run lint && npm run typecheck && npm test` in `cloudflare/email-worker`).
 
-The browser code is TypeScript in `frontend/src`, compiled by `tsc` (no bundler) into
-`src/triptych/web/static/js/`, which is gitignored. The Dockerfile builds it in a Node stage;
-under Tilt the `frontend` resource runs `tsc --watch` and the output is live-synced like any other
-file in `src`. Without Tilt: `cd frontend && npm ci && npm run build`.
+The browser code is TypeScript in `frontend/src`, one entry per page script, bundled by Vite
+(with its npm dependencies, such as htmx) into `src/triptych/web/static/js/<name>.js`, which is
+gitignored; `tsc` only type-checks. The Dockerfile builds it in a Node stage; under Tilt the
+`frontend` resource runs `vite build --watch` and the output is live-synced like any other file in
+`src`. Without Tilt: `cd frontend && npm ci && npm run build`. A new page script goes in
+`frontend/src` and in `ENTRIES` in `frontend/vite.config.ts`.
 
 Layout:
 
@@ -246,7 +248,7 @@ src/triptych/
   worker.py        Restate endpoint (hypercorn h2c) + self-registration + flow-control rules
   web/             FastAPI + Jinja UI and JSON API (static/js/ is built from frontend/)
   smtp.py          inbound mail gateway
-frontend/          TypeScript for the browser (tsc → src/triptych/web/static/js)
+frontend/          TypeScript for the browser (Vite → src/triptych/web/static/js)
 db/                migrations/ (hand-written SQL) + schema.sql (generated, committed)
 compose.yaml       postgres, migrate, restate, worker, web, smtp
 compose/           ollama.yaml + gpu-{rocm,vulkan,nvidia}.yaml | host-llm.yaml, dev.yaml (hot reload)

@@ -1,0 +1,11 @@
+<h2>Upcoming trips</h2>
+{% for t in upcoming %}
+  {% include "_trip_card.html" %}
+{% else %}
+  <p class="muted">No upcoming trips yet. Forward a confirmation email or paste one on the right.</p>
+{% endfor %}
+
+{% if past %}
+<h2>Past trips</h2>
+{% for t in past %}{% include "_trip_card.html" %}{% endfor %}
+{% endif %}

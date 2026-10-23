@@ -17,7 +17,7 @@ pytestmark = [
 
 
 @pytest.fixture
-async def me(database: None) -> str:
+async def me(database: str) -> str:
     return await db.user_for_email("me@example.com")
 
 
@@ -131,11 +131,30 @@ async def test_all_trips_feed_query(me: str) -> None:
     assert sorted(len(t.reservations) for t in trips) == [1, 3]
 
 
-async def test_addresses_map_to_one_user_each(database: None) -> None:
+async def test_addresses_map_to_one_user_each(database: str) -> None:
     me = await db.user_for_email(" Me@Example.com ")
     assert await db.user_for_email("me@example.com") == me
     assert await db.user_for_email("someone@example.com") != me
     assert await db.primary_email(me) == "me@example.com"
+
+
+async def test_writes_announce_whose_data_changed(database: str, me: str) -> None:
+    feed = db.changes(database)
+    assert await anext(feed) is None  # listening: the caller should resync
+    other = await db.user_for_email("someone-else@example.com")
+
+    item = InboxItem(
+        ingest_id="i1", source="upload", label="a", received_at=datetime.now(UTC), state="queued"
+    )
+    await db.add_inbox_item(me, item)
+    await db.add_inbox_item(me, item.model_copy(update={"state": "done"}))  # already there: no-op, no news
+    await db.upsert_inbox(other, item.model_copy(update={"ingest_id": "i2", "state": "parsing"}))
+    await db.dismiss_notifications(me)
+
+    assert [await anext(feed) for _ in range(3)] == [me, other, me]
+    [row] = await db.inbox(me)
+    assert row.state == "queued"
+    await feed.aclose()
 
 
 async def test_admin_ingest_queries_span_users(me: str) -> None:

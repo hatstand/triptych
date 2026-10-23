@@ -4,6 +4,6 @@ services:
     command: ["watchfiles", "--filter", "python", "python -m triptych.worker", "/app/src"]
   web:
     command: ["uvicorn", "triptych.web.app:app", "--host", "0.0.0.0", "--port", "8000",
-              "--reload", "--reload-dir", "/app/src"]
+              "--reload", "--reload-dir", "/app/src", "--timeout-graceful-shutdown", "2"]
   smtp:
     command: ["watchfiles", "--filter", "python", "python -m triptych.smtp", "/app/src"]

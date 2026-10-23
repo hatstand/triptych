@@ -24,11 +24,16 @@ def _label(req: IngestRequest) -> str:
     return req.subject or req.filename or f"{req.source} {req.received_at:%Y-%m-%d %H:%M}"
 
 
+def queued_item(ingest_id: str, req: IngestRequest) -> InboxItem:
+    """How an ingest first appears in the inbox."""
+    return InboxItem(
+        ingest_id=ingest_id, source=req.source, label=_label(req), received_at=req.received_at, state="queued"
+    )
+
+
 @ingest.main(inactivity_timeout=timedelta(minutes=5))
 async def run(ctx: restate.WorkflowContext, req: IngestRequest) -> InboxItem:
-    item = InboxItem(
-        ingest_id=ctx.key(), source=req.source, label=_label(req), received_at=req.received_at, state="queued"
-    )
+    item = queued_item(ctx.key(), req)
 
     async def publish(**changes: object) -> None:
         nonlocal item

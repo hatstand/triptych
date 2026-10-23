@@ -3,13 +3,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "tsc",
-    "watch": "tsc --watch",
-    "typecheck": "tsc --noEmit",
+    "build": "vite build",
+    "watch": "vite build --watch",
+    "typecheck": "tsc",
     "lint": "biome lint ."
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
-    "typescript": "7.0.2"
+    "typescript": "7.0.2",
+    "vite": "8.3.5"
+  },
+  "dependencies": {
+    "htmx-ext-sse": "2.2.4",
+    "htmx.org": "2.0.11"
   }
 }

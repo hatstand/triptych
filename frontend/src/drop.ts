@@ -1,5 +1,6 @@
 // Page-wide drop zone (signed-in pages only): every dropped file goes to POST /plans, the same
-// endpoint as the "Add plans" form, then we land on the home page to watch the inbox.
+// endpoint as the "Add plans" form. The new items show up in the home page's inbox by themselves
+// (see index.html), so from anywhere else we go there.
 
 const ACCEPT = /\.(eml|pdf|html?|txt)$/i;
 const MAX_BYTES = 15 * 1024 * 1024; // keep in step with MAX_UPLOAD in web/app.py
@@ -24,6 +25,13 @@ function show(el: HTMLElement, text: string, error = false): void {
   el.textContent = text;
   el.classList.toggle("error", error);
   el.hidden = false;
+}
+
+function flash(el: HTMLElement, text: string): void {
+  show(el, text);
+  setTimeout(() => {
+    el.hidden = true;
+  }, 4000);
 }
 
 async function upload(files: File[]): Promise<string | null> {
@@ -89,6 +97,11 @@ if (zone && status) {
       show(status, error, true);
       return;
     }
+    if (document.querySelector("[sse-connect]")) {
+      const note = skipped ? ` Skipped ${plural(skipped)} of an unsupported type.` : "";
+      flash(status, `Added ${plural(files.length)}.${note}`);
+      return;
+    }
     try {
       if (skipped) sessionStorage.setItem(SKIPPED_KEY, String(skipped));
     } catch {}
@@ -99,10 +112,7 @@ if (zone && status) {
     const skipped = Number(sessionStorage.getItem(SKIPPED_KEY));
     if (skipped) {
       sessionStorage.removeItem(SKIPPED_KEY);
-      show(status, `Skipped ${plural(skipped)} of an unsupported type.`);
-      setTimeout(() => {
-        status.hidden = true;
-      }, 4000);
+      flash(status, `Skipped ${plural(skipped)} of an unsupported type.`);
     }
   } catch {}
 }

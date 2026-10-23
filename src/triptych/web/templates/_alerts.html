@@ -1,0 +1,10 @@
+{% if notifications %}
+<section class="card alerts">
+  <div class="row"><h2>Alerts</h2>
+    <form method="post" action="/notifications/dismiss"><button class="link">Dismiss all</button></form></div>
+  <ul>{% for n in notifications %}
+    <li><span class="muted">{{ n.at.strftime('%d %b %H:%M') }} UTC</span>
+      {% if n.trip_id %}<a href="/trips/{{ n.trip_id }}">{{ n.text }}</a>{% else %}{{ n.text }}{% endif %}</li>
+  {% endfor %}</ul>
+</section>
+{% endif %}
