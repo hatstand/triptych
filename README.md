@@ -187,6 +187,8 @@ one-time link, valid for 7 days, for one of the user's addresses, printed by
 docker compose exec web python -m triptych.invite you@example.com [--days 1]
 ```
 
+or made from the **Invites** form on the Tailscale-authorised `/admin` page (deploy/README.md).
+
 That's how the first user signs up, how anyone else is let in, and how someone who has lost every
 passkey gets back in. Signed-in users add more passkeys (a phone, a security key) from the account
 page, and can remove any passkey except their last.

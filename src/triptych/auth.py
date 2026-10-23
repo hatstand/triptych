@@ -87,6 +87,22 @@ async def create_invite(email: str, ttl: timedelta = INVITE_TTL) -> str:
     return token
 
 
+class PendingInvite(BaseModel):
+    email: str
+    created_at: datetime
+    expires_at: datetime
+
+
+async def pending_invites() -> list[PendingInvite]:
+    """Unused, unexpired invites, newest first. Tokens are only stored hashed, so no links."""
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """SELECT email, created_at, expires_at FROM invite WHERE expires_at > now()
+               ORDER BY created_at DESC"""
+        )
+        return [PendingInvite(email=e, created_at=c, expires_at=x) for e, c, x in await cur.fetchall()]
+
+
 async def invite_email(token: str) -> str | None:
     async with db.connection() as conn:
         cur = await conn.execute(
