@@ -1,0 +1,9 @@
+{#- Credit for a destination photo (models.Photo), as its Commons licence asks: author, licence and
+    where it came from. `photo_credit` is for a caption; `photo_title` for a tooltip. -#}
+{% macro photo_credit(p) -%}
+Photo: <a href="{{ p.page_url }}">{{ p.artist or p.file.removeprefix('File:') }}</a>
+{%- if p.licence %}, {% if p.licence_url %}<a href="{{ p.licence_url }}">{{ p.licence }}</a>{% else %}{{ p.licence }}{% endif %}{% endif %}, via Wikimedia Commons
+{%- endmacro %}
+{% macro photo_title(p) -%}
+Photo: {{ p.artist or p.file.removeprefix('File:') }}{% if p.licence %}, {{ p.licence }}{% endif %}, via Wikimedia Commons
+{%- endmacro %}

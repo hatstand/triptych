@@ -8,7 +8,7 @@ import pytest
 import restate
 
 from triptych import db
-from triptych.models import InboxItem, IngestState, Kind, Notification, Reservation
+from triptych.models import InboxItem, IngestState, Kind, Notification, PhotoChoice, Reservation
 
 pytestmark = [
     pytest.mark.anyio,
@@ -196,3 +196,42 @@ async def test_admin_ingest_queries_span_users(me: str) -> None:
         ("old", "me@example.com"),
     ]
     assert [i.ingest_id for i in await db.recent_ingests("failed")] == ["b", "old"]
+
+
+async def test_trips_share_their_place_photo_once_stored(me: str) -> None:
+    trip_id = (await db.file_reservations(me, "i1", [outbound(), hotel()])).trip_ids[0]
+    assert await db.places_without_photos([trip_id]) == ["Lisbon"]
+    assert (await db.trip_summaries(me))[0].photo is None
+    assert await db.trip_photo(me, trip_id) is None
+
+    choice = PhotoChoice(
+        file="File:Lisbon.jpg",
+        image_url="https://upload.wikimedia.org/Lisbon.jpg",
+        page_url="https://commons.wikimedia.org/wiki/File:Lisbon.jpg",
+        artist="Some One",
+        licence="CC BY 4.0",
+    )
+    await db.save_place_photo("Lisbon", choice, b"jpeg", "image/jpeg")
+    assert await db.has_place_photo("Lisbon")
+    assert await db.places_without_photos() == []
+    photo = (await db.trip_summaries(me))[0].photo
+    assert photo is not None and photo.artist == "Some One" and photo.version
+    trip = await db.get_trip(me, trip_id)
+    assert trip is not None and trip.photo == photo and trip.name.startswith("Lisbon")
+    assert await db.trip_photo(me, trip_id) == (b"jpeg", "image/jpeg")
+    assert await db.trip_photo(await db.user_for_email("other@example.com"), trip_id) is None
+
+    # Nothing found is remembered, and leaves the trip without a photo.
+    await db.save_place_photo("Lisbon", None, None, None)
+    assert await db.places_without_photos() == []
+    assert (await db.trip_summaries(me))[0].photo is None
+
+
+async def test_older_trips_get_their_place_filled_in(me: str) -> None:
+    trip_id = (await db.file_reservations(me, "i1", [hotel()])).trip_ids[0]
+    async with db.connection() as conn:
+        await conn.execute("UPDATE trip SET place = NULL")
+        await conn.commit()
+    assert await db.places_without_photos() == []
+    await db.fill_places()
+    assert await db.places_without_photos([trip_id]) == ["Lisbon"]

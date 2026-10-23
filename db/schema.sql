@@ -88,6 +88,24 @@ CREATE TABLE public.passkey (
 
 
 --
+-- Name: place_photo; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.place_photo (
+    place text NOT NULL,
+    image bytea,
+    content_type text,
+    file text,
+    page_url text,
+    article_url text,
+    artist text,
+    licence text,
+    licence_url text,
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: reservation; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -135,7 +153,8 @@ CREATE TABLE public.trip (
     name text NOT NULL,
     destination text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    name_edited boolean DEFAULT false NOT NULL
+    name_edited boolean DEFAULT false NOT NULL,
+    place text
 );
 
 
@@ -200,6 +219,14 @@ ALTER TABLE ONLY public.notification
 
 ALTER TABLE ONLY public.passkey
     ADD CONSTRAINT passkey_pkey PRIMARY KEY (credential_id);
+
+
+--
+-- Name: place_photo place_photo_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.place_photo
+    ADD CONSTRAINT place_photo_pkey PRIMARY KEY (place);
 
 
 --
@@ -379,4 +406,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261023120000'),
     ('20261023140000'),
     ('20261023150000'),
-    ('20261023170000');
+    ('20261023170000'),
+    ('20261023180000');

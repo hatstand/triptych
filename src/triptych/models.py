@@ -102,6 +102,24 @@ class Reservation(BaseModel):
         return (self.end_local or self.start_local).date()
 
 
+class PhotoCredit(BaseModel):
+    """Who to credit for a destination photo, and under what licence (Commons licences require it)."""
+
+    file: str
+    """The Commons file name, "File:Lisbon montage.jpg"."""
+    page_url: str
+    """The file's page on Commons, which has the full licence and attribution."""
+    article_url: str | None = None
+    artist: str | None = None
+    licence: str | None = None
+    licence_url: str | None = None
+
+
+class Photo(PhotoCredit):
+    version: str
+    """Changes when the trip's photo does; goes in the image URL so browsers can cache it for good."""
+
+
 class TripSummary(BaseModel):
     id: str
     name: str
@@ -109,6 +127,7 @@ class TripSummary(BaseModel):
     start_date: date
     end_date: date
     reservation_count: int
+    photo: Photo | None = None
 
 
 class Trip(BaseModel):
@@ -117,6 +136,7 @@ class Trip(BaseModel):
     name: str
     destination: str | None = None
     reservations: list[Reservation] = Field(default_factory=list)
+    photo: Photo | None = None
 
     def summary(self) -> TripSummary:
         rs = self.reservations
@@ -127,6 +147,7 @@ class Trip(BaseModel):
             start_date=min(r.start_date for r in rs) if rs else date.today(),
             end_date=max(r.end_date for r in rs) if rs else date.today(),
             reservation_count=len(rs),
+            photo=self.photo,
         )
 
 
@@ -193,6 +214,20 @@ class RemoveReservation(BaseModel):
 class RenameTrip(BaseModel):
     trip_id: str
     name: str
+
+
+class PhotoRequest(BaseModel):
+    place: str
+
+
+class PhotoChoice(PhotoCredit):
+    """The image picked for a place, before it is downloaded."""
+
+    image_url: str
+
+
+class PhotoSearch(BaseModel):
+    choice: PhotoChoice | None = None
 
 
 class Reminder(BaseModel):

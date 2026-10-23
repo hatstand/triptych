@@ -111,6 +111,17 @@ signed-in email plus a "Sign out" link button on the right.
 **Card** `.card`: the basic container. Every sidebar section, trip card and timeline item is
 one. `.trip-card` is a whole-card link whose border turns `--accent` on hover.
 
+**Trip card** `.trip-card`: a row of the destination photo, `.trip-thumb` (`72px` square, `8px`
+radius, cropped to fill), then `.trip-info` (dates, name, item count). A trip without a photo
+yet gets `.trip-thumb.placeholder` instead: the same square in `--bg` with the `place` icon at
+`24px` in `--muted`. The thumbnail's tooltip carries the photo's credit.
+
+**Trip photo** `figure.trip-photo`: the destination photo across the top of the trip page,
+`220px` tall (`160px` under `820px`), `10px` radius, cropped to fill, with its credit in a
+right-aligned `.muted.small` caption: author linked to the Commons file page, licence linked
+to its deed, "via Wikimedia Commons" (`photo_credit` in `_photo.html`). Commons licences
+require the credit wherever the photo appears, so don't show one without it.
+
 **Buttons:**
 - Primary `button` / `.button`: `--accent` fill, white text.
 - Secondary `.button.secondary`: transparent with a `--line` border and `--ink` text (Export

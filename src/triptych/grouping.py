@@ -10,10 +10,12 @@ Two refinements make the result independent of the order emails arrive in:
   first as two trips, then the hotel booking spanning the gap glues them together.
 """
 
+import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
+from triptych import places
 from triptych.models import Kind, Reservation, TripSummary
 
 SLACK = timedelta(days=1)
@@ -52,6 +54,25 @@ def pick_destination(rs: list[Reservation]) -> str | None:
             if r.kind in kinds and r.city:
                 return r.city
     return None
+
+
+# enrich.normalise writes resolved airports and stations as "Lisbon (LIS)".
+_IATA_SUFFIX = re.compile(r"\(([A-Z]{3})\)$")
+
+
+def place_query(rs: list[Reservation]) -> str | None:
+    """What to look a trip's photo up by: its destination, and its country when an airport or station
+    in that city says which ("Lisbon, Portugal"), so Portland, Maine isn't pictured as Oregon."""
+    destination = pick_destination(rs)
+    if destination is None:
+        return None
+    for r in rs:
+        for location in (r.end_location, r.start_location):
+            m = _IATA_SUFFIX.search(location or "")
+            place = places.lookup(m.group(1)) if m else None
+            if place and place.city.casefold() == destination.casefold() and place.country:
+                return f"{destination}, {place.country}"
+    return destination
 
 
 MAX_TITLE_CITIES = 3

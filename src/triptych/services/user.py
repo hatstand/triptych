@@ -10,7 +10,7 @@ import restate
 
 from triptych import db
 from triptych.models import FileRequest, FileResult, RemoveReservation, RenameTrip, TripRef
-from triptych.services import reminders
+from triptych.services import place_photo, reminders
 
 user = restate.VirtualObject("User")
 
@@ -26,13 +26,14 @@ async def file_reservations(ctx: restate.ObjectContext, req: FileRequest) -> Fil
         req.reservations,
     )
     await reminders.schedule(ctx, ctx.key(), filed.reservations)
+    await place_photo.request(ctx, filed.trip_ids)
     return FileResult(trip_ids=filed.trip_ids)
 
 
 @user.handler()
 async def remove_reservation(ctx: restate.ObjectContext, req: RemoveReservation) -> bool:
     """Returns whether the trip still exists."""
-    return await ctx.run_typed(
+    exists = await ctx.run_typed(
         "remove reservation",
         db.remove_reservation,
         restate.RunOptions[bool](),
@@ -40,6 +41,10 @@ async def remove_reservation(ctx: restate.ObjectContext, req: RemoveReservation)
         req.trip_id,
         req.reservation_id,
     )
+    if exists:
+        # Removing the Porto hotel from a Lisbon & Porto trip can move its destination.
+        await place_photo.request(ctx, [req.trip_id])
+    return exists
 
 
 @user.handler()
