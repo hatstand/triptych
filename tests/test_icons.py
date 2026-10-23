@@ -19,7 +19,7 @@ def test_every_kind_has_an_icon_in_the_sprite() -> None:
     kind_icons = icons_module()["kind_icons"]
     assert set(kind_icons) == {k.value for k in Kind}
     for html in kind_icons.values():
-        [name] = re.findall(r'icons\.svg#([\w-]+)"', str(html))
+        [name] = re.findall(r'icons\.svg(?:\?v=\w+)?#([\w-]+)"', str(html))
         assert name in SPRITE
 
 
@@ -35,4 +35,4 @@ def test_trip_page_draws_kind_icons() -> None:
     html = web.templates.get_template("trip.html").render(
         email=None, trip=trip, summary=trip.summary(), days=[(r.start_date, [r])]
     )
-    assert '<use href="/static/js/icons.svg#train"/>' in html
+    assert re.search(r'<use href="/static/js/icons\.svg(\?v=\w+)?#train"/>', html)

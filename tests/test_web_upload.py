@@ -1,3 +1,4 @@
+import os
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 from triptych.auth import Me
 from triptych.models import InboxItem, IngestRequest
 from triptych.web import app as web
+from triptych.web import assets
 
 SAMPLES = Path(__file__).parents[1] / "samples"
 
@@ -117,3 +119,16 @@ def test_trip_photo_is_served_cacheably_and_only_to_its_owner(
     assert resp.headers["content-type"] == "image/jpeg"
     assert "immutable" in resp.headers["cache-control"]
     assert client.get("/trips/someone-elses/photo").status_code == 404
+
+
+def test_static_urls_change_with_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(assets, "STATIC", tmp_path)
+    css = tmp_path / "style.css"
+    css.write_text("a {}")
+    os.utime(css, ns=(1, 1))
+    first = assets.static_url("style.css")
+    assert first.startswith("/static/style.css?v=")
+    css.write_text("b {}")
+    os.utime(css, ns=(2, 2))  # a deploy's copy is newer
+    assert assets.static_url("style.css") not in (first, "/static/style.css")
+    assert assets.static_url("js/missing.js") == "/static/js/missing.js"

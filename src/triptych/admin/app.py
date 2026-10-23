@@ -15,7 +15,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Annotated, Any, get_args
+from typing import Annotated, Any, cast, get_args
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
@@ -24,6 +24,7 @@ from fastapi.templating import Jinja2Templates
 from triptych import db, llm
 from triptych.config import settings
 from triptych.models import IngestState
+from triptych.web.assets import static_url
 
 HERE = Path(__file__).parent
 LOGIN_HEADER = "Tailscale-User-Login"
@@ -40,6 +41,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
 app = FastAPI(title="Triptych admin", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 # Admin templates extend the web app's base.html; /static is served by the web app on the same host.
 templates = Jinja2Templates(directory=[HERE / "templates", HERE.parent / "web" / "templates"])
+# Jinja types globals by its own defaults' types; any value is allowed.
+cast(dict[str, Any], templates.env.globals)["static"] = static_url
 
 
 def tailscale_admin(request: Request) -> str:

@@ -2,7 +2,8 @@
 {% from "_photo.html" import photo_title %}
 <a class="card trip-card" href="/trips/{{ t.id }}">
   {% if t.photo %}
-  <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}" alt="" loading="lazy" title="{{ photo_title(t.photo) }}">
+  <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}" alt="" loading="lazy"
+       width="72" height="72" style="object-position: {{ t.photo.position(1) }}" title="{{ photo_title(t.photo) }}">
   {% else %}
   <div class="trip-thumb placeholder">{{ icon('place') }}</div>
   {% endif %}

@@ -23,6 +23,7 @@ dependencies = [
     "psycopg[binary]==3.3.6",
     "psycopg-pool==3.3.3",
     "webauthn>=3.0.1",
+    "pillow>=13.0.0",
 ]
 
 [dependency-groups]

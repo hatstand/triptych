@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Triptych{% endblock %}</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="{{ static('style.css') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
@@ -23,7 +23,7 @@
       <span class="muted small">Emails (.eml), PDFs, screenshots, HTML or text</span></div>
   </div>
   <div id="drop-status" class="drop-status" role="status" hidden></div>
-  <script type="module" src="/static/js/drop.js"></script>
+  <script type="module" src="{{ static('js/drop.js') }}"></script>
   {% endif %}
 </body>
 </html>

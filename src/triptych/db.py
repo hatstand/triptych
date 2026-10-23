@@ -80,11 +80,13 @@ RESERVATION_COLUMNS = """
 """
 
 # A trip's photo credit (columns named photo_*), from the place_photo row for its place if that has an
-# image. The version is the place and when it was fetched, so it changes with the picture.
+# image. The version is the place and when it was fetched, so it changes with the picture. (Finding the
+# subject later doesn't change it: that only moves the crop, which the page sets, not the image.)
 PHOTO_COLUMNS = """
     CASE WHEN p.image IS NOT NULL THEN left(md5(p.place || p.fetched_at::text), 12) END AS photo_version,
     p.file AS photo_file, p.page_url AS photo_page_url, p.article_url AS photo_article_url,
-    p.artist AS photo_artist, p.licence AS photo_licence, p.licence_url AS photo_licence_url
+    p.artist AS photo_artist, p.licence AS photo_licence, p.licence_url AS photo_licence_url,
+    p.aspect AS photo_aspect, p.subject AS photo_subject
 """
 PHOTO_JOIN = "LEFT JOIN place_photo p ON p.place = t.place"
 
@@ -378,52 +380,91 @@ async def dismiss_notifications(owner: str) -> None:
         await _changed(conn, owner)
 
 
-async def places_without_photos(trip_ids: list[str] | None = None) -> list[str]:
-    """The places of these trips (all trips if None) that haven't been looked up yet."""
+async def places_needing_photos(trip_ids: list[str] | None = None) -> list[str]:
+    """The places of these trips (all trips if None) that haven't been looked up yet, or whose
+    photo's subject hasn't been found yet."""
     async with connection() as conn:
         cur = await conn.execute(
-            """SELECT DISTINCT t.place FROM trip t
+            """SELECT DISTINCT t.place FROM trip t LEFT JOIN place_photo p ON p.place = t.place
                WHERE t.place IS NOT NULL AND (%(ids)s::uuid[] IS NULL OR t.id = ANY(%(ids)s::uuid[]))
-                 AND NOT EXISTS (SELECT 1 FROM place_photo p WHERE p.place = t.place)""",
+                 AND (p.place IS NULL OR (p.image IS NOT NULL AND NOT p.subject_checked))""",
             {"ids": trip_ids},
         )
         return [row[0] for row in await cur.fetchall()]
 
 
-async def has_place_photo(place: str) -> bool:
-    """Whether `place` has been looked up, found or not."""
+class PhotoState(BaseModel):
+    looked_up: bool = False
+    """Whether there's a row: a photo, or a note that there's none."""
+    needs_subject: bool = False
+
+
+async def place_photo_state(place: str) -> PhotoState:
     async with connection() as conn:
-        cur = await conn.execute("SELECT 1 FROM place_photo WHERE place = %s", (place,))
-        return await cur.fetchone() is not None
+        cur = await conn.execute(
+            "SELECT image IS NOT NULL AND NOT subject_checked FROM place_photo WHERE place = %s", (place,)
+        )
+        row = await cur.fetchone()
+    return PhotoState(looked_up=True, needs_subject=row[0]) if row else PhotoState()
+
+
+async def place_photo_image(place: str) -> bytes | None:
+    async with connection() as conn:
+        cur = await conn.execute("SELECT image FROM place_photo WHERE place = %s", (place,))
+        row = await cur.fetchone()
+    return bytes(row[0]) if row and row[0] is not None else None
+
+
+async def _photo_changed(conn: AsyncConnection, place: str) -> None:
+    cur = await conn.execute("SELECT DISTINCT owner::text FROM trip WHERE place = %s", (place,))
+    for (owner,) in await cur.fetchall():
+        await _changed(conn, owner)
 
 
 async def save_place_photo(
-    place: str, choice: PhotoChoice | None, image: bytes | None, content_type: str | None
+    place: str,
+    choice: PhotoChoice | None,
+    image: bytes | None,
+    content_type: str | None,
+    aspect: float | None = None,
 ) -> None:
-    """Record a place's photo, or with no image that there's none to be had."""
+    """Record a place's photo, or with no image that there's none to be had. Its subject is found
+    afterwards (save_photo_subject)."""
     if image is None:
         choice = None
     async with connection() as conn, conn.transaction():
         await conn.execute(
             """
             INSERT INTO place_photo (place, image, content_type, file, page_url, article_url, artist,
-                licence, licence_url)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                licence, licence_url, aspect)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (place) DO UPDATE SET image = EXCLUDED.image,
                 content_type = EXCLUDED.content_type, file = EXCLUDED.file,
                 page_url = EXCLUDED.page_url, article_url = EXCLUDED.article_url,
                 artist = EXCLUDED.artist, licence = EXCLUDED.licence,
-                licence_url = EXCLUDED.licence_url, fetched_at = now()
+                licence_url = EXCLUDED.licence_url, aspect = EXCLUDED.aspect, subject = NULL,
+                subject_checked = false, fetched_at = now()
             """,
             (
                 place, image, content_type if image else None, choice and choice.file,
                 choice and choice.page_url, choice and choice.article_url, choice and choice.artist,
-                choice and choice.licence, choice and choice.licence_url,
+                choice and choice.licence, choice and choice.licence_url, aspect if image else None,
             ),
         )  # fmt: skip
-        cur = await conn.execute("SELECT DISTINCT owner::text FROM trip WHERE place = %s", (place,))
-        for (owner,) in await cur.fetchall():
-            await _changed(conn, owner)
+        await _photo_changed(conn, place)
+
+
+async def save_photo_subject(place: str, box: list[float] | None, aspect: float | None = None) -> None:
+    """Where the photo's main subject is (None: the model found no usable one, so the default crop
+    stays). `aspect` fills it in for photos stored before it was recorded."""
+    async with connection() as conn, conn.transaction():
+        await conn.execute(
+            """UPDATE place_photo SET subject = %s, subject_checked = true,
+                   aspect = coalesce(aspect, %s)
+               WHERE place = %s""",
+            (box, aspect, place),
+        )
+        await _photo_changed(conn, place)
 
 
 async def fill_places() -> None:

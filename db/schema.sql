@@ -101,7 +101,10 @@ CREATE TABLE public.place_photo (
     artist text,
     licence text,
     licence_url text,
-    fetched_at timestamp with time zone DEFAULT now() NOT NULL
+    fetched_at timestamp with time zone DEFAULT now() NOT NULL,
+    aspect real,
+    subject real[],
+    subject_checked boolean DEFAULT false NOT NULL
 );
 
 
@@ -407,4 +410,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261023140000'),
     ('20261023150000'),
     ('20261023170000'),
-    ('20261023180000');
+    ('20261023180000'),
+    ('20261023190000');

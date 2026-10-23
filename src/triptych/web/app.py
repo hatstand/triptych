@@ -39,6 +39,7 @@ from triptych.services import assistant as assistant_svc
 from triptych.services import ingest as ingest_svc
 from triptych.services import user as user_svc
 from triptych.web import live
+from triptych.web.assets import static_url
 
 HERE = Path(__file__).parent
 log = logging.getLogger("triptych.web")
@@ -68,6 +69,8 @@ app = FastAPI(title="Triptych", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["duration"] = journeys.format_duration
+# Jinja types globals by its own defaults' types; any value is allowed.
+cast(dict[str, Any], templates.env.globals)["static"] = static_url
 
 
 def state(request: Request) -> AppState:

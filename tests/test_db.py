@@ -200,7 +200,8 @@ async def test_admin_ingest_queries_span_users(me: str) -> None:
 
 async def test_trips_share_their_place_photo_once_stored(me: str) -> None:
     trip_id = (await db.file_reservations(me, "i1", [outbound(), hotel()])).trip_ids[0]
-    assert await db.places_without_photos([trip_id]) == ["Lisbon"]
+    assert await db.places_needing_photos([trip_id]) == ["Lisbon"]
+    assert await db.place_photo_state("Lisbon") == db.PhotoState()
     assert (await db.trip_summaries(me))[0].photo is None
     assert await db.trip_photo(me, trip_id) is None
 
@@ -211,19 +212,28 @@ async def test_trips_share_their_place_photo_once_stored(me: str) -> None:
         artist="Some One",
         licence="CC BY 4.0",
     )
-    await db.save_place_photo("Lisbon", choice, b"jpeg", "image/jpeg")
-    assert await db.has_place_photo("Lisbon")
-    assert await db.places_without_photos() == []
+    await db.save_place_photo("Lisbon", choice, b"jpeg", "image/jpeg", 1.5)
+    # Stored, but its subject is still to be found.
+    assert await db.place_photo_state("Lisbon") == db.PhotoState(looked_up=True, needs_subject=True)
+    assert await db.places_needing_photos() == ["Lisbon"]
+    assert await db.place_photo_image("Lisbon") == b"jpeg"
     photo = (await db.trip_summaries(me))[0].photo
-    assert photo is not None and photo.artist == "Some One" and photo.version
+    assert photo is not None and photo.artist == "Some One" and photo.version and photo.aspect == 1.5
+    assert photo.subject is None
     trip = await db.get_trip(me, trip_id)
     assert trip is not None and trip.photo == photo and trip.name.startswith("Lisbon")
     assert await db.trip_photo(me, trip_id) == (b"jpeg", "image/jpeg")
     assert await db.trip_photo(await db.user_for_email("other@example.com"), trip_id) is None
 
+    await db.save_photo_subject("Lisbon", [0.25, 0.0, 0.75, 0.5])
+    assert await db.place_photo_state("Lisbon") == db.PhotoState(looked_up=True)
+    assert await db.places_needing_photos() == []
+    photo = (await db.trip_summaries(me))[0].photo
+    assert photo is not None and photo.subject == [0.25, 0.0, 0.75, 0.5] and photo.aspect == 1.5
+
     # Nothing found is remembered, and leaves the trip without a photo.
     await db.save_place_photo("Lisbon", None, None, None)
-    assert await db.places_without_photos() == []
+    assert await db.places_needing_photos() == []
     assert (await db.trip_summaries(me))[0].photo is None
 
 
@@ -232,6 +242,6 @@ async def test_older_trips_get_their_place_filled_in(me: str) -> None:
     async with db.connection() as conn:
         await conn.execute("UPDATE trip SET place = NULL")
         await conn.commit()
-    assert await db.places_without_photos() == []
+    assert await db.places_needing_photos() == []
     await db.fill_places()
-    assert await db.places_without_photos([trip_id]) == ["Lisbon"]
+    assert await db.places_needing_photos([trip_id]) == ["Lisbon"]
