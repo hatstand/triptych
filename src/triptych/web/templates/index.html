@@ -33,7 +33,8 @@
       <p class="muted small">Email <code>plans@localhost</code> on port 2525 from <b>{{ email }}</b>, or:</p>
       <form method="post" action="/plans" enctype="multipart/form-data" class="stack">
         <textarea name="text" rows="6" placeholder="Paste a confirmation email…"></textarea>
-        <input type="file" name="file" accept=".eml,.pdf,.html,.txt,image/*">
+        <input type="file" name="file" multiple accept=".eml,.pdf,.html,.txt,image/*">
+        <p class="muted small">Or drop files anywhere on the page.</p>
         <button>Add to Triptych</button>
       </form>
     </section>

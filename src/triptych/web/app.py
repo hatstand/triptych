@@ -264,31 +264,40 @@ async def add_plans(
     me: User,
     client: Client,
     text: Annotated[str, Form()] = "",
-    file: Annotated[UploadFile | None, File()] = None,
+    file: Annotated[list[UploadFile] | None, File()] = None,
 ) -> Response:
-    if file is not None and file.filename:
-        data = await file.read(MAX_UPLOAD + 1)
+    """The "Add plans" form, and the page-wide drop zone (which posts every dropped file at once).
+    Each file becomes its own ingest, exactly like one forwarded email."""
+    now = datetime.now(UTC)
+    reqs: list[IngestRequest] = []
+    for f in file or []:
+        if not f.filename:
+            continue
+        data = await f.read(MAX_UPLOAD + 1)
         if len(data) > MAX_UPLOAD:
-            raise HTTPException(413, "file too large")
-        req = IngestRequest(
-            user=me.id,
-            source="upload",
-            filename=file.filename,
-            content_type=file.content_type or "application/octet-stream",
-            data_b64=base64.b64encode(data).decode(),
-            received_at=datetime.now(UTC),
+            raise HTTPException(413, f"{f.filename} is too large")
+        reqs.append(
+            IngestRequest(
+                user=me.id,
+                source="upload",
+                filename=f.filename,
+                content_type=f.content_type or "application/octet-stream",
+                data_b64=base64.b64encode(data).decode(),
+                received_at=now,
+            )
         )
-    elif text.strip():
-        req = IngestRequest(
-            user=me.id,
-            source="paste",
-            subject=text.strip().splitlines()[0][:80],
-            data_b64=base64.b64encode(text.encode()).decode(),
-            received_at=datetime.now(UTC),
+    if not reqs and text.strip():
+        reqs.append(
+            IngestRequest(
+                user=me.id,
+                source="paste",
+                subject=text.strip().splitlines()[0][:80],
+                data_b64=base64.b64encode(text.encode()).decode(),
+                received_at=now,
+            )
         )
-    else:
-        return RedirectResponse("/", status_code=303)
-    await client.workflow_send(ingest_svc.run, f"web-{uuid.uuid4()}", req)
+    for req in reqs:
+        await client.workflow_send(ingest_svc.run, f"web-{uuid.uuid4()}", req)
     return RedirectResponse("/", status_code=303)
 
 
