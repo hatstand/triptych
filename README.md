@@ -221,7 +221,8 @@ build a throwaway database from `db/schema.sql` on the compose Postgres and drop
 
 GitHub Actions runs the same checks on every pull request: ruff (lint + format check), ty and
 pytest (against a Postgres service container, so the DB tests run too) for the Python code,
-Biome lint, `tsc` and a Vite build for the browser code in `frontend/`, and Biome lint, `tsc` and `node --test`
+Biome lint, `tsc` and a Vite build for the browser code in `frontend/`, a Biome format + lint check of
+`src/triptych/web/static/*.css` (fix with `npm run format:css` in `frontend/`), and Biome lint, `tsc` and `node --test`
 for the Email Worker (`npm run lint && npm run typecheck && npm test` in `cloudflare/email-worker`).
 
 The browser code is TypeScript in `frontend/src`, one entry per page script, bundled by Vite

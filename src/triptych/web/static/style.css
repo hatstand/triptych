@@ -1,88 +1,427 @@
 :root {
-  --bg: #f4f5f7; --card: #fff; --ink: #1d2330; --muted: #6b7280; --line: #e3e6eb;
-  --accent: #1f6feb; --accent-ink: #fff; --danger: #c62828;
-  --flight: #1f6feb; --lodging: #8e44ad; --car: #e67e22; --rail: #16a085;
-  --restaurant: #c0392b; --activity: #d4a017; --other: #7f8c8d;
-  --topbar-h: 50px; --fade: 24px;
+  --bg: #f4f5f7;
+  --card: #fff;
+  --ink: #1d2330;
+  --muted: #6b7280;
+  --line: #e3e6eb;
+  --accent: #1f6feb;
+  --accent-ink: #fff;
+  --danger: #c62828;
+  --flight: #1f6feb;
+  --lodging: #8e44ad;
+  --car: #e67e22;
+  --rail: #16a085;
+  --restaurant: #c0392b;
+  --activity: #d4a017;
+  --other: #7f8c8d;
+  --topbar-h: 50px;
+  --fade: 24px;
 }
 @media (prefers-color-scheme: dark) {
-  :root { --bg: #11141a; --card: #1a1f28; --ink: #e6e9ef; --muted: #9aa3b2; --line: #2a313d; }
+  :root {
+    --bg: #11141a;
+    --card: #1a1f28;
+    --ink: #e6e9ef;
+    --muted: #9aa3b2;
+    --line: #2a313d;
+  }
 }
-* { box-sizing: border-box; }
-body { margin: 0; font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
-a { color: var(--accent); text-decoration: none; }
-h1 { margin: .2em 0; font-size: 1.6rem; } h2 { font-size: 1.05rem; margin: 0 0 .6em; } h3 { margin: 0; }
-code, .mono { font-family: ui-monospace, monospace; font-size: .9em; }
-.topbar { display: flex; justify-content: space-between; align-items: center; padding: 0 24px; height: var(--topbar-h);
-  background: var(--card); border-bottom: 1px solid var(--line); }
-.brand { font-weight: 700; color: var(--ink); letter-spacing: .02em; }
-.who { display: flex; gap: 10px; align-items: center; color: var(--muted); }
-main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 60px; }
-.grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 20px; align-items: start; }
-@media (max-width: 820px) { .grid { grid-template-columns: 1fr; } }
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  font:
+    15px / 1.45 system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+h1 {
+  margin: 0.2em 0;
+  font-size: 1.6rem;
+}
+h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.6em;
+}
+h3 {
+  margin: 0;
+}
+code,
+.mono {
+  font-family: ui-monospace, monospace;
+  font-size: 0.9em;
+}
+.topbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 24px;
+  height: var(--topbar-h);
+  background: var(--card);
+  border-bottom: 1px solid var(--line);
+}
+.brand {
+  font-weight: 700;
+  color: var(--ink);
+  letter-spacing: 0.02em;
+}
+.who {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--muted);
+}
+main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 20px 16px 60px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: 20px;
+  align-items: start;
+}
+@media (max-width: 820px) {
+  .grid {
+    grid-template-columns: 1fr;
+  }
+}
 /* Wide screens: the sidebar is pinned to the viewport, so only the inbox scrolls and the calendar feed
    stays in view. Its height leaves room for the topbar and main's padding at the top of the page. */
 @media (min-width: 821px) {
-  .sidebar { position: sticky; top: 20px; display: flex; flex-direction: column;
-    max-height: calc(100dvh - var(--topbar-h) - 40px); overflow-y: auto; }
-  .sidebar > .card { flex: none; } .sidebar > .card:last-child { margin-bottom: 0; }
-  .sidebar > .inbox { flex: 0 1 auto; min-height: 6rem; display: flex; flex-direction: column; }
-  .sidebar > .inbox { padding-bottom: 0; }
+  .sidebar {
+    position: sticky;
+    top: 20px;
+    display: flex;
+    flex-direction: column;
+    max-height: calc(100dvh - var(--topbar-h) - 40px);
+    overflow-y: auto;
+  }
+  .sidebar > .card {
+    flex: none;
+  }
+  .sidebar > .card:last-child {
+    margin-bottom: 0;
+  }
+  .sidebar > .inbox {
+    flex: 0 1 auto;
+    min-height: 6rem;
+    display: flex;
+    flex-direction: column;
+  }
+  .sidebar > .inbox {
+    padding-bottom: 0;
+  }
   /* Fade the list out at the bottom instead of cutting it off; the padding gives the last item room to
      scroll clear of the fade. Where supported, a matching fade appears at the top once scrolled. */
-  .inbox-scroll { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding-bottom: var(--fade);
-    mask-image: linear-gradient(transparent, #000 var(--fade-top), #000 calc(100% - var(--fade)), transparent); }
+  .inbox-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    padding-bottom: var(--fade);
+    mask-image: linear-gradient(
+      transparent,
+      #000 var(--fade-top),
+      #000 calc(100% - var(--fade)),
+      transparent
+    );
+  }
   @supports (animation-timeline: scroll()) {
-    .inbox-scroll { animation: inbox-fade-top linear both; animation-timeline: scroll(self); animation-range: 0 var(--fade); }
+    .inbox-scroll {
+      animation: inbox-fade-top linear both;
+      animation-timeline: scroll(self);
+      animation-range: 0 var(--fade);
+    }
   }
 }
-@property --fade-top { syntax: "<length>"; inherits: false; initial-value: 0px; }
-@keyframes inbox-fade-top { to { --fade-top: var(--fade); } }
-.card { display: block; background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; margin-bottom: 12px; color: inherit; }
-.narrow { max-width: 420px; margin: 60px auto; }
-.row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
-.stack { display: flex; flex-direction: column; gap: 8px; }
-.muted { color: var(--muted); } .small { font-size: .85rem; }
-input, textarea, button, .button { font: inherit; border-radius: 8px; }
-input, textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
-button, .button { padding: 8px 14px; border: 0; background: var(--accent); color: var(--accent-ink); cursor: pointer; display: inline-block; }
-.button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
-button.link { background: none; color: var(--accent); padding: 0; }
-button.danger { background: var(--danger); }
-.trip-card { transition: border-color .15s; } .trip-card:hover { border-color: var(--accent); }
-.trip-name { font-size: 1.15rem; font-weight: 600; margin: 2px 0; }
-.trip-dates { color: var(--muted); font-size: .9rem; }
-.alerts { border-left: 4px solid var(--activity); } .alerts ul { margin: 0; padding-left: 18px; }
-.inbox-item { padding: 8px 0; border-top: 1px solid var(--line); } .inbox-item:first-of-type { border-top: 0; }
-.inbox-item .label { margin-left: 6px; }
-.badge { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; padding: 2px 7px; border-radius: 99px; background: var(--line); }
-.badge.done { background: #d1f4dd; color: #146c2e; } .badge.failed { background: #fde0e0; color: var(--danger); }
-.badge.no_travel { background: #eceff3; color: var(--muted); }
-.badge.queued, .badge.parsing, .badge.extracting, .badge.filing { background: #dbe9ff; color: var(--accent); animation: pulse 1.2s infinite; }
-@keyframes pulse { 50% { opacity: .55; } }
-.trip-header { margin: 8px 0 18px; align-items: flex-end; }
-.actions { display: flex; gap: 8px; align-items: flex-start; }
-.menu { position: relative; } .menu summary { list-style: none; }
-.menu-panel { position: absolute; right: 0; top: 44px; width: 260px; z-index: 2; background: var(--card);
-  border: 1px solid var(--line); padding: 10px; border-radius: 8px; gap: 12px; }
-.day { margin: 18px 0 8px; font-size: .95rem; color: var(--muted); font-weight: 600; }
-.segment { display: flex; gap: 14px; border-left: 4px solid var(--other); }
-.segment .icon { font-size: 1.4rem; width: 28px; text-align: center; }
-.segment .body { flex: 1; min-width: 0; }
-.segment .when { font-size: 1.05rem; margin: 2px 0; }
-.segment.flight { border-left-color: var(--flight); } .segment.lodging { border-left-color: var(--lodging); }
-.segment.car { border-left-color: var(--car); } .segment.rail { border-left-color: var(--rail); }
-.segment.restaurant { border-left-color: var(--restaurant); } .segment.activity { border-left-color: var(--activity); }
-.facts { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 8px 0 0; font-size: .9rem; }
-.facts dt { color: var(--muted); } .facts dd { margin: 0; }
-.answer { margin-top: 12px; padding: 10px 12px; background: var(--bg); border-radius: 8px; white-space: pre-wrap; }
-.error { color: var(--danger); margin: 0; }
-.passkey { padding: 8px 0; border-top: 1px solid var(--line); }
-.dropzone { position: fixed; inset: 0; z-index: 10; display: flex; align-items: center; justify-content: center;
-  background: color-mix(in srgb, var(--accent) 18%, transparent); outline: 3px dashed var(--accent); outline-offset: -12px; }
-.dropzone[hidden], .drop-status[hidden] { display: none; }
-.dropzone-panel { display: flex; flex-direction: column; gap: 4px; align-items: center; padding: 18px 26px;
-  background: var(--card); border: 1px solid var(--line); border-radius: 10px; pointer-events: none; }
-.drop-status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 11; padding: 10px 16px;
-  background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .15); }
-.drop-status.error { border-color: var(--danger); color: var(--danger); }
+@property --fade-top {
+  syntax: "<length>";
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes inbox-fade-top {
+  to {
+    --fade-top: var(--fade);
+  }
+}
+.card {
+  display: block;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin-bottom: 12px;
+  color: inherit;
+}
+.narrow {
+  max-width: 420px;
+  margin: 60px auto;
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.muted {
+  color: var(--muted);
+}
+.small {
+  font-size: 0.85rem;
+}
+input,
+textarea,
+button,
+.button {
+  font: inherit;
+  border-radius: 8px;
+}
+input,
+textarea {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--ink);
+}
+button,
+.button {
+  padding: 8px 14px;
+  border: 0;
+  background: var(--accent);
+  color: var(--accent-ink);
+  cursor: pointer;
+  display: inline-block;
+}
+.button.secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+button.link {
+  background: none;
+  color: var(--accent);
+  padding: 0;
+}
+button.danger {
+  background: var(--danger);
+}
+.trip-card {
+  transition: border-color 0.15s;
+}
+.trip-card:hover {
+  border-color: var(--accent);
+}
+.trip-name {
+  font-size: 1.15rem;
+  font-weight: 600;
+  margin: 2px 0;
+}
+.trip-dates {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.alerts {
+  border-left: 4px solid var(--activity);
+}
+.alerts ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.inbox-item {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.inbox-item:first-of-type {
+  border-top: 0;
+}
+.inbox-item .label {
+  margin-left: 6px;
+}
+.badge {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 7px;
+  border-radius: 99px;
+  background: var(--line);
+}
+.badge.done {
+  background: #d1f4dd;
+  color: #146c2e;
+}
+.badge.failed {
+  background: #fde0e0;
+  color: var(--danger);
+}
+.badge.no_travel {
+  background: #eceff3;
+  color: var(--muted);
+}
+.badge.queued,
+.badge.parsing,
+.badge.extracting,
+.badge.filing {
+  background: #dbe9ff;
+  color: var(--accent);
+  animation: pulse 1.2s infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.55;
+  }
+}
+.trip-header {
+  margin: 8px 0 18px;
+  align-items: flex-end;
+}
+.actions {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.menu {
+  position: relative;
+}
+.menu summary {
+  list-style: none;
+}
+.menu-panel {
+  position: absolute;
+  right: 0;
+  top: 44px;
+  width: 260px;
+  z-index: 2;
+  background: var(--card);
+  border: 1px solid var(--line);
+  padding: 10px;
+  border-radius: 8px;
+  gap: 12px;
+}
+.day {
+  margin: 18px 0 8px;
+  font-size: 0.95rem;
+  color: var(--muted);
+  font-weight: 600;
+}
+.segment {
+  display: flex;
+  gap: 14px;
+  border-left: 4px solid var(--other);
+}
+.segment .icon {
+  font-size: 1.4rem;
+  width: 28px;
+  text-align: center;
+}
+.segment .body {
+  flex: 1;
+  min-width: 0;
+}
+.segment .when {
+  font-size: 1.05rem;
+  margin: 2px 0;
+}
+.segment.flight {
+  border-left-color: var(--flight);
+}
+.segment.lodging {
+  border-left-color: var(--lodging);
+}
+.segment.car {
+  border-left-color: var(--car);
+}
+.segment.rail {
+  border-left-color: var(--rail);
+}
+.segment.restaurant {
+  border-left-color: var(--restaurant);
+}
+.segment.activity {
+  border-left-color: var(--activity);
+}
+.facts {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 8px 0 0;
+  font-size: 0.9rem;
+}
+.facts dt {
+  color: var(--muted);
+}
+.facts dd {
+  margin: 0;
+}
+.answer {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-radius: 8px;
+  white-space: pre-wrap;
+}
+.error {
+  color: var(--danger);
+  margin: 0;
+}
+.passkey {
+  padding: 8px 0;
+  border-top: 1px solid var(--line);
+}
+.dropzone {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: 3px dashed var(--accent);
+  outline-offset: -12px;
+}
+.dropzone[hidden],
+.drop-status[hidden] {
+  display: none;
+}
+.dropzone-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  align-items: center;
+  padding: 18px 26px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  pointer-events: none;
+}
+.drop-status {
+  position: fixed;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 11;
+  padding: 10px 16px;
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.15);
+}
+.drop-status.error {
+  border-color: var(--danger);
+  color: var(--danger);
+}
