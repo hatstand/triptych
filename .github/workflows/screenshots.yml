@@ -1,0 +1,79 @@
+name: Screenshots
+
+# Light and dark screenshots of the main pages, posted on each pull request next to main's, as
+# clementine-player/Clementine's Screenshots job does. Each push to main replaces main's.
+# The images live on the `screenshots` branch, pushed with this run's GITHUB_TOKEN (no stored
+# secret). Pull requests from forks get a read-only token, so theirs are only the run's artifact.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  take:
+    runs-on: ubuntu-26.04
+    permissions:
+      contents: read
+    services:
+      postgres:
+        image: docker.io/library/postgres:18.4-alpine
+        env:
+          POSTGRES_USER: triptych
+          POSTGRES_PASSWORD: triptych
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U triptych" --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      # The image's own empty database, which the script loads db/schema.sql into.
+      DATABASE_URL: postgresql://triptych:triptych@127.0.0.1:5432/triptych
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build the frontend
+        working-directory: frontend
+        run: npm ci && npm run build
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --locked
+      - run: uv run playwright install --with-deps chromium
+      - name: Take screenshots
+        timeout-minutes: 5
+        run: uv run python scripts/screenshots.py screenshots
+      - uses: actions/upload-artifact@v7.0.1
+        with:
+          name: screenshots
+          path: screenshots/
+
+  post:
+    needs: take
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-26.04
+    # Not cancelled by a newer push: a run that's pushing to the branch finishes first.
+    concurrency:
+      group: ${{ github.workflow }}-post-${{ github.ref }}
+    permissions:
+      contents: write # the screenshots branch
+      pull-requests: write # the screenshots comment
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8.0.1
+        with:
+          name: screenshots
+          path: screenshots
+      - name: Post the screenshots
+        env:
+          TARGET: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || 'main' }}
+        run: scripts/post_screenshots.sh screenshots "$TARGET"

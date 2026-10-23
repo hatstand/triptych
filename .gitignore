@@ -11,3 +11,4 @@ node_modules/
 # Compiled from frontend/ (npm run build, or the Dockerfile).
 src/triptych/web/static/js/
 run/
+screenshots/
