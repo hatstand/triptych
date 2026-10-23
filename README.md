@@ -180,6 +180,10 @@ with Restate on every start**, so new or changed handlers are picked up within a
 The `check` resource runs ruff, ty, the migration linter and pytest on every save. The DB tests
 build a throwaway database from `db/schema.sql` on the compose Postgres and drop it afterwards.
 
+GitHub Actions runs the same checks on every pull request: ruff (lint + format check), ty and
+pytest for the Python code, and Biome lint, `tsc` and `node --test` for the Email Worker
+(`npm run lint && npm run typecheck && npm test` in `cloudflare/email-worker`).
+
 Layout:
 
 ```

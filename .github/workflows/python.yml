@@ -1,0 +1,30 @@
+name: Python
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v7
+        with:
+          # Match the Dockerfile. Without a pin, uv picks the newest Python, which restate-sdk has no wheels for.
+          python-version: "3.13"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Lint
+        run: uv run ruff check src tests scripts
+      - name: Format
+        run: uv run ruff format --check src tests scripts
+      - name: Type check
+        run: uv run ty check
+      - name: Test
+        run: uv run pytest -q
