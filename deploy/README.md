@@ -99,6 +99,23 @@ Open the printed link (it uses `PUBLIC_BASE_URL`, which must be the address you 
 `https://triptych.axolotl-goblin.ts.net`) and create a passkey. Add a second one from the account
 page so a lost device doesn't lock you out; if it does, issue yourself another invite.
 
+### Restate UI
+
+The Restate admin API + UI stays on marvin's loopback unless you set `RESTATE_ADMIN_BIND` in
+`/srv/triptych/.env` to marvin's Tailscale IP (`tailscale ip -4`). Then it's at
+`http://marvin:9070` from the tailnet, while Postgres, ingress, web and smtp stay on loopback. It
+has no auth of its own, so the tailnet policy is what guards it (the `tag:ci` test above already
+denies CI access to 9070).
+
+If the docker service can start before tailscaled has the address, the bind fails and the
+restate container doesn't come up. Allow binding addresses that aren't up yet:
+
+```bash
+echo 'net.ipv4.ip_nonlocal_bind = 1' | sudo tee /etc/sysctl.d/99-triptych.conf && sudo sysctl --system
+```
+
+Without `RESTATE_ADMIN_BIND`, tunnel instead: `ssh -L 9070:127.0.0.1:9070 marvin`.
+
 ## Manual deploy / rollback
 
 Run the **Deploy** workflow from the Actions tab, or from a tailnet device that can SSH as
