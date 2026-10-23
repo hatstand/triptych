@@ -1,0 +1,19 @@
+{
+  "plane": "plane",
+  "takeoff": "plane-takeoff",
+  "landing": "plane-landing",
+  "train": "train-front",
+  "bus": "bus",
+  "ferry": "ship",
+  "car": "car",
+  "rental": "key-round",
+  "hotel": "bed-double",
+  "restaurant": "utensils",
+  "ticket": "ticket",
+  "luggage": "luggage",
+  "layover": "clock",
+  "transfer": "arrow-left-right",
+  "warning": "triangle-alert",
+  "place": "map-pin",
+  "calendar": "calendar"
+}

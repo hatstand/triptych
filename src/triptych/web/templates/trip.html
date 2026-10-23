@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% block title %}{{ trip.name }} · Triptych{% endblock %}
 {% block content %}
-{% set icons = {'flight': '✈', 'lodging': '🛏', 'car': '🚗', 'rail': '🚆', 'restaurant': '🍽', 'activity': '🎟', 'other': '•'} %}
+{% from "_icons.html" import icon, kind_icons as icons %}
 <a href="/" class="small">← All trips</a>
 <div class="row trip-header">
   <div>

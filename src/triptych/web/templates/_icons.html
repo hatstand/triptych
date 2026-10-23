@@ -1,0 +1,9 @@
+{#- Icons from the sprite that the frontend build emits as /static/js/icons.svg (names in
+    frontend/src/icons.json; docs/design-system.md shows them all). Pass a label when the icon is
+    the only thing saying what something is; otherwise it is hidden from screen readers. -#}
+{% macro icon(name, label=none) -%}
+<svg class="i" {% if label %}role="img" aria-label="{{ label }}"{% else %}aria-hidden="true"{% endif %}><use href="/static/js/icons.svg#{{ name }}"/></svg>
+{%- endmacro %}
+{#- One icon per reservation kind (models.Kind). -#}
+{% set kind_icons = {'flight': icon('plane'), 'lodging': icon('hotel'), 'car': icon('car'), 'rail': icon('train'),
+  'restaurant': icon('restaurant'), 'activity': icon('ticket'), 'other': icon('place')} %}
