@@ -1,11 +1,11 @@
-# The browser code is TypeScript (frontend/), compiled to plain JS served from /static/js along
-# with the pinned libraries it vendors (htmx).
+# The browser code is TypeScript (frontend/), bundled by Vite with its npm dependencies (htmx)
+# into plain JS served from /static/js.
 FROM docker.io/library/node:22.23.4-slim AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci
 COPY frontend ./
-RUN npm run build -- --outDir /out && npm run vendor -- /out
+RUN npm run build -- --outDir /out
 
 # One image for all three Python processes (worker, web, smtp); compose picks the command.
 FROM python:3.13.13-slim-trixie

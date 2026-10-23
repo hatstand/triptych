@@ -1,14 +1,15 @@
 {
+  // Type checking only (`npm run typecheck`); Vite does the build (vite.config.ts).
   "compilerOptions": {
     "target": "es2022",
-    "module": "es2022",
+    "module": "esnext",
+    "moduleResolution": "bundler",
     "lib": ["es2022", "dom", "dom.iterable"],
+    "types": ["vite/client"],
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "skipLibCheck": true,
-    // Served as-is by FastAPI from /static (gitignored; built by the Dockerfile, or `npm run build`).
-    "outDir": "../src/triptych/web/static/js",
-    "rootDir": "src"
+    "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src", "vite.config.ts"]
 }

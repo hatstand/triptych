@@ -1,8 +1,5 @@
 {% extends "base.html" %}
-{% block head %}
-<script defer src="/static/js/vendor/htmx.min.js"></script>
-<script defer src="/static/js/vendor/sse.min.js"></script>
-{% endblock %}
+{% block head %}<script type="module" src="/static/js/live.js"></script>{% endblock %}
 {% block content %}
 {# /events re-renders the sse-swap sections from these same partials as they change (web/live.py) #}
 <div hx-ext="sse" sse-connect="/events">
