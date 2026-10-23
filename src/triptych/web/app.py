@@ -5,7 +5,6 @@ import asyncio
 import base64
 import hashlib
 import hmac
-import itertools
 import logging
 import uuid
 from collections.abc import AsyncGenerator, AsyncIterable
@@ -23,7 +22,7 @@ from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
-from triptych import auth, db, ical, inbound, llm
+from triptych import auth, db, ical, inbound, journeys, llm
 from triptych.config import settings
 from triptych.models import (
     Answer,
@@ -33,7 +32,6 @@ from triptych.models import (
     Overview,
     RemoveReservation,
     RenameTrip,
-    Reservation,
     Trip,
     TripRef,
 )
@@ -69,6 +67,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[AppState]:
 app = FastAPI(title="Triptych", lifespan=lifespan)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
+templates.env.filters["duration"] = journeys.format_duration
 
 
 def state(request: Request) -> AppState:
@@ -158,10 +157,6 @@ async def overview(owner: str) -> Overview:
         db.trip_summaries(owner), db.inbox(owner), db.notifications(owner)
     )
     return Overview(trips=trips, inbox=inbox, notifications=notifications)
-
-
-def by_day(rs_: list[Reservation]) -> list[tuple[date, list[Reservation]]]:
-    return [(d, list(g)) for d, g in itertools.groupby(rs_, key=lambda r: r.start_date)]
 
 
 # --- pages -----------------------------------------------------------------------------------
@@ -361,7 +356,7 @@ async def trip_page(request: Request, trip_id: str, me: User) -> Response:
     return templates.TemplateResponse(
         request,
         "trip.html",
-        {"email": me.email, "trip": t, "summary": t.summary(), "days": by_day(t.reservations)},
+        {"email": me.email, "trip": t, "summary": t.summary(), "days": journeys.timeline(t.reservations)},
     )
 
 
@@ -380,7 +375,7 @@ async def trip_ask(
             "email": me.email,
             "trip": t,
             "summary": t.summary(),
-            "days": by_day(t.reservations),
+            "days": journeys.timeline(t.reservations),
             "question": question,
             "answer": answer.text,
         },

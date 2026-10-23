@@ -16,7 +16,6 @@ dependencies = [
     "pypdf>=5.1",
     "pypdfium2>=4.30",
     "beautifulsoup4>=4.12",
-    "airportsdata>=20241001",
     "icalendar>=6.1",
     "watchfiles>=1.0",
     "dkimpy[arc]>=1.1.8",
@@ -47,6 +46,8 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+# Trip names span months with an en dash ("November–December 2026").
+allowed-confusables = ["–"]
 
 [tool.ty.environment]
 python-version = "3.13"
