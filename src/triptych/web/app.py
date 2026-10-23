@@ -6,6 +6,7 @@ import base64
 import hashlib
 import hmac
 import itertools
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -40,6 +41,7 @@ from triptych.services import ingest as ingest_svc
 from triptych.services import user as user_svc
 
 HERE = Path(__file__).parent
+log = logging.getLogger("triptych.web")
 MAX_UPLOAD = 15 * 1024 * 1024
 MAX_INBOUND = 25 * 1024 * 1024  # Cloudflare Email Routing's own limit
 
@@ -74,7 +76,21 @@ async def same_origin_writes(request: Request, call_next: RequestResponseEndpoin
     if request.method not in ("GET", "HEAD", "OPTIONS") and request.url.path != "/inbound":
         origin = request.headers.get("origin")
         if origin is not None and origin not in settings.allowed_origins:
-            return Response("cross-origin request refused", status_code=403)
+            # Usually PUBLIC_BASE_URL not matching the address bar (http vs https, a port, another
+            # hostname), so say what was expected.
+            allowed = ", ".join(settings.allowed_origins)
+            log.warning(
+                "refused %s %s from origin %s (allowed: %s)",
+                request.method,
+                request.url.path,
+                origin,
+                allowed,
+            )
+            msg = f"Requests from {origin} are refused; this server expects {allowed} (PUBLIC_BASE_URL)."
+            return JSONResponse(
+                {"error": msg},
+                status_code=403,
+            )
     return await call_next(request)
 
 
