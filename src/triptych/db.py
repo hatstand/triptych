@@ -373,3 +373,33 @@ async def notifications(owner: str) -> list[Notification]:
             (owner,),
         )
         return await cur.fetchall()
+
+
+# --- admin (every user's data; only the Tailscale-gated admin app calls these) ----------------
+
+
+class AdminInboxItem(InboxItem):
+    owner: str
+    """The owner's primary address (their user id if they have none)."""
+
+
+async def ingest_counts(since: datetime) -> dict[str, int]:
+    async with connection() as conn:
+        cur = await conn.execute(
+            "SELECT state, count(*)::int FROM inbox_item WHERE received_at >= %s GROUP BY state", (since,)
+        )
+        return {state: n for state, n in await cur.fetchall()}
+
+
+async def recent_ingests(state: str | None = None, limit: int = 100) -> list[AdminInboxItem]:
+    async with connection() as conn, conn.cursor(row_factory=class_row(AdminInboxItem)) as cur:
+        await cur.execute(
+            """SELECT ingest_id, source, label, received_at, state, message,
+                      ARRAY(SELECT x::text FROM unnest(trip_ids) x) AS trip_ids,
+                      coalesce((SELECT email FROM user_email e WHERE e.user_id = i.owner
+                                ORDER BY created_at, email LIMIT 1), owner::text) AS owner
+               FROM inbox_item i WHERE %(state)s::text IS NULL OR state = %(state)s
+               ORDER BY received_at DESC LIMIT %(limit)s""",
+            {"state": state, "limit": limit},
+        )
+        return await cur.fetchall()

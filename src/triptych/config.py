@@ -20,6 +20,7 @@ class Settings:
     secret_key: str
     inbound_token: str | None
     inbound_allowed_senders: frozenset[str]
+    admin_logins: frozenset[str]
 
     # Passkeys are bound to the RP ID: the UI's hostname, or a parent domain of it. Changing it
     # later strands every registered passkey, so set WEBAUTHN_RP_ID to the parent domain up front
@@ -65,6 +66,10 @@ def load() -> Settings:
             o.strip().rstrip("/") for o in env("WEBAUTHN_ORIGINS", "").split(",") if o.strip()
         )
         or (origin_of(public_base_url),),
+        # Tailscale logins (Tailscale-User-Login) allowed into the admin app; empty = nobody.
+        admin_logins=frozenset(
+            a.strip().lower() for a in env("ADMIN_TAILSCALE_LOGINS", "").split(",") if a.strip()
+        ),
     )
 
 

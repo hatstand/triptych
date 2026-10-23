@@ -21,6 +21,7 @@ x-app: &app
     SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
     INBOUND_TOKEN: ${INBOUND_TOKEN:-}
     INBOUND_ALLOWED_SENDERS: ${INBOUND_ALLOWED_SENDERS:-}
+    ADMIN_TAILSCALE_LOGINS: ${ADMIN_TAILSCALE_LOGINS:-}
 
 x-after-migrations: &after-migrations
   restate:
@@ -83,6 +84,17 @@ services:
     <<: *app
     command: ["uvicorn", "triptych.web.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers"]
     ports: ["${BIND_ADDR:-127.0.0.1}:8000:8000"]
+    depends_on: *after-migrations
+
+  # Tailscale-authorised admin pages. Unix socket only, so the identity headers can come from
+  # nowhere but `tailscale serve` (see triptych/admin/app.py and deploy/README.md). Opt in with
+  # COMPOSE_PROFILES=admin after creating ADMIN_SOCKET_DIR owned by uid 10001, mode 0700.
+  admin:
+    <<: *app
+    profiles: [admin]
+    command: ["uvicorn", "triptych.admin.app:app", "--uds", "/run/triptych/admin.sock"]
+    volumes:
+      - ${ADMIN_SOCKET_DIR:-./run}:/run/triptych
     depends_on: *after-migrations
 
   smtp:
