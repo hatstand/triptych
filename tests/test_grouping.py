@@ -1,7 +1,7 @@
 import itertools
 from datetime import date, datetime
 
-from triptych.grouping import assign
+from triptych.grouping import assign, trip_title
 from triptych.models import Kind, Reservation, TripSummary
 
 
@@ -101,3 +101,23 @@ def test_bridging_reservation_merges_existing_trips() -> None:
     assert len(buckets) == 1
     assert buckets[0].trip_id == "out" and buckets[0].absorbed == ["back"]
     assert (buckets[0].start, buckets[0].end) == (date(2026, 11, 12), date(2026, 11, 17))
+
+
+def test_trip_title_names_where_you_stay_and_when() -> None:
+    flight = res(Kind.FLIGHT, "2026-11-12T15:40", "2026-11-13T11:25", "Lisbon")
+    lisbon = res(Kind.LODGING, "2026-11-13T15:00", "2026-11-15T11:00", "Lisbon")
+    porto = res(Kind.LODGING, "2026-11-15T15:00", "2026-12-02T11:00", "Porto")
+    assert trip_title([flight]) == "Lisbon, November 2026"
+    assert trip_title([flight, lisbon]) == "Lisbon, November 2026"
+    assert trip_title([porto, flight, lisbon]) == "Lisbon & Porto, November–December 2026"
+
+
+def test_trip_title_caps_cities_and_spans_years() -> None:
+    stays = [
+        res(Kind.LODGING, f"2026-12-{d}T15:00", None, city)
+        for d, city in ((20, "Tokyo"), (22, "Kyoto"), (24, "Osaka"), (26, "Nara"))
+    ]
+    assert trip_title(stays) == "Tokyo, Kyoto & 2 more, December 2026"
+    stays.append(res(Kind.FLIGHT, "2027-01-02T10:00", None, "London"))
+    assert trip_title(stays[:3] + stays[4:]) == "Tokyo, Kyoto & Osaka, December 2026–January 2027"
+    assert trip_title([res(Kind.ACTIVITY, "2026-12-20T10:00")]) == "Trip, December 2026"

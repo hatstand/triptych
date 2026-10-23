@@ -169,6 +169,17 @@ async def _fill_timezones(conn: AsyncConnection, trip_id: str) -> None:
             )
 
 
+async def _retitle(conn: AsyncConnection, trip_id: str) -> None:
+    """Refit a trip's destination, and its name unless its owner has renamed it, to everything now
+    in it: what started as "Lisbon" becomes "Lisbon & Porto" once the Porto hotel is filed."""
+    rs = await _reservations(conn, [trip_id])
+    await conn.execute(
+        """UPDATE trip SET destination = %s, name = CASE WHEN name_edited THEN name ELSE %s END
+           WHERE id = %s""",
+        (grouping.pick_destination(rs), grouping.trip_title(rs), trip_id),
+    )
+
+
 # --- users -----------------------------------------------------------------------------------
 # A user is an app_user id. Email addresses (and, later, other identities) point at it; everything
 # a user owns is keyed by the id, which is what `owner` means throughout.
@@ -242,14 +253,14 @@ async def file_reservations(owner: str, ingest_id: str, reservations: list[Reser
                 for absorbed in b.absorbed:
                     await _merge_trip(conn, absorbed, b.trip_id)
                 if b.is_new:
-                    name = grouping.trip_name(b.destination, b.start)
                     await conn.execute(
                         "INSERT INTO trip (id, owner, name, destination) VALUES (%s, %s, %s, %s)",
-                        (b.trip_id, owner, name, b.destination),
+                        (b.trip_id, owner, grouping.trip_title(b.reservations), b.destination),
                     )
                 for r in b.reservations:
                     await _upsert_reservation(conn, b.trip_id, r)
                 await _fill_timezones(conn, b.trip_id)
+                await _retitle(conn, b.trip_id)
             already = [b.trip_id for b in buckets]
             await _changed(conn, owner)
 
@@ -286,7 +297,9 @@ async def rename_trip(owner: str, trip_id: str, name: str) -> None:
     async with connection() as conn, conn.transaction():
         await _owned(conn, owner, trip_id)
         if name.strip():
-            await conn.execute("UPDATE trip SET name = %s WHERE id = %s", (name.strip(), trip_id))
+            await conn.execute(
+                "UPDATE trip SET name = %s, name_edited = true WHERE id = %s", (name.strip(), trip_id)
+            )
             await _changed(conn, owner)
 
 
