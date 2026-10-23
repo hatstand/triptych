@@ -225,6 +225,19 @@ Biome lint, `tsc` and a Vite build for the browser code in `frontend/`, a Biome 
 `src/triptych/web/static/*.css` (fix with `npm run format:css` in `frontend/`), and Biome lint, `tsc` and `node --test`
 for the Email Worker (`npm run lint && npm run typecheck && npm test` in `cloudflare/email-worker`).
 
+Each pull request also gets a comment with light and dark screenshots of the login, home, trip,
+account and admin pages, next to main's (`.github/workflows/screenshots.yml`).
+`scripts/screenshots.py` seeds an empty database with fixture trips and an inbox, runs the web and
+admin apps and captures them with headless Chromium; `scripts/post_screenshots.sh` commits the
+images to the `screenshots` branch and updates the comment. To take them locally, against a
+scratch database and with the frontend built:
+
+```bash
+createdb -h 127.0.0.1 -U triptych screenshots
+uv run playwright install chromium
+DATABASE_URL=postgresql://triptych:triptych@127.0.0.1:5432/screenshots uv run python scripts/screenshots.py screenshots
+```
+
 The browser code is TypeScript in `frontend/src`, one entry per page script, bundled by Vite
 (with its npm dependencies, such as htmx) into `src/triptych/web/static/js/<name>.js`, which is
 gitignored; `tsc` only type-checks. The Dockerfile builds it in a Node stage; under Tilt the
