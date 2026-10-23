@@ -75,5 +75,6 @@ async def dashboard(request: Request, login: Admin, state: str | None = None) ->
             "counts": counts,
             "ingests": ingests,
             "llm": llm_status,
+            "restate_ui_url": settings.restate_ui_url,
         },
     )
