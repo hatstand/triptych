@@ -41,13 +41,14 @@
       </div>
       <div class="muted small">
         {{ j.summary }} · {{ j.duration | duration }} total
-        {% for stop, wait in j.connections %}· {{ wait | duration }} in {{ stop }} {% endfor %}
+        {% for c in j.connections if not c.changes %}· {{ c.wait | duration }} {{ c.where }} {% endfor %}
       </div>
+      {% for c in j.connections if c.warning %}<div class="warning small">⚠ {{ c.warning }}</div>{% endfor %}
     </div>
   </summary>
   <div class="legs">
     {% for r in j.legs %}
-      {% if not loop.first %}{% set stop, wait = j.connections[loop.index0 - 1] %}<div class="layover muted small">{{ wait | duration }} layover in {{ stop }}</div>{% endif %}
+      {% if not loop.first %}{% set c = j.connections[loop.index0 - 1] %}<div class="layover small{{ ' warning' if c.changes else ' muted' }}">{% if c.changes %}⚠ {% endif %}{{ c.wait | duration }} layover {{ c.where }}</div>{% endif %}
       {{ segment(r) }}
     {% endfor %}
   </div>

@@ -76,3 +76,6 @@ button.danger { background: var(--danger); }
 .journey .legs { padding: 0 16px 4px 58px; }
 .journey .legs .segment { margin-bottom: 0; }
 .layover { padding: 6px 0 6px 14px; border-left: 2px dashed var(--line); margin-left: 18px; }
+.warning { color: #9a6700; font-weight: 600; margin-top: 4px; }
+@media (prefers-color-scheme: dark) { .warning { color: #e3b341; } }
+.layover.warning { border-left-color: var(--activity); }

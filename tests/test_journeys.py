@@ -13,6 +13,7 @@ def leg(
     to: str,
     tz: tuple[str | None, str | None] = (None, None),
     kind: Kind = Kind.FLIGHT,
+    city: str | None = None,
 ) -> Reservation:
     return Reservation(
         id=id,
@@ -24,6 +25,7 @@ def leg(
         end_tz=tz[1],
         start_location=frm,
         end_location=to,
+        city=city,
     )
 
 
@@ -110,6 +112,67 @@ def test_trains_connect_by_station_name() -> None:
     assert j.stops == ["London St Pancras", "Paris Gare du Nord", "Lyon Part-Dieu"]
 
 
+def test_changing_airport_in_the_same_city_still_connects() -> None:
+    a = leg("VN51", "2026-12-20T07:00", "2026-12-20T13:30", "Ho Chi Minh City (SGN)", "London (LHR)")
+    b = leg("EZY801", "2026-12-20T18:00", "2026-12-20T19:30", "London (LGW)", "Edinburgh (EDI)")
+    [j] = items([a, b])
+    assert isinstance(j, Journey)
+    assert j.stops == ["SGN", "LHR/LGW", "EDI"]
+    assert [c.where for c in j.connections] == ["changing LHR → LGW"]
+    assert [c.warning for c in j.connections] == ["Airport change: LHR → LGW, 4h 30m to make it"]
+    trip = Trip(id="t", owner="u", name="Edinburgh", reservations=[a, b])
+    html = web.templates.get_template("trip.html").render(
+        email=None, trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
+    )
+    assert '<div class="warning small">⚠ Airport change: LHR → LGW' in html
+
+
+def test_different_cities_do_not_connect() -> None:
+    a = leg("BA1", "2026-12-20T07:00", "2026-12-20T09:00", "London (LHR)", "New York (JFK)")
+    b = leg("UA2", "2026-12-20T12:00", "2026-12-20T15:00", "Newark (EWR)", "Chicago (ORD)")
+    assert all(isinstance(i, Reservation) for i in items([a, b]))
+
+
+def test_station_to_airport_in_the_same_city_connects() -> None:
+    a = leg(
+        "ES9014",
+        "2027-01-21T08:31",
+        "2027-01-21T11:47",
+        "Paris Gare du Nord",
+        "London St Pancras",
+        kind=Kind.RAIL,
+    )
+    b = leg("BA117", "2027-01-21T16:00", "2027-01-21T19:00", "London (LHR)", "New York (JFK)")
+    [j] = items([a, b])
+    assert isinstance(j, Journey)
+    assert j.summary == "2 segments"
+
+
+def test_stations_connect_across_town_using_the_arrival_city() -> None:
+    a = leg(
+        "ES9014",
+        "2027-01-21T08:31",
+        "2027-01-21T11:47",
+        "London St Pancras",
+        "Paris Gare du Nord",
+        kind=Kind.RAIL,
+        city="Paris",
+    )
+    b = leg(
+        "TGV6201",
+        "2027-01-21T13:40",
+        "2027-01-21T15:40",
+        "Paris Gare de Lyon",
+        "Lyon Part-Dieu",
+        kind=Kind.RAIL,
+    )
+    c = leg(
+        "TER1", "2027-01-21T13:40", "2027-01-21T15:40", "Lille Flandres", "Lyon Part-Dieu", kind=Kind.RAIL
+    )
+    assert isinstance(items([a, b])[0], Journey)
+    assert all(isinstance(i, Reservation) for i in items([a, c]))
+
+
 def test_other_items_stay_in_order_around_a_journey() -> None:
     dinner = Reservation(
         id="dinner", kind=Kind.RESTAURANT, title="Dinner", start_local=datetime(2026, 12, 2, 22, 30)
@@ -134,5 +197,6 @@ def test_trip_page_renders_journey_with_expandable_segments() -> None:
     )
     assert "LHR → SGN → SYD" in html
     assert "3h 15m layover in SGN" in html
+    assert "⚠" not in html
     assert html.count('<article class="card segment flight">') == 2
     assert "/reservations/VN773/delete" in html
