@@ -57,8 +57,9 @@ Then:
 
 1. Tag marvin: Machines → marvin → **Edit ACL tags** → `tag:marvin`.
 2. Trust credentials → **Credential** → **OpenID Connect** → issuer **GitHub**.
-   Subject: `repo:hatstand/triptych:environment:marvin`. Scope: **Auth Keys (write)** with tag
-   `tag:ci`. Copy the **Client ID** and **Audience**.
+   Subject: `repo:hatstand@314491/triptych@1430922288:environment:marvin`. This repo's tokens
+   carry the owner and repo IDs; if it doesn't match, Tailscale shows the subject it received.
+   Scope: **Auth Keys (write)** with tag `tag:ci`. Copy the **Client ID** and **Audience**.
 
 ### GitHub (repo settings)
 
