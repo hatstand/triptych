@@ -117,8 +117,6 @@ main {
     min-height: 6rem;
     display: flex;
     flex-direction: column;
-  }
-  .sidebar > .inbox {
     padding-bottom: 0;
   }
   /* Fade the list out at the bottom instead of cutting it off; the padding gives the last item room to
@@ -319,15 +317,26 @@ button.danger {
   color: var(--muted);
   font-weight: 600;
 }
+.i {
+  width: 1.25em;
+  height: 1.25em;
+  flex: none;
+  vertical-align: -0.25em;
+}
 .segment {
+  --kind: var(--other);
   display: flex;
   gap: 14px;
-  border-left: 4px solid var(--other);
+  border-left: 4px solid var(--kind);
 }
 .segment .icon {
-  font-size: 1.4rem;
   width: 28px;
-  text-align: center;
+  padding-top: 2px;
+  color: var(--kind);
+}
+.segment .icon .i {
+  width: 24px;
+  height: 24px;
 }
 .segment .body {
   flex: 1;
@@ -338,22 +347,22 @@ button.danger {
   margin: 2px 0;
 }
 .segment.flight {
-  border-left-color: var(--flight);
+  --kind: var(--flight);
 }
 .segment.lodging {
-  border-left-color: var(--lodging);
+  --kind: var(--lodging);
 }
 .segment.car {
-  border-left-color: var(--car);
+  --kind: var(--car);
 }
 .segment.rail {
-  border-left-color: var(--rail);
+  --kind: var(--rail);
 }
 .segment.restaurant {
-  border-left-color: var(--restaurant);
+  --kind: var(--restaurant);
 }
 .segment.activity {
-  border-left-color: var(--activity);
+  --kind: var(--activity);
 }
 .facts {
   display: grid;
@@ -424,4 +433,56 @@ button.danger {
 .drop-status.error {
   border-color: var(--danger);
   color: var(--danger);
+}
+.journey {
+  display: block;
+  padding: 0;
+}
+.journey > summary {
+  display: flex;
+  gap: 14px;
+  padding: 14px 16px;
+  cursor: pointer;
+  list-style: none;
+}
+.journey > summary::-webkit-details-marker {
+  display: none;
+}
+.journey > summary .body::after {
+  content: "Show segments ▾";
+  display: block;
+  margin-top: 4px;
+  color: var(--accent);
+  font-size: 0.85rem;
+}
+.journey[open] > summary .body::after {
+  content: "Hide segments ▴";
+}
+.journey .route {
+  font-size: 1.05rem;
+  letter-spacing: 0.02em;
+}
+.journey .legs {
+  padding: 0 16px 4px 58px;
+}
+.journey .legs .segment {
+  margin-bottom: 0;
+}
+.layover {
+  padding: 6px 0 6px 14px;
+  border-left: 2px dashed var(--line);
+  margin-left: 18px;
+}
+.warning {
+  color: #9a6700;
+  font-weight: 600;
+  margin-top: 4px;
+}
+@media (prefers-color-scheme: dark) {
+  .warning {
+    color: #e3b341;
+  }
+}
+.layover.warning {
+  border-left-color: var(--activity);
 }

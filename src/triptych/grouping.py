@@ -54,8 +54,31 @@ def pick_destination(rs: list[Reservation]) -> str | None:
     return None
 
 
-def trip_name(destination: str | None, start: date) -> str:
-    return f"{destination or 'Trip'}, {start:%B %Y}"
+MAX_TITLE_CITIES = 3
+
+
+def trip_title(rs: list[Reservation]) -> str:
+    """A name for a trip from everything in it: where you stay (else the destination) and when.
+    "Lisbon, November 2026", "Lisbon & Porto, November 2026", "Tokyo, Kyoto & Osaka, March–April 2027".
+    Recomputed as reservations are added, so it grows with the itinerary until the user renames it."""
+    ordered = sorted(rs, key=lambda r: r.start_local)
+    stays = list(dict.fromkeys(r.city for r in ordered if r.kind is Kind.LODGING and r.city))
+    if not stays and (destination := pick_destination(ordered)):
+        stays = [destination]
+    if len(stays) > MAX_TITLE_CITIES:
+        stays = [*stays[: MAX_TITLE_CITIES - 1], f"{len(stays) - MAX_TITLE_CITIES + 1} more"]
+    where = " & ".join([", ".join(stays[:-1]), stays[-1]] if len(stays) > 1 else stays) or "Trip"
+    start = min((r.start_date for r in ordered), default=None)
+    end = max((r.end_date for r in ordered), default=None)
+    if start is None or end is None:
+        return where
+    if (start.year, start.month) == (end.year, end.month):
+        when = f"{start:%B %Y}"
+    elif start.year == end.year:
+        when = f"{start:%B}–{end:%B %Y}"
+    else:
+        when = f"{start:%B %Y}–{end:%B %Y}"
+    return f"{where}, {when}"
 
 
 def _units(new: list[Reservation]) -> list[list[Reservation]]:

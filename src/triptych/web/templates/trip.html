@@ -1,7 +1,59 @@
 {% extends "base.html" %}
 {% block title %}{{ trip.name }} · Triptych{% endblock %}
 {% block content %}
-{% set icons = {'flight': '✈', 'lodging': '🛏', 'car': '🚗', 'rail': '🚆', 'restaurant': '🍽', 'activity': '🎟', 'other': '•'} %}
+{% from "_icons.html" import icon, kind_icons as icons %}
+{% macro segment(r) %}
+<article class="card segment {{ r.kind.value }}">
+  <div class="icon">{{ icons[r.kind.value] }}</div>
+  <div class="body">
+    <div class="row">
+      <b>{{ r.title }}</b>
+      <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/delete"
+            onsubmit="return confirm('Remove this item?')"><button class="link small">remove</button></form>
+    </div>
+    <div class="when">
+      {{ r.start_local.strftime('%H:%M') }}{% if r.start_tz %} <span class="muted small">{{ r.start_tz }}</span>{% endif %}
+      {% if r.end_local %} → {% if r.end_local.date() != r.start_local.date() %}{{ r.end_local.strftime('%a %d %b') }} {% endif %}{{ r.end_local.strftime('%H:%M') }}{% if r.end_tz and r.end_tz != r.start_tz %} <span class="muted small">{{ r.end_tz }}</span>{% endif %}{% endif %}
+    </div>
+    {% if (r.start_location or r.end_location) and r.start_location != r.address %}<div>{{ r.start_location or '' }}{% if r.end_location %} → {{ r.end_location }}{% endif %}</div>{% endif %}
+    {% if r.address %}<div class="muted small">{{ r.address }}</div>{% endif %}
+    <dl class="facts">
+      {% if r.provider %}<dt>Provider</dt><dd>{{ r.provider }}</dd>{% endif %}
+      {% if r.confirmation_code %}<dt>Confirmation</dt><dd class="mono">{{ r.confirmation_code }}</dd>{% endif %}
+      {% if r.flight_number %}<dt>Flight</dt><dd>{{ r.flight_number }}</dd>{% endif %}
+      {% if r.seat %}<dt>Seat</dt><dd>{{ r.seat }}</dd>{% endif %}
+      {% if r.travelers %}<dt>Travelers</dt><dd>{{ r.travelers | join(', ') }}</dd>{% endif %}
+    </dl>
+    {% if r.notes %}<div class="muted small">{{ r.notes }}</div>{% endif %}
+  </div>
+</article>
+{% endmacro %}
+{% macro journey(j) %}
+{% set first, last = j.legs[0], j.legs[-1] %}
+<details class="card segment journey {{ j.kind.value }}">
+  <summary>
+    <div class="icon">{{ icons[j.kind.value] }}</div>
+    <div class="body">
+      <b class="route">{{ j.stops | join(' → ') }}</b>
+      <div class="when">
+        {{ first.start_local.strftime('%H:%M') }}{% if first.start_tz %} <span class="muted small">{{ first.start_tz }}</span>{% endif %}
+        → {% if last.end_local.date() != first.start_local.date() %}{{ last.end_local.strftime('%a %d %b') }} {% endif %}{{ last.end_local.strftime('%H:%M') }}{% if last.end_tz and last.end_tz != first.start_tz %} <span class="muted small">{{ last.end_tz }}</span>{% endif %}
+      </div>
+      <div class="muted small">
+        {{ j.summary }} · {{ j.duration | duration }} total
+        {% for c in j.connections if not c.changes %}· {{ c.wait | duration }} {{ c.where }} {% endfor %}
+      </div>
+      {% for c in j.connections if c.warning %}<div class="warning small">{{ icon('warning') }} {{ c.warning }}</div>{% endfor %}
+    </div>
+  </summary>
+  <div class="legs">
+    {% for r in j.legs %}
+      {% if not loop.first %}{% set c = j.connections[loop.index0 - 1] %}<div class="layover small{{ ' warning' if c.changes else ' muted' }}">{{ icon('transfer') if c.changes else icon('layover') }} {{ c.wait | duration }} layover {{ c.where }}</div>{% endif %}
+      {{ segment(r) }}
+    {% endfor %}
+  </div>
+</details>
+{% endmacro %}
 <a href="/" class="small">← All trips</a>
 <div class="row trip-header">
   <div>
@@ -24,31 +76,8 @@
   <section class="timeline">
     {% for day, items in days %}
       <h3 class="day">{{ day.strftime('%A, %d %B %Y') }}</h3>
-      {% for r in items %}
-      <article class="card segment {{ r.kind.value }}">
-        <div class="icon">{{ icons[r.kind.value] }}</div>
-        <div class="body">
-          <div class="row">
-            <b>{{ r.title }}</b>
-            <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/delete"
-                  onsubmit="return confirm('Remove this item?')"><button class="link small">remove</button></form>
-          </div>
-          <div class="when">
-            {{ r.start_local.strftime('%H:%M') }}{% if r.start_tz %} <span class="muted small">{{ r.start_tz }}</span>{% endif %}
-            {% if r.end_local %} → {% if r.end_local.date() != r.start_local.date() %}{{ r.end_local.strftime('%a %d %b') }} {% endif %}{{ r.end_local.strftime('%H:%M') }}{% if r.end_tz and r.end_tz != r.start_tz %} <span class="muted small">{{ r.end_tz }}</span>{% endif %}{% endif %}
-          </div>
-          {% if (r.start_location or r.end_location) and r.start_location != r.address %}<div>{{ r.start_location or '' }}{% if r.end_location %} → {{ r.end_location }}{% endif %}</div>{% endif %}
-          {% if r.address %}<div class="muted small">{{ r.address }}</div>{% endif %}
-          <dl class="facts">
-            {% if r.provider %}<dt>Provider</dt><dd>{{ r.provider }}</dd>{% endif %}
-            {% if r.confirmation_code %}<dt>Confirmation</dt><dd class="mono">{{ r.confirmation_code }}</dd>{% endif %}
-            {% if r.flight_number %}<dt>Flight</dt><dd>{{ r.flight_number }}</dd>{% endif %}
-            {% if r.seat %}<dt>Seat</dt><dd>{{ r.seat }}</dd>{% endif %}
-            {% if r.travelers %}<dt>Travelers</dt><dd>{{ r.travelers | join(', ') }}</dd>{% endif %}
-          </dl>
-          {% if r.notes %}<div class="muted small">{{ r.notes }}</div>{% endif %}
-        </div>
-      </article>
+      {% for item in items %}
+        {% if item.legs is defined %}{{ journey(item) }}{% else %}{{ segment(item) }}{% endif %}
       {% endfor %}
     {% endfor %}
   </section>
