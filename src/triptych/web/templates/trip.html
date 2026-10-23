@@ -58,7 +58,9 @@
 <a href="/" class="small">← All trips</a>
 {% if trip.photo %}
 <figure class="trip-photo">
-  <img src="/trips/{{ trip.id }}/photo?v={{ trip.photo.version }}" alt="{{ trip.destination or '' }}">
+  {#- The frame's shape is fixed (style.css), so the crop that keeps the subject in it is known. -#}
+  <img src="/trips/{{ trip.id }}/photo?v={{ trip.photo.version }}" alt="{{ trip.destination or '' }}"
+       style="--focus: {{ trip.photo.position(5) }}; --focus-narrow: {{ trip.photo.position(2.5) }}">
   <figcaption class="muted small">{{ photo_credit(trip.photo) }}</figcaption>
 </figure>
 {% endif %}

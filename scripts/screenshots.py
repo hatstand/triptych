@@ -252,7 +252,7 @@ async def seed() -> str:
 async def seed_photos(skip: set[str]) -> None:
     """Real destination photos, found and stored as the worker does. The past trip goes without, to
     show the placeholder, as does any trip whose photo can't be fetched (Wikimedia unreachable)."""
-    for place in await db.places_without_photos():
+    for place in await db.places_needing_photos():
         if place in skip:
             continue
         try:

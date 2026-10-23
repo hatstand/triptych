@@ -1,8 +1,8 @@
 """Restate service endpoint. Serves the handlers over HTTP/2 and, on every start, (re-)registers
 itself with the Restate admin API and installs the flow-control rules. Doing this at boot means a
 code reload under Tilt picks up new handler signatures and an LLM_CONCURRENCY change takes effect.
-It then asks for photos of any places that don't have one yet: trips from before photos, and
-lookups that ran out of retries."""
+It then asks for photos of any places that don't have one yet (trips from before photos, lookups
+that ran out of retries), or whose photo's subject hasn't been found."""
 
 import asyncio
 import logging
@@ -56,7 +56,7 @@ async def register() -> bool:
 async def request_photos() -> None:
     try:
         await db.fill_places()
-        missing = await db.places_without_photos()
+        missing = await db.places_needing_photos()
         async with restate.create_client(settings.restate_ingress_url) as client:
             for place in missing:
                 await client.object_send(place_photo.find, place_photo.key(place), PhotoRequest(place=place))

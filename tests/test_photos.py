@@ -2,14 +2,25 @@
 
 import json
 from datetime import datetime
+from io import BytesIO
 from typing import Any
 
 import httpx
 import pytest
+from PIL import Image
 
 from triptych import photos
 from triptych.grouping import place_query
-from triptych.models import Kind, PhotoChoice, Reservation
+from triptych.models import (
+    DEFAULT_FOCUS,
+    Kind,
+    LlmSubjectRequest,
+    Photo,
+    PhotoChoice,
+    PhotoSubject,
+    Reservation,
+    SubjectBox,
+)
 
 pytestmark = pytest.mark.anyio
 
@@ -177,3 +188,66 @@ def test_place_names_the_country_when_an_airport_there_says_which() -> None:
 def test_place_is_the_destination_alone_without_an_airport_there() -> None:
     assert place_query([res(Kind.LODGING, "Kyoto"), res(Kind.RAIL, "Kyoto", "Tokyo", "Kyoto")]) == "Kyoto"
     assert place_query([]) is None
+
+
+def png(width: int, height: int) -> bytes:
+    out = BytesIO()
+    Image.new("RGB", (width, height)).save(out, "PNG")
+    return out.getvalue()
+
+
+def test_aspect_reads_the_image_and_refuses_what_isnt_one() -> None:
+    assert photos.aspect(png(300, 200)) == 1.5
+    with pytest.raises(photos.PhotoError):
+        photos.aspect(b"<html>")
+
+
+def box(left: float, top: float, right: float, bottom: float) -> SubjectBox:
+    return SubjectBox(subject="Tower", left=left, top=top, right=right, bottom=bottom)
+
+
+def test_subject_box_is_fractions_or_none_when_it_makes_no_sense() -> None:
+    assert photos.subject_box(box(10, 0, 40, 95)) == [0.1, 0.0, 0.4, 0.95]
+    assert photos.subject_box(box(-5, 10, 120, 50)) == [0.0, 0.1, 1.0, 0.5]  # clamped
+    assert photos.subject_box(box(40, 0, 10, 95)) is None  # inside out
+    assert photos.subject_box(box(50, 50, 51, 51)) is None  # a detail, not the subject
+
+
+async def test_locate_subject_asks_the_model_about_the_stored_photo(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def place_photo_image(place: str) -> bytes | None:
+        return png(400, 300) if place == "Shanghai, China" else None
+
+    async def locate_subject(req: LlmSubjectRequest) -> SubjectBox:
+        assert "Shanghai" in req.place and req.image_b64
+        return box(30, 2, 45, 100)
+
+    monkeypatch.setattr(photos.db, "place_photo_image", place_photo_image)
+    monkeypatch.setattr(photos.llm, "locate_subject", locate_subject)
+    subject = await photos.locate_subject("Shanghai, China")
+    assert subject == PhotoSubject(aspect=400 / 300, box=[0.3, 0.02, 0.45, 1.0])
+    with pytest.raises(photos.PhotoError):
+        await photos.locate_subject("Nowhere")
+
+
+def photo(aspect: float | None, subject: list[float] | None) -> Photo:
+    return Photo(file="File:x.jpg", page_url="https://x", version="v", aspect=aspect, subject=subject)
+
+
+def test_crop_keeps_a_tall_subjects_top_in_a_wide_frame() -> None:
+    # A 3:2 skyline whose tower runs from the very top to 80% down, shown in a 5:1 banner: the
+    # banner shows 30% of the height, so it starts at the top of the tower.
+    assert photo(1.5, [0.3, 0.0, 0.45, 0.8]).position(5) == "50% 0.0%"
+    # A short subject in the middle of the lower half is centred: 0.6 - 0.15 = 0.45 of the height
+    # is the top of the crop, 0.45 / 0.7 of the way down.
+    assert photo(1.5, [0.3, 0.5, 0.5, 0.7]).position(5) == "50% 64.3%"
+
+
+def test_crop_centres_the_subject_across_when_the_sides_are_cut() -> None:
+    # 3:2 in a square: two thirds of the width shows. Subject centred at 0.2: crop from 0 (clamped).
+    assert photo(1.5, [0.1, 0.2, 0.3, 0.8]).position(1) == "0.0% 50%"
+    assert photo(1.5, [0.8, 0.2, 0.9, 0.8]).position(1) == "100.0% 50%"
+
+
+def test_crop_without_a_subject_is_the_default() -> None:
+    assert photo(1.5, None).position(5) == DEFAULT_FOCUS
+    assert photo(None, [0.1, 0.1, 0.2, 0.2]).position(1) == DEFAULT_FOCUS

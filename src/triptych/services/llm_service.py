@@ -18,14 +18,14 @@ from typing import Literal
 
 import restate
 
-from triptych import llm
-from triptych.models import Answer, Extraction, LlmAskRequest, LlmExtractRequest
+from triptych import llm, photos
+from triptych.models import Answer, Extraction, LlmAskRequest, LlmExtractRequest, PhotoRequest, PhotoSubject
 
 GPU_SCOPE = "gpu"
 
 llm_service = restate.Service("Llm")
 
-Lane = Literal["batch", "interactive"]
+Lane = Literal["batch", "interactive", "photos"]
 
 
 def limit_key(lane: Lane, user: str) -> str:
@@ -44,6 +44,11 @@ ASK_RETRY = restate.RunOptions[Answer](
     max_attempts=3,
     initial_retry_interval=timedelta(seconds=1),
 )
+# Nice to have, so a few tries; a photo whose subject isn't found is asked about again next boot.
+SUBJECT_RETRY = restate.RunOptions[PhotoSubject](
+    max_attempts=3,
+    initial_retry_interval=timedelta(seconds=10),
+)
 
 
 @llm_service.handler(inactivity_timeout=timedelta(minutes=5), abort_timeout=timedelta(minutes=15))
@@ -54,3 +59,10 @@ async def extract(ctx: restate.Context, req: LlmExtractRequest) -> Extraction:
 @llm_service.handler(inactivity_timeout=timedelta(minutes=5), abort_timeout=timedelta(minutes=10))
 async def ask(ctx: restate.Context, req: LlmAskRequest) -> Answer:
     return await ctx.run_typed("ollama ask", llm.ask, ASK_RETRY, req)
+
+
+@llm_service.handler(inactivity_timeout=timedelta(minutes=5), abort_timeout=timedelta(minutes=10))
+async def locate_subject(ctx: restate.Context, req: PhotoRequest) -> PhotoSubject:
+    """Where the main subject of a place's stored photo is. Loads the image itself, so it isn't
+    copied into the journal on the way here."""
+    return await ctx.run_typed("ollama locate subject", photos.locate_subject, SUBJECT_RETRY, req.place)

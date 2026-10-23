@@ -5,7 +5,9 @@ Jinja templates in `src/triptych/web/templates/`. It describes the system as it 
 included, at the end), so a new page or component can match it without reverse-engineering the
 CSS. If you change a token or a component, change this file in the same PR.
 
-Everything lives in one stylesheet, `/static/style.css`, loaded by `base.html`. There is no CSS
+Everything lives in one stylesheet, `/static/style.css`, loaded by `base.html`. Templates link
+static files with `static('style.css')`, which adds a hash of the file to the URL so a deploy
+never leaves a browser on an old copy. There is no CSS
 framework and no build step for CSS. Biome formats and lints it (`src/triptych/web/biome.json`), and
 CI fails a PR whose CSS isn't formatted: run `npm run format:css` in `frontend/` before pushing. Pages may add a small `<style>` block in `{% block head %}`
 for page-only rules (the admin page does).
@@ -116,11 +118,18 @@ radius, cropped to fill), then `.trip-info` (dates, name, item count). A trip wi
 yet gets `.trip-thumb.placeholder` instead: the same square in `--bg` with the `place` icon at
 `24px` in `--muted`. The thumbnail's tooltip carries the photo's credit.
 
-**Trip photo** `figure.trip-photo`: the destination photo across the top of the trip page,
-`220px` tall (`160px` under `820px`), `10px` radius, cropped to fill, with its credit in a
+**Trip photo** `figure.trip-photo`: the destination photo across the top of the trip page, a
+`5:1` frame (`5:2` under `820px`), `10px` radius, cropped to fill, with its credit in a
 right-aligned `.muted.small` caption: author linked to the Commons file page, licence linked
 to its deed, "via Wikimedia Commons" (`photo_credit` in `_photo.html`). Commons licences
 require the credit wherever the photo appears, so don't show one without it.
+
+Photos are cropped around their subject, not their middle. Gemma marks the main subject's box
+once per photo; `Photo.position(frame)` turns it into the `object-position` that keeps the
+subject in a frame of that shape (centred if it fits, else from its top). Frames therefore have
+fixed shapes: the thumbnail is square and the trip photo's two shapes are passed in as
+`--focus` / `--focus-narrow`. A new place that shows a photo needs a fixed shape too, and its own
+`position(...)` call. Until the subject is known the crop is `50% 35%`.
 
 **Buttons:**
 - Primary `button` / `.button`: `--accent` fill, white text.

@@ -9,10 +9,15 @@ Errors are raised, never swallowed: callers run these inside `ctx.run`, so Resta
 Finding nothing suitable is not an error; it returns None.
 """
 
+import base64
+from io import BytesIO
+
 import httpx
 from bs4 import BeautifulSoup
+from PIL import Image, UnidentifiedImageError
 
-from triptych.models import PhotoChoice
+from triptych import db, llm
+from triptych.models import LlmSubjectRequest, PhotoChoice, PhotoSubject, SubjectBox
 
 # Wikimedia's User-Agent policy: name the tool and say how to reach whoever runs it.
 USER_AGENT = "Triptych/0.1 (https://github.com/hatstand/triptych) httpx"
@@ -124,3 +129,34 @@ async def download(
     if len(resp.content) > MAX_BYTES:
         raise PhotoError(f"{choice.image_url} is {len(resp.content)} bytes")
     return resp.content, content_type
+
+
+def aspect(image: bytes) -> float:
+    """The image's width / height."""
+    try:
+        with Image.open(BytesIO(image)) as im:
+            width, height = im.size
+    except (UnidentifiedImageError, OSError) as e:
+        raise PhotoError(f"not an image we can read: {e}") from e
+    return width / height
+
+
+MIN_SUBJECT = 0.02
+"""A box smaller than this (as a fraction of the image) is the model pointing at a detail."""
+
+
+def subject_box(b: SubjectBox) -> list[float] | None:
+    """The model's box as [left, top, right, bottom] fractions, or None if it isn't a usable box."""
+    left, top, right, bottom = (min(max(v / 100, 0.0), 1.0) for v in (b.left, b.top, b.right, b.bottom))
+    if right <= left or bottom <= top or (right - left) * (bottom - top) < MIN_SUBJECT:
+        return None
+    return [round(v, 3) for v in (left, top, right, bottom)]
+
+
+async def locate_subject(place: str) -> PhotoSubject:
+    """Ask the model where the main subject of `place`'s stored photo is."""
+    image = await db.place_photo_image(place)
+    if image is None:
+        raise PhotoError(f"{place} has no stored photo")
+    box = await llm.locate_subject(LlmSubjectRequest(place=place, image_b64=base64.b64encode(image).decode()))
+    return PhotoSubject(aspect=aspect(image), box=subject_box(box))

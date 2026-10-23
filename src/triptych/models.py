@@ -115,9 +115,40 @@ class PhotoCredit(BaseModel):
     licence_url: str | None = None
 
 
+DEFAULT_FOCUS = "50% 35%"
+"""Where to crop a photo whose subject isn't known: a little above the middle, since a view's
+foreground (water, a street, a bridge) is usually at the bottom and its landmarks' tops above."""
+
+
 class Photo(PhotoCredit):
     version: str
     """Changes when the trip's photo does; goes in the image URL so browsers can cache it for good."""
+    aspect: float | None = None
+    """The image's width / height."""
+    subject: list[float] | None = None
+    """The main subject's box, [left, top, right, bottom] as fractions of the image."""
+
+    def position(self, frame: float) -> str:
+        """The CSS object-position that keeps the subject in view when the photo fills (object-fit:
+        cover) a box of aspect `frame` (width / height): centred on it if it fits, else its top or
+        middle kept, since the top of a tower matters more than its base."""
+        if not self.subject or not self.aspect:
+            return DEFAULT_FOCUS
+        left, top, right, bottom = self.subject
+        if self.aspect > frame:  # cropped at the sides; the visible width is `seen` of the image's
+            seen = frame / self.aspect
+            start = (left + right) / 2 - seen / 2
+            return f"{_percent(start, seen)} 50%"
+        seen = self.aspect / frame  # cropped top and bottom
+        start = (top + bottom) / 2 - seen / 2 if bottom - top <= seen else top
+        return f"50% {_percent(start, seen)}"
+
+
+def _percent(start: float, seen: float) -> str:
+    """object-position for a crop showing [start, start + seen] of an axis (fractions of the image)."""
+    if seen >= 1:
+        return "50%"
+    return f"{round(min(max(start, 0), 1 - seen) / (1 - seen) * 100, 1)}%"
 
 
 class TripSummary(BaseModel):
@@ -230,6 +261,24 @@ class PhotoSearch(BaseModel):
     choice: PhotoChoice | None = None
 
 
+class SubjectBox(BaseModel):
+    """What the model says the photo's main subject is and where (percentages of the image)."""
+
+    model_config = ConfigDict(json_schema_extra=_all_keys_required)
+
+    subject: str = Field(description="What the main subject is, e.g. 'Oriental Pearl Tower', 'Old town'")
+    left: float = Field(description="Left edge of the subject, percent of image width from the left")
+    top: float = Field(description="Top edge of the subject, percent of image height from the top")
+    right: float = Field(description="Right edge of the subject, percent of image width from the left")
+    bottom: float = Field(description="Bottom edge of the subject, percent of image height from the top")
+
+
+class PhotoSubject(BaseModel):
+    aspect: float
+    box: list[float] | None = None
+    """[left, top, right, bottom] as fractions, or None if the model's answer made no sense."""
+
+
 class Reminder(BaseModel):
     owner: str
     trip_id: str
@@ -247,6 +296,11 @@ class Overview(BaseModel):
 class LlmExtractRequest(BaseModel):
     document: ParsedDocument
     received_at: datetime
+
+
+class LlmSubjectRequest(BaseModel):
+    place: str
+    image_b64: str
 
 
 class LlmAskRequest(BaseModel):

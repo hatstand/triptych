@@ -8,7 +8,14 @@ from typing import Any
 import httpx
 
 from triptych.config import settings
-from triptych.models import Answer, Extraction, LlmAskRequest, LlmExtractRequest
+from triptych.models import (
+    Answer,
+    Extraction,
+    LlmAskRequest,
+    LlmExtractRequest,
+    LlmSubjectRequest,
+    SubjectBox,
+)
 
 EXTRACT_SYSTEM = """\
 You extract travel reservations from confirmation emails, receipts, boarding passes and screenshots.
@@ -33,6 +40,15 @@ You are a concise travel assistant. Facts about bookings (times, codes, addresse
 from the itinerary below; never invent them. You may add general travel know-how (e.g. arrive ~3 h \
 before an international flight, ~2 h for domestic) when it helps, and say that it is general advice. \
 Times are local to where each segment happens.
+"""
+
+
+SUBJECT_SYSTEM = """\
+You look at a photo that represents a travel destination and find its main subject: the landmark, \
+skyline, building or view that makes it recognisably that place (the tower, not the sky around it; \
+the whole skyline, not one window). Name the subject, then give the box that just contains it as \
+percentages of the image: left and right from the left edge, top and bottom from the top edge (0 to \
+100). Include all of a tall subject, from its very top.
 """
 
 
@@ -86,6 +102,20 @@ async def extract(req: LlmExtractRequest) -> Extraction:
     except ValueError as e:
         # Structured output should prevent this, but a truncated generation can still happen.
         raise LlmError(f"invalid extraction JSON: {e}; raw={raw[:300]!r}") from e
+
+
+async def locate_subject(req: LlmSubjectRequest) -> SubjectBox:
+    raw = await _chat(
+        [
+            {"role": "system", "content": SUBJECT_SYSTEM},
+            {"role": "user", "content": f"A photo of {req.place}.", "images": [req.image_b64]},
+        ],
+        fmt=SubjectBox.model_json_schema(),
+    )
+    try:
+        return SubjectBox.model_validate_json(raw)
+    except ValueError as e:
+        raise LlmError(f"invalid subject JSON: {e}; raw={raw[:300]!r}") from e
 
 
 async def ask(req: LlmAskRequest) -> Answer:
