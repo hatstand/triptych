@@ -63,6 +63,17 @@ Gmail ─▶ MX: Cloudflare Email Routing ─▶ Email Worker ─HTTPS + bearer 
       ─▶ web :8000 /inbound  (allowlist + DKIM/ARC check) ─▶ Ingest workflow
 ```
 
+**Several instances, one address.** `plans+<instance>@purplehatstands.com` is delivered to
+`https://<instance>.axolotl-goblin.ts.net/inbound`. Plain `plans@` goes to the default instance (`zem`).
+To add a test instance, just run the stack on another tailnet machine with the same
+`INBOUND_TOKEN` and turn on Funnel there; no Cloudflare changes are needed.
+
+* **Hostname pinning:** the Worker substitutes only names matching `[a-z0-9-]` into a template
+  pinned to the tailnet's domain, so an address can't send it anywhere else.
+* **Existence check:** before delivering, the Worker looks the hostname up via public DNS.
+  Tailscale publishes public DNS only for Funnel-enabled machines, so a typo or a machine without
+  Funnel bounces with *"No Triptych instance …"* rather than going to the fallback mailbox.
+
 Nothing listens on port 25 here, and Funnel exposes only the `/inbound` path. The Worker
 (`cloudflare/email-worker/`) passes the raw message through byte-for-byte. `/inbound`
 (`src/triptych/inbound.py`) then authenticates it:
@@ -88,10 +99,12 @@ One-time setup:
    cd cloudflare/email-worker && npm ci
    npx wrangler login
    npx wrangler secret put INBOUND_TOKEN      # same value as .env
-   npm run deploy
+   npm test && npm run deploy
    ```
-5. **Routing:** in Cloudflare, go to Email Routing → Destination addresses and verify `FALLBACK_ADDRESS`.
-   Then under Routing rules, set `plans@` to *Send to a Worker* → `triptych-email`.
+5. **Routing:** in Cloudflare, go to Email Routing.
+   - **Settings:** turn on **Subaddressing**, so the `plans@` rule also matches `plans+<instance>@`.
+   - **Destination addresses:** verify `FALLBACK_ADDRESS`.
+   - **Routing rules:** set `plans@` to *Send to a Worker* → `triptych-email`.
 6. **Gmail:**
    - *Optional, automatic forwarding:* go to Settings → Forwarding, add `plans@purplehatstands.com`,
      and read the confirmation code from Triptych's alerts. Then add a filter (e.g. `subject:(booking

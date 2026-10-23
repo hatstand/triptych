@@ -1,15 +1,21 @@
 // Cloudflare Email Worker for plans@purplehatstands.com.
 //
-// Hands each message (raw RFC 822, byte-for-byte so DKIM/ARC still verify) to Triptych's
-// POST /inbound over Tailscale Funnel. Triptych does the real authentication; this Worker only
-// pre-filters on the allowlist so junk is refused cheaply at SMTP time.
+// Hands each message (raw RFC 822, byte-for-byte so DKIM/ARC still verify) to a Triptych
+// instance's POST /inbound over Tailscale Funnel. `plans+<instance>@` picks the instance (needs
+// Email Routing → Settings → Subaddressing on); plain `plans@` goes to DEFAULT_INSTANCE.
+// Triptych does the real authentication; this Worker only pre-filters on the allowlist so junk
+// is refused cheaply at SMTP time.
 //
 //   2xx       → done
 //   403 / 413 → permanent: bounce to the sender with Triptych's reason
 //   other / network error → retry briefly, then forward to FALLBACK_ADDRESS so nothing is lost
 
+import { canonicalSender, route } from "./routing.ts";
+
 export interface Env {
-  INBOUND_URL: string;
+  /** e.g. https://{instance}.example.ts.net/inbound */
+  INBOUND_URL_TEMPLATE: string;
+  DEFAULT_INSTANCE: string;
   INBOUND_TOKEN: string;
   ALLOWED_SENDERS: string;
   FALLBACK_ADDRESS?: string;
@@ -19,10 +25,18 @@ const GMAIL_FORWARDING_VERIFIER = "forwarding-noreply@google.com";
 const MAX_BYTES = 25 * 1024 * 1024;
 const RETRY_DELAYS_MS = [0, 1_000, 4_000];
 
-/** Lower-case and undo Gmail's auto-forward envelope rewrite (`you+caf_=…@gmail.com`). */
-export function canonicalSender(addr: string): string {
-  const [local = "", domain = ""] = addr.trim().toLowerCase().split(/@(?=[^@]*$)/);
-  return `${local.replace(/\+caf_=.*$/, "")}@${domain}`;
+/** Tailscale only publishes public DNS for Funnel-enabled nodes, so NXDOMAIN = no such instance. */
+async function instanceExists(url: string): Promise<boolean> {
+  const host = new URL(url).hostname;
+  try {
+    const resp = await fetch(`https://cloudflare-dns.com/dns-query?name=${encodeURIComponent(host)}&type=A`, {
+      headers: { accept: "application/dns-json" },
+    });
+    const body = (await resp.json()) as { Status?: number };
+    return body.Status !== 3;
+  } catch {
+    return true; // DNS check is best-effort; let delivery retries/fallback handle it
+  }
 }
 
 function allowed(env: Env): Set<string> {
@@ -35,9 +49,14 @@ function allowed(env: Env): Set<string> {
 
 type Outcome = { kind: "ok" } | { kind: "reject"; reason: string } | { kind: "retry"; detail: string };
 
-async function deliver(env: Env, message: ForwardableEmailMessage, raw: ArrayBuffer): Promise<Outcome> {
+async function deliver(
+  env: Env,
+  url: string,
+  message: ForwardableEmailMessage,
+  raw: ArrayBuffer,
+): Promise<Outcome> {
   try {
-    const resp = await fetch(env.INBOUND_URL, {
+    const resp = await fetch(url, {
       method: "POST",
       headers: {
         authorization: `Bearer ${env.INBOUND_TOKEN}`,
@@ -71,6 +90,15 @@ export default {
       message.setReject(`${sender} is not allowed to send to this address`);
       return;
     }
+    const target = route(message.to, env.INBOUND_URL_TEMPLATE, env.DEFAULT_INSTANCE);
+    if ("error" in target) {
+      message.setReject(target.error);
+      return;
+    }
+    if (!(await instanceExists(target.url))) {
+      message.setReject(`No Triptych instance "${target.instance}" (is Tailscale Funnel enabled on it?)`);
+      return;
+    }
     if (message.rawSize > MAX_BYTES) {
       message.setReject("Message too large");
       return;
@@ -80,7 +108,7 @@ export default {
     let last = "";
     for (const delay of RETRY_DELAYS_MS) {
       if (delay) await new Promise((r) => setTimeout(r, delay));
-      const outcome = await deliver(env, message, raw);
+      const outcome = await deliver(env, target.url, message, raw);
       if (outcome.kind === "ok") return;
       if (outcome.kind === "reject") {
         message.setReject(outcome.reason);
@@ -89,9 +117,13 @@ export default {
       last = outcome.detail;
     }
 
-    console.error(`triptych unreachable (${last}); falling back`, { from: message.from });
+    console.error(`triptych instance ${target.instance} unreachable (${last}); falling back`, {
+      from: message.from,
+    });
     if (env.FALLBACK_ADDRESS) {
-      const headers = new Headers({ "X-Triptych-Undelivered": last.slice(0, 200) });
+      const headers = new Headers({
+        "X-Triptych-Undelivered": `${target.instance}: ${last}`.slice(0, 200),
+      });
       await message.forward(env.FALLBACK_ADDRESS, headers);
     } else {
       message.setReject("Temporarily unable to process this message; please try again later");

@@ -8,7 +8,10 @@
     "strict": true,
     "noUncheckedIndexedAccess": true,
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true
   },
-  "include": ["src"]
+  "include": ["src"],
+  // Tests run under Node (`npm test`), not the Workers runtime.
+  "exclude": ["src/**/*.test.ts"]
 }

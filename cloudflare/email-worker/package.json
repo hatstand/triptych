@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "node --test src/*.test.ts",
     "deploy": "npm run typecheck && wrangler deploy",
     "tail": "wrangler tail"
   },
