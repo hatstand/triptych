@@ -32,7 +32,9 @@ def filters(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str | None]]:
     async def health() -> dict[str, Any]:
         raise ConnectionError("ollama unreachable")
 
-    monkeypatch.setattr(admin, "settings", replace(admin.settings, admin_logins=frozenset({OWNER})))
+    monkeypatch.setattr(
+        admin, "settings", replace(admin.settings, admin_logins=frozenset({OWNER}), restate_ui_url=None)
+    )
     monkeypatch.setattr(admin.db, "ingest_counts", ingest_counts)
     monkeypatch.setattr(admin.db, "recent_ingests", recent_ingests)
     monkeypatch.setattr(admin.llm, "health", health)
@@ -71,6 +73,14 @@ def test_allowlisted_login_sees_ingests_across_users(filters: list[str | None]) 
     assert f"Signed in to Tailscale as <b>{OWNER}</b>" in r.text
     assert "you@example.com" in r.text and "LLM timed out" in r.text
     assert "ollama unreachable" in r.text
+
+
+def test_restate_link_only_when_configured(
+    filters: list[str | None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert "Restate UI" not in client.get("/", headers=as_login(OWNER)).text
+    monkeypatch.setattr(admin, "settings", replace(admin.settings, restate_ui_url="http://marvin:9070"))
+    assert 'href="http://marvin:9070"' in client.get("/", headers=as_login(OWNER)).text
 
 
 def test_unknown_state_filter_is_rejected(filters: list[str | None]) -> None:

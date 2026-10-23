@@ -21,6 +21,7 @@ class Settings:
     inbound_token: str | None
     inbound_allowed_senders: frozenset[str]
     admin_logins: frozenset[str]
+    restate_ui_url: str | None
 
     # Passkeys are bound to the RP ID: the UI's hostname, or a parent domain of it. Changing it
     # later strands every registered passkey, so set WEBAUTHN_RP_ID to the parent domain up front
@@ -70,6 +71,8 @@ def load() -> Settings:
         admin_logins=frozenset(
             a.strip().lower() for a in env("ADMIN_TAILSCALE_LOGINS", "").split(",") if a.strip()
         ),
+        # Where a browser reaches the Restate UI (RESTATE_ADMIN_URL is the in-network address).
+        restate_ui_url=env("RESTATE_UI_URL") or None,
     )
 
 

@@ -149,6 +149,10 @@ The next deploy starts the `admin` service. The socket's directory is mode 0700,
 (which includes tailscaled) and the container can connect to it. `ADMIN_TAILSCALE_LOGINS` is a
 comma-separated list; leaving it empty locks everyone out.
 
+To link the Restate UI from the admin page, set `RESTATE_UI_URL` in `.env` to where a browser
+reaches it: `https://marvin.axolotl-goblin.ts.net:9070` if you serve it with
+`tailscale serve --bg --https=9070 127.0.0.1:9070`, or `http://marvin:9070` with `RESTATE_ADMIN_BIND`.
+
 ## Manual deploy / rollback
 
 Run the **Deploy** workflow from the Actions tab, or from a tailnet device that can SSH as

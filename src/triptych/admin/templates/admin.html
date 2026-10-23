@@ -17,6 +17,11 @@
   <span class="muted small">Signed in to Tailscale as <b>{{ login }}</b></span>
 </div>
 
+{% if restate_ui_url %}
+<p><a class="button secondary" href="{{ restate_ui_url }}" target="_blank" rel="noopener">Restate UI ↗</a>
+  <span class="muted small">invocations, retries and workflow state</span></p>
+{% endif %}
+
 <section class="card">
   <h2>LLM</h2>
   {% if llm.error %}
