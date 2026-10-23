@@ -44,6 +44,14 @@ Add to the tailnet policy file:
   // Funnel for /inbound keeps working once marvin is tagged.
   {"target": ["tag:marvin"], "attr": ["funnel"]},
 ],
+// Checked on every policy save: CI gets SSH as deploy and nothing else on marvin.
+"tests": [
+  {"src": "tag:ci", "accept": ["tag:marvin:22"],
+   "deny": ["tag:marvin:8000", "tag:marvin:9070", "tag:marvin:11434"]},
+],
+"sshTests": [
+  {"src": "tag:ci", "dst": ["tag:marvin"], "accept": ["deploy"], "deny": ["root"]},
+],
 ```
 
 Then:
