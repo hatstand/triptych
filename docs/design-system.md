@@ -194,4 +194,9 @@ Written down so they are decisions, not accidents:
 - Kind colours, accent and danger are not adjusted for dark mode either.
 - No spacing or radius tokens; values are repeated literally.
 - No focus styles beyond the browser default.
+- Contrast (WCAG) misses, measured on the current values: `--accent` text on dark cards is
+  3.6:1 and `--danger` on dark cards 2.9:1 (text wants 4.5:1); `--muted` on `--bg` is 4.4:1;
+  the queued and no_travel badges are 3.8:1 and 4.2:1. As icon colours (3:1 wanted),
+  `--activity` (2.4:1) and `--car` (2.9:1) are faint on white cards, and `--lodging` (2.8:1)
+  and `--restaurant` (3.0:1) on dark ones.
 - The brand mark is a text `▲`, not an icon.
