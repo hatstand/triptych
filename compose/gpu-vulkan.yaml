@@ -5,9 +5,8 @@ services:
     image: docker.io/ollama/ollama:${OLLAMA_TAG:-0.40.9}
     devices:
       - /dev/dri
-    group_add:
-      - video
-      - render
+    # No group_add: Ollama runs as root in the container, so it can open the device nodes, and
+    # group names resolve against the image's /etc/group, which has no `render` group.
     environment:
       OLLAMA_VULKAN: "1"
   ollama-pull:

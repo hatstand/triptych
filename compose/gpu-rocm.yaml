@@ -5,9 +5,8 @@ services:
     devices:
       - /dev/kfd
       - /dev/dri
-    group_add:
-      - video
-      - render
+    # No group_add: Ollama runs as root in the container, so it can open the device nodes, and
+    # group names resolve against the image's /etc/group, which has no `render` group.
     security_opt:
       - seccomp=unconfined
     environment:
