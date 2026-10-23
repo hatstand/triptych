@@ -87,7 +87,8 @@ There is no spacing scale variable; values in use cluster around a 2/4px rhythm:
 - **Borders:** `1px solid var(--line)` everywhere; a `4px` left border marks a card's kind or
   an alert.
 - **Layout tokens:** `--topbar-h` (`50px`, the top bar's fixed height, which the sticky sidebar
-  subtracts) and `--fade` (`24px`, the length of the inbox's scroll fade).
+  subtracts), `--fade` (`24px`, the length of the inbox's scroll fade) and `--scrollbar` (the
+  thumb colour of the sidebar's thin scrollbars: `--muted` at 45%, so it follows the colour scheme).
 - **Shadow:** only floating things get one (the drop toast: `0 4px 16px rgb(0 0 0 / .15)`).
   Cards are flat.
 

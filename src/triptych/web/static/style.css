@@ -16,6 +16,7 @@
   --other: #7f8c8d;
   --topbar-h: 50px;
   --fade: 24px;
+  --scrollbar: color-mix(in srgb, var(--muted) 45%, transparent);
 }
 @media (prefers-color-scheme: dark) {
   :root {
@@ -105,6 +106,8 @@ main {
     flex-direction: column;
     max-height: calc(100dvh - var(--topbar-h) - 40px);
     overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
   }
   .sidebar > .card {
     flex: none;
@@ -126,6 +129,8 @@ main {
     min-height: 0;
     overflow-y: auto;
     overscroll-behavior: contain;
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar) transparent;
     padding-bottom: var(--fade);
     mask-image: linear-gradient(
       transparent,
