@@ -3,7 +3,7 @@
 Derived at render time from a trip's reservations; nothing is stored. Two consecutive transport
 segments are one journey when all of these hold:
 - the second departs from where the first arrives, or from another airport/station in the same
-  city (LHR -> LGW, Gare du Nord -> Gare de Lyon): see same_place,
+  city (LHR -> LGW, JFK -> EWR, Gare du Nord -> Gare de Lyon): see same_place,
 - the layover is non-negative and under MAX_LAYOVER,
 - no lodging is checked into during the layover (a booked hotel makes it a stopover, not a
   connection).
@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from triptych import places
 from triptych.models import Kind, Reservation
 
 MAX_LAYOVER = timedelta(hours=24)
@@ -31,8 +32,14 @@ def place_key(location: str | None) -> str | None:
     return " ".join(location.casefold().split())
 
 
+def iata_of(location: str | None) -> str | None:
+    """The code in an enriched location ('London (LGW)' -> 'LGW')."""
+    m = _IATA.search(location) if location else None
+    return m.group(1) if m else None
+
+
 def city_of(location: str | None) -> str | None:
-    """The city in an enriched airport location ('London (LGW)' -> 'london')."""
+    """The city in an enriched location ('London (LGW)' -> 'london')."""
     if not location or not (m := _IATA.search(location)):
         return None
     return " ".join(location[: m.start()].casefold().split()) or None
@@ -48,18 +55,20 @@ def _starts_with_city(location: str | None, city: str | None) -> bool:
 def same_place(a: Reservation, b: Reservation) -> bool:
     """Whether b departs from where a arrives, allowing a change of airport/station in one city.
 
-    Cities come from the enriched 'City (IATA)' form, falling back to the arriving leg's city; a
-    plain station name counts as in a city when it starts with that city's name.
+    With IATA codes on both sides, the city is the IATA city code (LHR/LGW are LON, JFK/EWR are
+    NYC). Otherwise a plain station name counts as in a city when it starts with that city's
+    name, taken from the other side's 'City (IATA)' form or the arriving leg's city.
     """
     here = place_key(a.end_location)
     if here is None or place_key(b.start_location) is None:
         return False
     if here == place_key(b.start_location):
         return True
+    arrive_code, depart_code = iata_of(a.end_location), iata_of(b.start_location)
+    if arrive_code and depart_code:
+        return places.same_city(arrive_code, depart_code)
     arrive_city = city_of(a.end_location) or (" ".join(a.city.casefold().split()) if a.city else None)
     depart_city = city_of(b.start_location)
-    if arrive_city and depart_city:
-        return arrive_city == depart_city
     return _starts_with_city(b.start_location, arrive_city) or _starts_with_city(a.end_location, depart_city)
 
 

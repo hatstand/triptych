@@ -128,9 +128,18 @@ def test_changing_airport_in_the_same_city_still_connects() -> None:
 
 
 def test_different_cities_do_not_connect() -> None:
-    a = leg("BA1", "2026-12-20T07:00", "2026-12-20T09:00", "London (LHR)", "New York (JFK)")
+    a = leg("BA1", "2026-12-20T07:00", "2026-12-20T09:00", "London (LHR)", "Boston (BOS)")
     b = leg("UA2", "2026-12-20T12:00", "2026-12-20T15:00", "Newark (EWR)", "Chicago (ORD)")
     assert all(isinstance(i, Reservation) for i in items([a, b]))
+
+
+def test_iata_city_codes_join_differently_named_airports() -> None:
+    # airport data names EWR's city "Newark", but its IATA city code is NYC, like JFK's.
+    a = leg("BA1", "2026-12-20T07:00", "2026-12-20T09:00", "London (LHR)", "New York City (JFK)")
+    b = leg("UA2", "2026-12-20T13:00", "2026-12-20T15:00", "Newark (EWR)", "Chicago (ORD)")
+    [j] = items([a, b])
+    assert isinstance(j, Journey)
+    assert j.stops == ["LHR", "JFK/EWR", "ORD"]
 
 
 def test_station_to_airport_in_the_same_city_connects() -> None:

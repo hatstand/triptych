@@ -1,24 +1,10 @@
 """Deterministic clean-up of LLM output: parse times, resolve airports to cities and timezones."""
 
 from datetime import datetime, timedelta
-from functools import cache
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-import airportsdata
-from airportsdata import Airport
-
+from triptych import places
 from triptych.models import ExtractedReservation, Kind, Reservation
-
-
-@cache
-def _airports() -> dict[str, Airport]:
-    return airportsdata.load("IATA")
-
-
-def airport(code: str | None) -> Airport | None:
-    if not code:
-        return None
-    return _airports().get(code.strip().upper())
 
 
 def valid_tz(name: str | None) -> str | None:
@@ -60,14 +46,14 @@ def normalise(x: ExtractedReservation, *, reservation_id: str, ingest_id: str) -
     start_location, end_location = x.start_location, x.end_location
 
     if x.kind in (Kind.FLIGHT, Kind.RAIL):
-        dep, arr = airport(x.start_iata), airport(x.end_iata)
+        dep, arr = places.lookup(x.start_iata), places.lookup(x.end_iata)
         if dep:
-            start_tz = dep["tz"]
-            start_location = f"{dep['city']} ({dep['iata']})"
+            start_tz = valid_tz(dep.timezone) or start_tz
+            start_location = f"{dep.city} ({dep.iata})"
         if arr:
-            end_tz = arr["tz"]
-            end_location = f"{arr['city']} ({arr['iata']})"
-            city = arr["city"]
+            end_tz = valid_tz(arr.timezone) or end_tz
+            end_location = f"{arr.city} ({arr.iata})"
+            city = arr.city
 
     # Guard against obviously inverted ranges (e.g. overnight flight with the arrival date omitted).
     if end is not None and end < start and x.kind is not Kind.LODGING:
