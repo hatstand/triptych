@@ -4,11 +4,13 @@
   "type": "module",
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "lint": "biome lint .",
     "test": "node --test src/*.test.ts",
     "deploy": "npm run typecheck && wrangler deploy",
     "tail": "wrangler tail"
   },
   "devDependencies": {
+    "@biomejs/biome": "2.5.15",
     "@cloudflare/workers-types": "5.20261009.1",
     "typescript": "5.9.3",
     "wrangler": "4.149.0"

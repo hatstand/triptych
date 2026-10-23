@@ -149,6 +149,10 @@ Under Tilt, `./src` is live-synced into the containers. The worker restarts and 
 with Restate on every start**, so new or changed handlers are picked up within a second or two.
 The `check` resource runs ruff, ty and pytest on every save.
 
+GitHub Actions runs the same checks on every pull request: ruff (lint + format check), ty and
+pytest for the Python code, and Biome lint, `tsc` and `node --test` for the Email Worker
+(`npm run lint && npm run typecheck && npm test` in `cloudflare/email-worker`).
+
 Layout:
 
 ```
