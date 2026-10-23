@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "build": "tsc",
+    "vendor": "node vendor.ts",
     "watch": "tsc --watch",
     "typecheck": "tsc --noEmit",
     "lint": "biome lint ."
@@ -11,5 +12,9 @@
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
     "typescript": "7.0.2"
+  },
+  "dependencies": {
+    "htmx-ext-sse": "2.2.4",
+    "htmx.org": "2.0.11"
   }
 }

@@ -8,7 +8,7 @@ import hmac
 import itertools
 import logging
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, AsyncIterable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
@@ -16,7 +16,8 @@ from typing import Annotated, Any, cast
 
 import restate
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response, StreamingResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
@@ -271,7 +272,7 @@ async def home_context(me: auth.Me) -> dict[str, Any]:
     }
 
 
-# The home page's data-live sections, by name.
+# The home page's live sections, by SSE event name (sse-swap in index.html).
 HOME_SECTIONS = {"alerts": "_alerts.html", "trips": "_trips.html", "inbox": "_inbox.html"}
 
 
@@ -285,14 +286,11 @@ async def home(request: Request, me: User) -> Response:
     return templates.TemplateResponse(request, "index.html", await home_context(me))
 
 
-@app.get("/events")
-async def events(me: User) -> Response:
-    """The home page's live sections, re-sent whenever they change (see live.py, live.ts)."""
-    return StreamingResponse(
-        live.stream(me.id, lambda: home_sections(me)),
-        media_type="text/event-stream",
-        headers={"Cache-Control": "no-store", "X-Accel-Buffering": "no"},
-    )
+@app.get("/events", response_class=EventSourceResponse)
+async def events(me: User) -> AsyncIterable[ServerSentEvent]:
+    """The home page's live sections, re-sent whenever they change (see live.py, index.html)."""
+    async for e in live.stream(me.id, lambda: home_sections(me)):
+        yield e
 
 
 @app.post("/plans")

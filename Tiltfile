@@ -52,7 +52,7 @@ if llm != "host":
 # Recompiles frontend/src/*.ts into src/triptych/web/static/js, which the sync above ships.
 local_resource(
     "frontend",
-    serve_cmd="npm ci && npm run watch -- --preserveWatchOutput",
+    serve_cmd="npm ci && npm run vendor && npm run watch -- --preserveWatchOutput",
     serve_dir="frontend",
     labels=["tools"],
 )

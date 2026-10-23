@@ -3,26 +3,27 @@
     db write ─ pg_notify(user) ─▶ Hub (one LISTEN connection per web process) ─▶ that user's streams
 
 A notification only says *whose* data changed. Each stream then re-renders its page's sections and
-sends the ones whose HTML differs from what it sent last, so the browser never holds a second copy
-of the templates and a burst of changes (one ingest moving through its states) costs one render
-per state at most. A new stream starts with a full snapshot, which is also how a reconnecting tab
-catches up on whatever it missed.
+sends the ones whose HTML differs from what it sent last, one SSE event per section named after it,
+which htmx's SSE extension swaps into the matching `sse-swap` element. So the browser never holds a
+second copy of the templates, and a burst of changes (one ingest moving through its states) costs
+one render per state at most. A new stream starts with a full snapshot, which is also how a
+reconnecting tab catches up on whatever it missed. FastAPI's EventSourceResponse does the framing
+and keepalive pings.
 """
 
 import asyncio
-import json
 import logging
 from collections import defaultdict
 from collections.abc import AsyncGenerator, Awaitable, Callable, Generator
 from contextlib import contextmanager
 
 import psycopg
+from fastapi.sse import ServerSentEvent
 
 from triptych import db
 
 log = logging.getLogger("triptych.web.live")
 
-KEEPALIVE = 20.0  # seconds; keeps proxies (Tailscale Serve, Funnel) from closing an idle stream
 SETTLE = 0.1  # seconds to let back-to-back commits land before rendering once for all of them
 RETRY_MS = 3000  # how long EventSource waits before reconnecting after a dropped stream
 
@@ -76,25 +77,17 @@ class Hub:
 hub = Hub()
 
 
-def message(event: str, data: object) -> str:
-    return f"event: {event}\ndata: {json.dumps(data)}\n\n"
-
-
-async def stream(user: str, render: Render, h: Hub = hub) -> AsyncGenerator[str]:
-    """The body of one /events response: `update` events carrying {"sections": {name: html}}."""
+async def stream(user: str, render: Render, h: Hub = hub) -> AsyncGenerator[ServerSentEvent]:
+    """The events of one /events response: the HTML of each section that changed."""
     with h.subscribe(user) as ev:
-        yield f"retry: {RETRY_MS}\n\n"
+        yield ServerSentEvent(retry=RETRY_MS, comment="connected")
         sent: dict[str, str] = {}
         while True:
-            try:
-                await asyncio.wait_for(ev.wait(), KEEPALIVE)
-            except TimeoutError:
-                yield ": keepalive\n\n"
-                continue
+            await ev.wait()
             await asyncio.sleep(SETTLE)
             ev.clear()
             sections = await render()
-            fresh = {k: v for k, v in sections.items() if sent.get(k) != v}
+            for name, html in sections.items():
+                if sent.get(name) != html:
+                    yield ServerSentEvent(event=name, raw_data=html)
             sent = sections
-            if fresh:
-                yield message("update", {"sections": fresh})

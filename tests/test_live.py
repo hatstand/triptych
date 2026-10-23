@@ -3,6 +3,7 @@
 import asyncio
 
 import pytest
+from fastapi.sse import ServerSentEvent
 
 from triptych.web import live
 
@@ -24,11 +25,15 @@ def fast(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(live, "SETTLE", 0)
 
 
+def sent(e: ServerSentEvent) -> tuple[str | None, str | None]:
+    return e.event, e.raw_data
+
+
 async def test_starts_with_everything_then_sends_only_what_changed() -> None:
     hub, page = live.Hub(), Page()
     s = live.stream("u1", page.render, hub)
-    assert (await anext(s)).startswith("retry:")
-    assert await anext(s) == live.message("update", {"sections": page.sections})
+    assert (await anext(s)).retry == live.RETRY_MS
+    assert [sent(await anext(s)), sent(await anext(s))] == list(page.sections.items())
 
     page.sections["inbox"] = "<p>queued</p>"
     nxt = asyncio.ensure_future(anext(s))
@@ -37,26 +42,26 @@ async def test_starts_with_everything_then_sends_only_what_changed() -> None:
     await asyncio.sleep(0.01)
     assert not nxt.done()
     hub.changed("u1")
-    assert await nxt == live.message("update", {"sections": {"inbox": "<p>queued</p>"}})
+    assert sent(await nxt) == ("inbox", "<p>queued</p>")
     await s.aclose()
 
 
-async def test_resync_with_no_changes_sends_nothing(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(live, "KEEPALIVE", 0.05)
+async def test_resync_with_no_changes_sends_nothing() -> None:
     hub, page = live.Hub(), Page()
     s = live.stream("u1", page.render, hub)
-    await anext(s)
-    await anext(s)
+    for _ in range(3):
+        await anext(s)
+    nxt = asyncio.ensure_future(anext(s))
     hub.resync()
-    assert await anext(s) == ": keepalive\n\n"  # rendered again, but nothing differed
-    assert page.renders == 2
-    await s.aclose()
+    await asyncio.sleep(0.01)
+    assert page.renders == 2  # rendered again, but nothing differed
+    assert not nxt.done()
+    nxt.cancel()
 
 
 async def test_closed_streams_unsubscribe() -> None:
     hub, page = live.Hub(), Page()
     s = live.stream("u1", page.render, hub)
-    await anext(s)
     await anext(s)
     await s.aclose()
     assert not hub._streams

@@ -1,6 +1,6 @@
 // Page-wide drop zone (signed-in pages only): every dropped file goes to POST /plans, the same
 // endpoint as the "Add plans" form. The new items show up in the home page's inbox by themselves
-// (live.ts), so from anywhere else we go there.
+// (see index.html), so from anywhere else we go there.
 
 const ACCEPT = /\.(eml|pdf|html?|txt)$/i;
 const MAX_BYTES = 15 * 1024 * 1024; // keep in step with MAX_UPLOAD in web/app.py
@@ -97,7 +97,7 @@ if (zone && status) {
       show(status, error, true);
       return;
     }
-    if (document.querySelector("[data-live]")) {
+    if (document.querySelector("[sse-connect]")) {
       const note = skipped ? ` Skipped ${plural(skipped)} of an unsupported type.` : "";
       flash(status, `Added ${plural(files.length)}.${note}`);
       return;
