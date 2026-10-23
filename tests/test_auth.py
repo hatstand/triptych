@@ -274,5 +274,8 @@ async def test_cross_origin_posts_are_refused(browser: httpx.AsyncClient) -> Non
         f"/account/passkeys/{keys[0].id}/delete", headers={"Origin": "https://evil.example"}
     )
     assert resp.status_code == 403
+    assert resp.json()["error"] == (
+        f"Requests from https://evil.example are refused; this server expects {ORIGIN} (PUBLIC_BASE_URL)."
+    )
     assert (await browser.post("/logout", headers={"Origin": "https://evil.example"})).status_code == 403
     assert (await browser.get("/account")).status_code == 200

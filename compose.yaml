@@ -67,7 +67,8 @@ services:
     ports:
       # Host ports bind to loopback by default; the internet reaches only /inbound, via Funnel.
       - "${BIND_ADDR:-127.0.0.1}:8080:8080"   # ingress
-      - "${BIND_ADDR:-127.0.0.1}:9070:9070"   # admin API + UI
+      # Admin API + UI. RESTATE_ADMIN_BIND can put just this on the tailnet; it has no auth.
+      - "${RESTATE_ADMIN_BIND:-${BIND_ADDR:-127.0.0.1}}:9070:9070"
     environment:
       RESTATE_NODE_NAME: triptych
     volumes:

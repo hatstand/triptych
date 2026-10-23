@@ -49,7 +49,7 @@ tilt up                       # or: docker compose up -d
 
 * App: <http://localhost:8000>. Sign-in is by passkey only. Get your first one from an invite link:
   `docker compose exec web python -m triptych.invite you@example.com` (see [Accounts](#accounts-and-sign-in)).
-* Restate UI: <http://localhost:9070>. Invocations, journals, scheduled reminders, and the `gpu` queue (`sys_vqueues`, `sys_user_limits`).
+* Restate UI: <http://localhost:9070> (on a server, see `RESTATE_ADMIN_BIND` in `.env.example`). Invocations, journals, scheduled reminders, and the `gpu` queue (`sys_vqueues`, `sys_user_limits`).
 * Postgres: `docker compose exec postgres psql -U triptych`, or `localhost:5432` with user/password `triptych`.
 * Tilt UI: <http://localhost:10350>. Use the `send-samples` button to forward the fictional emails in `samples/`.
 
