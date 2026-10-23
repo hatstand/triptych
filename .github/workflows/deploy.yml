@@ -20,7 +20,7 @@ jobs:
 
   image:
     needs: checks
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: read
       packages: write
@@ -44,7 +44,7 @@ jobs:
 
   deploy:
     needs: image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     # The Tailscale federated identity trusts only this environment's subject, and the environment
     # only accepts deployments from main, so no other workflow or branch can reach the tailnet.
     environment: marvin
