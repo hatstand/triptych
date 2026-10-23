@@ -2,13 +2,13 @@
 
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import restate
 
 from triptych import db
-from triptych.models import InboxItem, Kind, Notification, Reservation
+from triptych.models import InboxItem, IngestState, Kind, Notification, Reservation
 
 pytestmark = [
     pytest.mark.anyio,
@@ -136,3 +136,24 @@ async def test_addresses_map_to_one_user_each(database: None) -> None:
     assert await db.user_for_email("me@example.com") == me
     assert await db.user_for_email("someone@example.com") != me
     assert await db.primary_email(me) == "me@example.com"
+
+
+async def test_admin_ingest_queries_span_users(me: str) -> None:
+    you = await db.user_for_email("you@example.com")
+    now = datetime.now(UTC)
+    rows: list[tuple[str, str, IngestState, datetime]] = [
+        (me, "a", "done", now),
+        (you, "b", "failed", now - timedelta(hours=1)),
+        (me, "old", "failed", now - timedelta(days=30)),
+    ]
+    for owner, ingest_id, state, at in rows:
+        item = InboxItem(ingest_id=ingest_id, source="email", label=ingest_id, received_at=at, state=state)
+        await db.upsert_inbox(owner, item)
+
+    assert await db.ingest_counts(now - timedelta(days=7)) == {"done": 1, "failed": 1}
+    assert [(i.ingest_id, i.owner) for i in await db.recent_ingests()] == [
+        ("a", "me@example.com"),
+        ("b", "you@example.com"),
+        ("old", "me@example.com"),
+    ]
+    assert [i.ingest_id for i in await db.recent_ingests("failed")] == ["b", "old"]
