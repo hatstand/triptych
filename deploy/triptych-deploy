@@ -1,0 +1,25 @@
+#!/bin/bash
+# Login shell for the `deploy` user on marvin (see deploy/README.md). Tailscale SSH runs
+# `<shell> -c "<command>"`; the only command accepted is the 40-hex SHA of a commit on main.
+# The checkout lives in /srv/triptych next to its (untracked) .env, which sets COMPOSE_FILE.
+set -euo pipefail
+
+sha=${!#}
+if [[ ! $sha =~ ^[0-9a-f]{40}$ ]]; then
+  echo "usage: tailscale ssh deploy@marvin <commit sha on main>" >&2
+  exit 2
+fi
+
+cd /srv/triptych
+git fetch --quiet origin main
+if ! git merge-base --is-ancestor "$sha" origin/main; then
+  echo "$sha is not on main" >&2
+  exit 1
+fi
+git checkout --quiet --detach "$sha"
+
+export TRIPTYCH_IMAGE=ghcr.io/hatstand/triptych:$sha
+docker compose pull --quiet
+# The worker force-re-registers with Restate on start, so a rolled worker is picked up as-is.
+docker compose up --detach --no-build --remove-orphans
+docker compose ps
