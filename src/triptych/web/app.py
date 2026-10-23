@@ -360,6 +360,19 @@ async def trip_page(request: Request, trip_id: str, me: User) -> Response:
     )
 
 
+@app.get("/trips/{trip_id}/photo")
+async def trip_photo(trip_id: str, me: User) -> Response:
+    """The trip's destination photo. Pages link it with the photo's version in the query string, so
+    a new photo is a new URL and this one can be cached for good."""
+    photo = await db.trip_photo(me.id, trip_id)
+    if photo is None:
+        raise HTTPException(404)
+    image, content_type = photo
+    return Response(
+        image, media_type=content_type, headers={"Cache-Control": "private, max-age=31536000, immutable"}
+    )
+
+
 @app.post("/trips/{trip_id}/ask", response_class=HTMLResponse)
 async def trip_ask(
     request: Request, trip_id: str, me: User, client: Client, question: Annotated[str, Form()]

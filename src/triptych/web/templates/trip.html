@@ -2,6 +2,7 @@
 {% block title %}{{ trip.name }} · Triptych{% endblock %}
 {% block content %}
 {% from "_icons.html" import icon, kind_icons as icons %}
+{% from "_photo.html" import photo_credit %}
 {% macro segment(r) %}
 <article class="card segment {{ r.kind.value }}">
   <div class="icon">{{ icons[r.kind.value] }}</div>
@@ -55,6 +56,12 @@
 </details>
 {% endmacro %}
 <a href="/" class="small">← All trips</a>
+{% if trip.photo %}
+<figure class="trip-photo">
+  <img src="/trips/{{ trip.id }}/photo?v={{ trip.photo.version }}" alt="{{ trip.destination or '' }}">
+  <figcaption class="muted small">{{ photo_credit(trip.photo) }}</figcaption>
+</figure>
+{% endif %}
 <div class="row trip-header">
   <div>
     <h1>{{ trip.name }}</h1>

@@ -1,9 +1,18 @@
+{% from "_icons.html" import icon %}
+{% from "_photo.html" import photo_title %}
 <a class="card trip-card" href="/trips/{{ t.id }}">
-  <div class="trip-dates">
-    <b>{{ t.start_date.strftime('%d %b') }}</b>
-    {% if t.end_date != t.start_date %}– {{ t.end_date.strftime('%d %b %Y') }}{% else %}{{ t.start_date.strftime('%Y') }}{% endif %}
+  {% if t.photo %}
+  <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}" alt="" loading="lazy" title="{{ photo_title(t.photo) }}">
+  {% else %}
+  <div class="trip-thumb placeholder">{{ icon('place') }}</div>
+  {% endif %}
+  <div class="trip-info">
+    <div class="trip-dates">
+      <b>{{ t.start_date.strftime('%d %b') }}</b>
+      {% if t.end_date != t.start_date %}– {{ t.end_date.strftime('%d %b %Y') }}{% else %}{{ t.start_date.strftime('%Y') }}{% endif %}
+    </div>
+    <div class="trip-name">{{ t.name }}</div>
+    <div class="muted small">{{ t.reservation_count }} item{{ 's' if t.reservation_count != 1 }}
+      {% if t.start_date > today %}· in {{ (t.start_date - today).days }} days{% elif t.end_date >= today %}· now{% endif %}</div>
   </div>
-  <div class="trip-name">{{ t.name }}</div>
-  <div class="muted small">{{ t.reservation_count }} item{{ 's' if t.reservation_count != 1 }}
-    {% if t.start_date > today %}· in {{ (t.start_date - today).days }} days{% elif t.end_date >= today %}· now{% endif %}</div>
 </a>

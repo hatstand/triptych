@@ -1,15 +1,21 @@
 """Restate service endpoint. Serves the handlers over HTTP/2 and, on every start, (re-)registers
 itself with the Restate admin API and installs the flow-control rules. Doing this at boot means a
-code reload under Tilt picks up new handler signatures and an LLM_CONCURRENCY change takes effect."""
+code reload under Tilt picks up new handler signatures and an LLM_CONCURRENCY change takes effect.
+It then asks for photos of any places that don't have one yet: trips from before photos, and
+lookups that ran out of retries."""
 
 import asyncio
 import logging
 
 import httpx
+import restate
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 
+from triptych import db
 from triptych.config import settings
+from triptych.models import PhotoRequest
+from triptych.services import place_photo
 from triptych.services.endpoint import app
 from triptych.services.llm_service import GPU_SCOPE
 
@@ -25,7 +31,7 @@ RULES = [
 ]
 
 
-async def register() -> None:
+async def register() -> bool:
     body = {"uri": settings.worker_public_url, "force": True}
     async with httpx.AsyncClient(base_url=settings.restate_admin_url, timeout=10) as client:
         for attempt in range(60):
@@ -37,13 +43,27 @@ async def register() -> None:
                 resp = await client.put("/limits/rules", json=RULES)
                 resp.raise_for_status()
                 log.info("flow-control rules: %s", resp.json())
-                return
+                return True
             except httpx.HTTPStatusError as e:
                 log.warning("restate admin rejected request: %s %s", e, e.response.text[:300])
             except httpx.HTTPError as e:
                 log.info("waiting for restate admin (%s)… %s", attempt, e)
             await asyncio.sleep(2)
     log.error("gave up registering with restate")
+    return False
+
+
+async def request_photos() -> None:
+    try:
+        await db.fill_places()
+        missing = await db.places_without_photos()
+        async with restate.create_client(settings.restate_ingress_url) as client:
+            for place in missing:
+                await client.object_send(place_photo.find, place_photo.key(place), PhotoRequest(place=place))
+        if missing:
+            log.info("asked for photos of %d places", len(missing))
+    except Exception:
+        log.exception("couldn't ask for missing photos")
 
 
 async def main() -> None:
@@ -52,7 +72,8 @@ async def main() -> None:
     config.bind = ["0.0.0.0:9080"]
     server = asyncio.create_task(serve(app, config))
     await asyncio.sleep(0.5)
-    await register()
+    if await register():
+        await request_photos()
     await server
 
 

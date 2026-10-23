@@ -14,17 +14,18 @@ import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import datetime
+from typing import Any
 
 import restate
 from psycopg import AsyncConnection
 from psycopg.errors import UniqueViolation
-from psycopg.rows import class_row
+from psycopg.rows import class_row, dict_row
 from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
 
 from triptych import enrich, grouping
 from triptych.config import settings
-from triptych.models import InboxItem, Notification, Reservation, Trip, TripSummary
+from triptych.models import InboxItem, Notification, Photo, PhotoChoice, Reservation, Trip, TripSummary
 
 _pool: AsyncConnectionPool | None = None
 
@@ -78,13 +79,29 @@ RESERVATION_COLUMNS = """
     source_ingest_id
 """
 
-SUMMARY_SQL = """
+# A trip's photo credit (columns named photo_*), from the place_photo row for its place if that has an
+# image. The version is the place and when it was fetched, so it changes with the picture.
+PHOTO_COLUMNS = """
+    CASE WHEN p.image IS NOT NULL THEN left(md5(p.place || p.fetched_at::text), 12) END AS photo_version,
+    p.file AS photo_file, p.page_url AS photo_page_url, p.article_url AS photo_article_url,
+    p.artist AS photo_artist, p.licence AS photo_licence, p.licence_url AS photo_licence_url
+"""
+PHOTO_JOIN = "LEFT JOIN place_photo p ON p.place = t.place"
+
+SUMMARY_SQL = f"""
     SELECT t.id::text AS id, t.name, t.destination,
            min(r.start_local)::date AS start_date,
            max(coalesce(r.end_local, r.start_local))::date AS end_date,
-           count(r.id)::int AS reservation_count
-    FROM trip t JOIN reservation r ON r.trip_id = t.id
+           count(r.id)::int AS reservation_count,
+           {PHOTO_COLUMNS}
+    FROM trip t JOIN reservation r ON r.trip_id = t.id {PHOTO_JOIN}
 """
+
+
+def _photo(row: dict[str, Any]) -> Photo | None:
+    """Takes the photo_* columns out of `row`, as the trip's photo if it has one."""
+    fields = {k.removeprefix("photo_"): row.pop(k) for k in list(row) if k.startswith("photo_")}
+    return Photo.model_validate(fields) if fields["version"] else None
 
 
 def dedupe_key(r: Reservation) -> str:
@@ -100,9 +117,11 @@ def new_trip_id(ingest_id: str, n: int) -> str:
 
 
 async def _summaries(conn: AsyncConnection, owner: str) -> list[TripSummary]:
-    async with conn.cursor(row_factory=class_row(TripSummary)) as cur:
-        await cur.execute(SUMMARY_SQL + " WHERE t.owner = %s GROUP BY t.id ORDER BY start_date", (owner,))
-        return await cur.fetchall()
+    async with conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            SUMMARY_SQL + " WHERE t.owner = %s GROUP BY t.id, p.place ORDER BY start_date", (owner,)
+        )
+        return [TripSummary(**row, photo=_photo(row)) for row in await cur.fetchall()]
 
 
 async def _reservations(conn: AsyncConnection, trip_ids: list[str]) -> list[Reservation]:
@@ -170,13 +189,15 @@ async def _fill_timezones(conn: AsyncConnection, trip_id: str) -> None:
 
 
 async def _retitle(conn: AsyncConnection, trip_id: str) -> None:
-    """Refit a trip's destination, and its name unless its owner has renamed it, to everything now
-    in it: what started as "Lisbon" becomes "Lisbon & Porto" once the Porto hotel is filed."""
+    """Refit a trip's destination and photo place, and its name unless its owner has renamed it, to
+    everything now in it: what started as "Lisbon" becomes "Lisbon & Porto" once the Porto hotel is
+    filed."""
     rs = await _reservations(conn, [trip_id])
     await conn.execute(
-        """UPDATE trip SET destination = %s, name = CASE WHEN name_edited THEN name ELSE %s END
+        """UPDATE trip SET destination = %s, place = %s,
+               name = CASE WHEN name_edited THEN name ELSE %s END
            WHERE id = %s""",
-        (grouping.pick_destination(rs), grouping.trip_title(rs), trip_id),
+        (grouping.pick_destination(rs), grouping.place_query(rs), grouping.trip_title(rs), trip_id),
     )
 
 
@@ -290,6 +311,7 @@ async def remove_reservation(owner: str, trip_id: str, reservation_id: str) -> b
         if await cur.fetchone() is None:
             await conn.execute("DELETE FROM trip WHERE id = %s", (trip_id,))
             return False
+        await _retitle(conn, trip_id)
         return True
 
 
@@ -356,6 +378,67 @@ async def dismiss_notifications(owner: str) -> None:
         await _changed(conn, owner)
 
 
+async def places_without_photos(trip_ids: list[str] | None = None) -> list[str]:
+    """The places of these trips (all trips if None) that haven't been looked up yet."""
+    async with connection() as conn:
+        cur = await conn.execute(
+            """SELECT DISTINCT t.place FROM trip t
+               WHERE t.place IS NOT NULL AND (%(ids)s::uuid[] IS NULL OR t.id = ANY(%(ids)s::uuid[]))
+                 AND NOT EXISTS (SELECT 1 FROM place_photo p WHERE p.place = t.place)""",
+            {"ids": trip_ids},
+        )
+        return [row[0] for row in await cur.fetchall()]
+
+
+async def has_place_photo(place: str) -> bool:
+    """Whether `place` has been looked up, found or not."""
+    async with connection() as conn:
+        cur = await conn.execute("SELECT 1 FROM place_photo WHERE place = %s", (place,))
+        return await cur.fetchone() is not None
+
+
+async def save_place_photo(
+    place: str, choice: PhotoChoice | None, image: bytes | None, content_type: str | None
+) -> None:
+    """Record a place's photo, or with no image that there's none to be had."""
+    if image is None:
+        choice = None
+    async with connection() as conn, conn.transaction():
+        await conn.execute(
+            """
+            INSERT INTO place_photo (place, image, content_type, file, page_url, article_url, artist,
+                licence, licence_url)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (place) DO UPDATE SET image = EXCLUDED.image,
+                content_type = EXCLUDED.content_type, file = EXCLUDED.file,
+                page_url = EXCLUDED.page_url, article_url = EXCLUDED.article_url,
+                artist = EXCLUDED.artist, licence = EXCLUDED.licence,
+                licence_url = EXCLUDED.licence_url, fetched_at = now()
+            """,
+            (
+                place, image, content_type if image else None, choice and choice.file,
+                choice and choice.page_url, choice and choice.article_url, choice and choice.artist,
+                choice and choice.licence, choice and choice.licence_url,
+            ),
+        )  # fmt: skip
+        cur = await conn.execute("SELECT DISTINCT owner::text FROM trip WHERE place = %s", (place,))
+        for (owner,) in await cur.fetchall():
+            await _changed(conn, owner)
+
+
+async def fill_places() -> None:
+    """Give trips from before photos their place (what `_retitle` would set). Not under the User
+    object: it only fills a column that's empty, and filing sets it to the same value."""
+    async with connection() as conn, conn.transaction():
+        cur = await conn.execute("SELECT id::text FROM trip WHERE place IS NULL")
+        for (trip_id,) in await cur.fetchall():
+            place = grouping.place_query(await _reservations(conn, [trip_id]))
+            if place is not None:
+                await conn.execute(
+                    "UPDATE trip SET place = %s WHERE id = %s AND place IS NULL", (place, trip_id)
+                )
+
+
 class ReminderTarget(BaseModel):
     owner: str | None = None
     trip_id: str | None = None
@@ -382,15 +465,29 @@ async def trip_summaries(owner: str) -> list[TripSummary]:
 
 
 async def get_trip(owner: str, trip_id: str) -> Trip | None:
-    async with connection() as conn:
-        cur = await conn.execute(
-            "SELECT name, destination FROM trip WHERE id = %s AND owner = %s", (trip_id, owner)
+    async with connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            f"""SELECT t.name, t.destination, {PHOTO_COLUMNS} FROM trip t {PHOTO_JOIN}
+                WHERE t.id = %s AND t.owner = %s""",
+            (trip_id, owner),
         )
         row = await cur.fetchone()
         if row is None:
             return None
         reservations = await _reservations(conn, [trip_id])
-    return Trip(id=trip_id, owner=owner, name=row[0], destination=row[1], reservations=reservations)
+    return Trip(id=trip_id, owner=owner, photo=_photo(row), reservations=reservations, **row)
+
+
+async def trip_photo(owner: str, trip_id: str) -> tuple[bytes, str] | None:
+    """The image for a trip's photo and its content type."""
+    async with connection() as conn:
+        cur = await conn.execute(
+            """SELECT p.image, p.content_type FROM trip t JOIN place_photo p ON p.place = t.place
+               WHERE t.id = %s AND t.owner = %s AND p.image IS NOT NULL""",
+            (trip_id, owner),
+        )
+        row = await cur.fetchone()
+    return (bytes(row[0]), row[1]) if row else None
 
 
 async def all_trips(owner: str) -> list[Trip]:

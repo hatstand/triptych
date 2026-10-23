@@ -17,6 +17,7 @@ timers and retries. **Ollama** runs the model, and **docker compose + Tilt** dri
  browser ─▶ web :8000 ──────┤                  │                         scope "gpu", limit key "batch/<user>"   │
        ▲          │         └─ object_call ──▶ │ User object (key = email): one writer per user, no own state   │
        │          │                            │ Reminders service: delayed sends, deduped by idempotency key   │
+       │          │                            │ PlacePhoto object (key = place): Wikimedia photo, fetched once │
        │          │                            │ Assistant service ─▶ Llm.ask (limit key "interactive/<user>")  │
        │          │                            └───────────────── each write = one ctx.run ───────┬─────────────┘
        │          └────────────── reads (plain SQL) ──────────────▶ Postgres 18 ◀─────────────────┘
@@ -34,6 +35,7 @@ failure-related.
 | `Llm` **service** + **flow control** | All model calls go through `ctx.scope("gpu").service_call(..., limit_key="<lane>/<user>")`. On boot the worker writes the rule-book entry `gpu → concurrency = LLM_CONCURRENCY` (default 1). Restate's VQueue scheduler holds the backlog durably and runs it in a fair order: each (lane, user) pair gets its own queue, so one user's 40 emails don't starve anyone else, and interactive Q&A doesn't wait behind the batch backlog. |
 | `ctx.run` retry policy | Ollama errors (model still downloading, OOM, malformed JSON) retry with exponential backoff for up to 45 min. After that the inbox item is marked `failed`. |
 | `User` **virtual object** | Single writer per user, so two emails for the same trip can't race to create duplicate trips, and a web edit can't interleave with a filing. Each handler is one `ctx.run` around one idempotent Postgres transaction (`db.py`). Retries are safe because trip IDs are UUIDv5s derived from the ingest ID, and a filing that's already been applied is detected and returned as-is. Grouping (`grouping.py`) also **merges** trips when a hotel booking bridges an outbound and a return flight. |
+| `PlacePhoto` **virtual object** | One per destination ("Lisbon, Portugal"; keyed by its hash). Filing and removing send it a one-way `find` for any trip place with no photo yet; it takes the freely licensed lead image of the place's English Wikipedia article from Wikimedia Commons, keeps a copy in Postgres (no hotlinking) with its author and licence, and the pages show it with that credit. Trips to the same place share it; a place with nothing suitable is remembered as such. Lookups that run out of retries leave no row, and the worker asks again for every place without one when it starts. |
 | `Reminders` **service** | Filing schedules **delayed sends** for 24 h and 3 h before a flight and the morning of check-in. It schedules for every reservation in the touched trips, keyed by `reminder:<reservation>:<fire time>`, so Restate deduplicates repeats. A hotel filed before its flight gets its reminder once the flight supplies the timezone. When a reminder fires it re-checks Postgres, so reminders for deleted or rescheduled segments are dropped. |
 
 What's deterministic and what's the LLM: Gemma only turns documents into a flat JSON schema
@@ -258,7 +260,8 @@ src/triptych/
   db.py            Postgres access: plain SQL → pydantic, idempotent writes for ctx.run
   auth.py          passkeys (WebAuthn ceremonies), sessions, invites
   invite.py        CLI: print a one-time passkey registration link for an address
-  services/        Restate handlers: ingest, llm_service, user, reminders, assistant, endpoint
+  photos.py        destination photos: choose on Wikipedia/Commons, download
+  services/        Restate handlers: ingest, llm_service, user, place_photo, reminders, assistant, endpoint
   worker.py        Restate endpoint (hypercorn h2c) + self-registration + flow-control rules
   web/             FastAPI + Jinja UI and JSON API (static/js/ is built from frontend/)
   smtp.py          inbound mail gateway

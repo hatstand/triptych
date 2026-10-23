@@ -28,9 +28,10 @@ import httpx
 import psycopg
 from playwright.async_api import Browser, BrowserContext, Route, ViewportSize, async_playwright
 
-from triptych import auth, db
+from triptych import auth, db, photos
 from triptych.config import settings
 from triptych.models import InboxItem, IngestState, Kind, Notification, Reservation
+from triptych.services import place_photo
 
 ROOT = Path(__file__).resolve().parent.parent
 SCHEMA = ROOT / "db" / "schema.sql"
@@ -244,7 +245,20 @@ async def seed() -> str:
             id=str(uuid.uuid4()), at=now, trip_id=trips[0], text="Check in for BA 286 opens tomorrow"
         ),
     )
+    await seed_photos(skip={"Kyoto"})
     return await auth.create_session(me)
+
+
+async def seed_photos(skip: set[str]) -> None:
+    """Real destination photos, found and stored as the worker does. The past trip goes without, to
+    show the placeholder, as does any trip whose photo can't be fetched (Wikimedia unreachable)."""
+    for place in await db.places_without_photos():
+        if place in skip:
+            continue
+        try:
+            await place_photo.store(place, await photos.choose(place))
+        except httpx.HTTPError as e:
+            print(f"no photo for {place}: {e}", file=sys.stderr)
 
 
 async def serve(app: str, url: str, env: dict[str, str]) -> asyncio.subprocess.Process:

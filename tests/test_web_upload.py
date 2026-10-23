@@ -102,3 +102,18 @@ def test_signed_out_drop_goes_to_login(restate_client: FakeRestate, monkeypatch:
     assert resp.status_code == 303
     assert resp.headers["location"] == "/login"
     assert restate_client.sent == []
+
+
+def test_trip_photo_is_served_cacheably_and_only_to_its_owner(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def trip_photo(owner: str, trip_id: str) -> tuple[bytes, str] | None:
+        return (b"jpeg", "image/jpeg") if (owner, trip_id) == (ME.id, "t1") else None
+
+    monkeypatch.setattr(web.db, "trip_photo", trip_photo)
+    resp = client.get("/trips/t1/photo?v=abc")
+    assert resp.status_code == 200
+    assert resp.content == b"jpeg"
+    assert resp.headers["content-type"] == "image/jpeg"
+    assert "immutable" in resp.headers["cache-control"]
+    assert client.get("/trips/someone-elses/photo").status_code == 404
