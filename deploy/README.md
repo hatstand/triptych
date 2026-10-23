@@ -13,9 +13,6 @@ Every push to `main` runs `.github/workflows/deploy.yml`:
 No long-lived credential exists anywhere. The repo and the GHCR package are public, so marvin
 needs no registry login. The Tailscale client ID and audience aren't secrets either.
 
-The deploy job is skipped until the `TS_OAUTH_CLIENT_ID` variable exists, so merging this before
-the setup below only publishes images.
-
 ## One-time setup
 
 ### Tailscale (admin console)

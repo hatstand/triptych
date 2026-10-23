@@ -1,8 +1,9 @@
 name: Deploy
 
-# On every push to main: build the app image into GHCR, then join the tailnet as an ephemeral
-# tag:ci node (workload identity federation, no stored secret) and tell marvin to roll to it.
-# One-time setup is in deploy/README.md. Until the TS_* variables exist the deploy job is skipped.
+# On every push to main: run the Python checks, build the app image into GHCR, then join the
+# tailnet as an ephemeral tag:ci node (workload identity federation, no stored secret) and tell
+# marvin to roll to it.
+# One-time setup is in deploy/README.md.
 
 on:
   push:
@@ -14,7 +15,11 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  checks:
+    uses: ./.github/workflows/python.yml
+
   image:
+    needs: checks
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -39,7 +44,6 @@ jobs:
 
   deploy:
     needs: image
-    if: vars.TS_OAUTH_CLIENT_ID != ''
     runs-on: ubuntu-latest
     # The Tailscale federated identity trusts only this environment's subject, and the environment
     # only accepts deployments from main, so no other workflow or branch can reach the tailnet.

@@ -1,9 +1,9 @@
 name: Python
 
+# On main this runs as the first job of the Deploy workflow, so a failing check blocks the deploy.
 on:
   pull_request:
-  push:
-    branches: [main]
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
