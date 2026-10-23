@@ -67,3 +67,15 @@ button.danger { background: var(--danger); }
 .drop-status { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); z-index: 11; padding: 10px 16px;
   background: var(--card); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 4px 16px rgb(0 0 0 / .15); }
 .drop-status.error { border-color: var(--danger); color: var(--danger); }
+.journey { display: block; padding: 0; }
+.journey > summary { display: flex; gap: 14px; padding: 14px 16px; cursor: pointer; list-style: none; }
+.journey > summary::-webkit-details-marker { display: none; }
+.journey > summary .body::after { content: "Show segments ▾"; display: block; margin-top: 4px; color: var(--accent); font-size: .85rem; }
+.journey[open] > summary .body::after { content: "Hide segments ▴"; }
+.journey .route { font-size: 1.05rem; letter-spacing: .02em; }
+.journey .legs { padding: 0 16px 4px 58px; }
+.journey .legs .segment { margin-bottom: 0; }
+.layover { padding: 6px 0 6px 14px; border-left: 2px dashed var(--line); margin-left: 18px; }
+.warning { color: #9a6700; font-weight: 600; margin-top: 4px; }
+@media (prefers-color-scheme: dark) { .warning { color: #e3b341; } }
+.layover.warning { border-left-color: var(--activity); }
