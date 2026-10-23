@@ -169,8 +169,10 @@ Triptych uses its own names for the icons it needs, mapped to Lucide names in
 | `place` | `map-pin` | Other items, addresses |
 | `calendar` | `calendar` | Dates, calendar export |
 
-Only flight, lodging, car, rail, restaurant, activity and other are reservation kinds today;
-bus, ferry and the connection icons are there for when the model and the journey view grow.
+Only flight, lodging, car, rail, restaurant, activity and other are reservation kinds today.
+The journey view uses `warning` for airport and station changes and `layover` / `transfer` on
+the connections between legs; bus, ferry, takeoff, landing, rental and luggage are ready for
+when the model grows.
 
 In templates, import the macro from `_icons.html`:
 
