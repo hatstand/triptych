@@ -49,6 +49,23 @@ def lookup(code: str | None) -> Place | None:
     return _places().get(code.strip().upper())
 
 
+@cache
+def _city_timezones() -> dict[str, frozenset[str]]:
+    zones: dict[str, set[str]] = {}
+    for p in _places().values():
+        zones.setdefault(p.city.casefold(), set()).add(p.timezone)
+    return {city: frozenset(tz) for city, tz in zones.items()}
+
+
+def city_timezone(city: str | None) -> str | None:
+    """The timezone of a city named in English ("Beijing"), if every place we know by that name
+    shares one. Paris doesn't (there's one in Texas), so gets none."""
+    if not city:
+        return None
+    zones = _city_timezones().get(city.strip().casefold(), frozenset())
+    return next(iter(zones)) if len(zones) == 1 else None
+
+
 def same_city(a: str, b: str) -> bool:
     """Whether two IATA codes share a city code (LHR/LGW, JFK/EWR); unknown codes never do."""
     pa, pb = lookup(a), lookup(b)

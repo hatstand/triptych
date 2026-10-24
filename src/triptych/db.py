@@ -481,6 +481,18 @@ async def fill_places() -> None:
                 )
 
 
+async def fill_missing_timezones() -> None:
+    """Fill in the timezones of reservations filed before we could (`_fill_timezones` on every trip
+    that has a gap). Not under the User object: it only fills empty columns, as filing would."""
+    async with connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            """SELECT DISTINCT trip_id::text FROM reservation
+               WHERE start_tz IS NULL OR (end_local IS NOT NULL AND end_tz IS NULL)"""
+        )
+        for (trip_id,) in await cur.fetchall():
+            await _fill_timezones(conn, trip_id)
+
+
 class ReminderTarget(BaseModel):
     owner: str | None = None
     trip_id: str | None = None

@@ -24,3 +24,10 @@ def test_same_city_uses_iata_city_codes() -> None:
     assert places.same_city("LHR", "QQS")
     assert not places.same_city("LHR", "CDG")
     assert not places.same_city("LHR", "XXX")
+
+
+def test_city_timezone_only_when_unambiguous() -> None:
+    assert places.city_timezone(" beijing ") == "Asia/Shanghai"
+    assert places.city_timezone("Lisbon") == "Europe/Lisbon"
+    assert places.city_timezone("Paris") is None  # Paris, Texas
+    assert places.city_timezone("Atlantis") is None and places.city_timezone(None) is None
