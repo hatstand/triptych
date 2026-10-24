@@ -13,7 +13,7 @@
 
 services:
   cloudflared:
-    image: docker.io/cloudflare/cloudflared:2026.10.0
+    image: docker.io/cloudflare/cloudflared:2026.10.3
     restart: unless-stopped
     # Remotely managed: the public hostname → http://proxy:8000 route lives in the Cloudflare
     # dashboard, alongside the tunnel this token belongs to.
