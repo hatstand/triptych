@@ -12,6 +12,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Any, TypedDict, cast
+from urllib.parse import quote
 
 import restate
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -353,9 +354,16 @@ async def register_verify(request: Request, body: RegisterFinish) -> Response:
     return signed_in_response("/", await auth.create_session(user_id))
 
 
+def google_calendar_link(feed_url: str) -> str:
+    """Google Calendar's "add by URL" page, pre-filled with the feed. Google wants it as webcal://."""
+    webcal = feed_url.replace("https://", "webcal://", 1).replace("http://", "webcal://", 1)
+    return f"https://calendar.google.com/calendar/render?cid={quote(webcal, safe='')}"
+
+
 async def home_context(me: auth.Me) -> dict[str, Any]:
     ov = await overview(me.id)
     today = date.today()
+    feed_url = f"{settings.public_base_url}/feed/{feed_token(me.id)}.ics?u={me.id}"
     return {
         "email": me.email,
         "inbound_address": settings.inbound_address,
@@ -363,7 +371,8 @@ async def home_context(me: auth.Me) -> dict[str, Any]:
         "past": [t for t in reversed(ov.trips) if t.end_date < today],
         "inbox": ov.inbox[:10],
         "notifications": ov.notifications,
-        "feed_url": f"{settings.public_base_url}/feed/{feed_token(me.id)}.ics?u={me.id}",
+        "feed_url": feed_url,
+        "google_calendar_url": google_calendar_link(feed_url),
         "today": today,
     }
 

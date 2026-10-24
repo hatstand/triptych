@@ -15,5 +15,7 @@
   "transfer": "arrow-left-right",
   "warning": "triangle-alert",
   "place": "map-pin",
-  "calendar": "calendar"
+  "calendar": "calendar",
+  "copy": "copy",
+  "check": "check"
 }

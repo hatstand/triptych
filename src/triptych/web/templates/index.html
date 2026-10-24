@@ -1,5 +1,9 @@
 {% extends "base.html" %}
-{% block head %}<script type="module" src="{{ static('live.ts') }}"></script>{% endblock %}
+{% from "_icons.html" import icon %}
+{% block head %}
+<script type="module" src="{{ static('live.ts') }}"></script>
+<script type="module" src="{{ static('copy.ts') }}"></script>
+{% endblock %}
 {% block content %}
 {# /events re-renders the sse-swap sections from these same partials as they change (web/live.py) #}
 <div hx-ext="sse" sse-connect="/events">
@@ -30,7 +34,13 @@
     <section class="card">
       <h2>Calendar feed</h2>
       <p class="muted small">Subscribe in your calendar app:</p>
-      <input class="mono" readonly value="{{ feed_url }}" onclick="this.select()">
+      <div class="copy-field">
+        <input id="feed-url" class="mono" readonly value="{{ feed_url }}" onclick="this.select()" aria-label="Calendar feed URL">
+        <button type="button" class="button secondary copy" data-copy="feed-url" title="Copy feed URL" aria-label="Copy feed URL">
+          {{- icon('copy') }}{{ icon('check') }}<span class="copied-label" aria-live="polite"></span>
+        </button>
+      </div>
+      <a class="button secondary google-calendar" href="{{ google_calendar_url }}" target="_blank" rel="noopener">{{ icon('calendar') }} Add to Google Calendar</a>
     </section>
   </aside>
 </div>

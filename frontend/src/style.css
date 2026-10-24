@@ -247,6 +247,49 @@ input[type="file"]:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
 }
+/* A read-only field with a copy button joined to its right edge (copy.ts). */
+.copy-field {
+  display: flex;
+}
+.copy-field input {
+  min-width: 0;
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+}
+.button.copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  padding: 0 10px;
+  border-left: 0;
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  background: var(--card);
+  transition: color 0.15s;
+}
+.button.copy:hover {
+  color: var(--accent);
+}
+.button.copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+/* Its two icons are copy then check; the check and the "Copied" label show for a moment after a click. */
+.button.copy .copied-label:empty,
+.button.copy:not(.copied) .i:nth-of-type(2),
+.button.copy.copied .i:nth-of-type(1) {
+  display: none;
+}
+.button.copy.copied {
+  color: var(--accent);
+}
+.google-calendar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
 button.link {
   background: none;
   color: var(--accent);
