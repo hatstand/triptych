@@ -16,11 +16,16 @@ services:
       OLLAMA_KEEP_ALIVE: 30m
     volumes:
       - ${OLLAMA_MODELS_DIR:-ollama-models}:/root/.ollama/models
+    # Every probe is two requests in Ollama's access log (`[GIN] … HEAD "/"` and `GET "/api/tags"`),
+    # which has no off switch. So probe every second while starting, for ollama-pull to wait on,
+    # and only every 5 min after that. Nothing else waits on this container being healthy.
     healthcheck:
       test: ["CMD", "ollama", "list"]
-      interval: 5s
+      interval: 5m
       timeout: 5s
-      retries: 30
+      retries: 3
+      start_period: 2m
+      start_interval: 1s
 
   ollama-pull:
     image: docker.io/ollama/ollama:${OLLAMA_TAG:-0.40.9-rocm}
