@@ -7,6 +7,7 @@ that ran out of retries), or whose photo's subject hasn't been found."""
 import asyncio
 import logging
 import signal
+import socket
 
 import httpx
 import restate
@@ -75,7 +76,6 @@ async def request_photos() -> None:
 
 
 async def start_up() -> None:
-    await asyncio.sleep(0.5)  # let the server bind before Restate calls it back
     if await register():
         await fill_timezones()
         await request_photos()
@@ -83,8 +83,12 @@ async def start_up() -> None:
 
 async def main() -> None:
     telemetry.setup("triptych-worker")
+    # Listen before serving, so Restate's call back during registration waits in the backlog until
+    # hypercorn accepts it instead of racing the bind.
+    sock = socket.create_server(("0.0.0.0", 9080))
+    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
     config = Config()
-    config.bind = ["0.0.0.0:9080"]
+    config.bind = [f"fd://{sock.fileno()}"]
     # A Logger, not "-", so hypercorn logs through ours instead of adding a plain-text handler.
     config.errorlog = logging.getLogger("hypercorn.error")
     # Stop on SIGINT, which compose sends this service (stop_signal). The Restate SDK takes over
