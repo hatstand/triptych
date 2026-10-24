@@ -133,7 +133,7 @@ The header is only trustworthy if Serve is the only way in, so the admin app (`c
 any future public route all reach the web app on port 8000, which ignores these headers. Never
 point a proxy at the admin socket. Because Serve vouches for any request from your device,
 including a form another site's tab posts, the invite form also requires a matching `Origin`
-(`PUBLIC_BASE_URL`).
+(`ADMIN_ORIGINS`, defaulting to `PUBLIC_BASE_URL`'s).
 
 One-time setup on marvin (needs a Tailscale release whose `tailscale serve --help` lists
 `unix:` targets):
@@ -154,6 +154,91 @@ comma-separated list; leaving it empty locks everyone out.
 To link the Restate UI from the admin page, set `RESTATE_UI_URL` in `.env` to where a browser
 reaches it: `https://marvin.axolotl-goblin.ts.net:9070` if you serve it with
 `tailscale serve --bg --https=9070 127.0.0.1:9070`, or `http://marvin:9070` with `RESTATE_ADMIN_BIND`.
+
+## Public access
+
+`https://triptych.purplehatstands.com` is served straight from marvin: a DNS-only record points at
+marvin's public IP, the router forwards TCP 443 to marvin, and Caddy (`compose/public.yaml`,
+`deploy/Caddyfile`) terminates TLS and proxies to the web app. Caddy gets its certificate from
+Let's Encrypt over TLS-ALPN-01 on that same port, so nothing listens on 80.
+
+What the internet can reach is the web app: sign-in, invite links, the UI, calendar feeds and
+`/inbound`. It can't reach `/admin` (a Unix socket behind `tailscale serve`; Caddy also answers 404
+there), the Restate UI (loopback, served on the tailnet by `tailscale serve --https=9070`),
+Postgres, Ollama or SMTP (`compose/public.yaml` unpublishes them). Sign-in, registration and the
+invite page are rate limited per client address, adding plans and asking questions per user
+(`src/triptych/web/ratelimit.py`). Accounts still only come from invites.
+
+Passkeys are tied to their RP ID, so the ones made on `triptych.axolotl-goblin.ts.net` don't work
+on the public name; everyone re-registers from an invite after the switch. The ts.net name keeps
+serving `/admin` (and the `/static` it uses), but signing in there stops working. Calendar feed
+URLs change too (new host and `SECRET_KEY`), so re-subscribe.
+
+### One-time setup
+
+1. **Secrets.** In `/srv/triptych/.env`, set `SECRET_KEY` to a new random value
+   (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`). Postgres only reads
+   `POSTGRES_PASSWORD` when it creates its volume, so change the role first, then `.env`:
+
+   ```bash
+   cd /srv/triptych
+   sudo -u deploy docker compose exec postgres psql -U triptych -c '\password triptych'
+   sudoedit /srv/triptych/.env     # POSTGRES_PASSWORD=<the same password>
+   ```
+
+   `compose/public.yaml` refuses to start if either is unset.
+
+2. **DNS** (Cloudflare dashboard → purplehatstands.com → DNS): an `A` record
+   `triptych` → marvin's public IP, proxy status **DNS only** (grey cloud). No `AAAA` unless
+   marvin is reachable on IPv6 and the router allows inbound 443 to it.
+
+3. **Router**: give marvin a fixed LAN address (DHCP reservation) and forward **TCP 443** to it.
+   Nothing else: SSH and deploys go over Tailscale.
+
+4. **Firewall on marvin**: deny inbound by default, allow 443 and the tailnet. With ufw:
+
+   ```bash
+   sudo ufw default deny incoming && sudo ufw default allow outgoing
+   sudo ufw allow in on tailscale0
+   sudo ufw allow 443/tcp
+   sudo ufw enable
+   ```
+
+   (firewalld: `sudo firewall-cmd --permanent --zone=trusted --add-interface=tailscale0`,
+   `sudo firewall-cmd --permanent --add-service=https`, `sudo firewall-cmd --reload`.)
+   Docker's published ports skip these rules, which is why `compose/public.yaml` publishes only
+   443 and leaves the rest on loopback or unpublished. Check what is listening beyond loopback:
+   `sudo ss -tlnp | grep -v -e 127.0.0.1 -e '\[::1\]'` should show Caddy's 443, Tailscale and
+   nothing else of ours.
+
+5. **Switch over**: add to `/srv/triptych/.env` (keep the other lines):
+
+   ```bash
+   COMPOSE_FILE=compose.yaml:compose/ollama.yaml:compose/gpu-rocm.yaml:compose/public.yaml
+   PUBLIC_HOST=triptych.purplehatstands.com
+   PUBLIC_BASE_URL=https://triptych.purplehatstands.com
+   WEBAUTHN_RP_ID=purplehatstands.com
+   ADMIN_ORIGINS=https://triptych.axolotl-goblin.ts.net
+   ```
+
+   `compose/public.yaml` needs Docker Compose 2.24.4 or later (`docker compose version`). Then
+   redeploy (re-run the **Deploy** workflow, or `tailscale ssh deploy@marvin <sha>`). The
+   `--remove-orphans` in the deploy script is fine: Caddy is part of the project now.
+
+6. **Check** from outside the house (a phone off Wi-Fi; many routers don't loop the public IP
+   back to the LAN): `https://triptych.purplehatstands.com/healthz`. The first request waits for
+   the certificate; `docker compose logs caddy` shows the ACME exchange.
+
+7. **Passkeys**: open `https://triptych.axolotl-goblin.ts.net/admin`, create an invite for
+   yourself (the link now points at the public host), and register a passkey from it; it's added
+   to your existing account. Delete the old ts.net passkeys from the account page afterwards.
+
+Once the Email Worker posts to `https://triptych.purplehatstands.com/inbound`, turn Funnel off
+(`tailscale funnel status` to see what's on). Keep the ts.net `tailscale serve` for `/`, though:
+the admin pages load their CSS and scripts from it.
+
+To go back to tailnet-only, remove `:compose/public.yaml` and the lines above from `.env` and
+redeploy. Passkeys registered on the public name then stop working on the ts.net name instead.
 
 ## Manual deploy / rollback
 

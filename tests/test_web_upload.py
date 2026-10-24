@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 from triptych.auth import Me
 from triptych.models import InboxItem, IngestRequest
 from triptych.web import app as web
-from triptych.web import assets
+from triptych.web import assets, ratelimit
 
 SAMPLES = Path(__file__).parents[1] / "samples"
 
@@ -46,6 +46,7 @@ ME = Me(id="user-1", email="me@example.com")
 def client() -> TestClient:
     # Not used as a context manager, so the lifespan (Postgres, Restate) never runs.
     web.app.dependency_overrides[web.current_user] = lambda: ME
+    web.app.dependency_overrides[web.limiter] = ratelimit.limiter  # a fresh one per request: no limits
     return TestClient(web.app, follow_redirects=False)
 
 

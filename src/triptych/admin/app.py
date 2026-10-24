@@ -60,7 +60,7 @@ Admin = Annotated[str, Depends(tailscale_admin)]
 def same_origin(request: Request) -> None:
     """Browsers send Origin with every form POST; a missing one means not a browser form of ours."""
     origin = request.headers.get("origin")
-    if origin not in settings.allowed_origins:
+    if origin not in settings.admin_origins:
         raise HTTPException(403, f"refusing a write from origin {origin or '(none)'}")
 
 

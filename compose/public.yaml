@@ -1,0 +1,52 @@
+# Serving the UI on the internet from marvin (deploy/README.md → "Public access"): Caddy terminates
+# TLS on :443 for PUBLIC_HOST and proxies to web. Add to COMPOSE_FILE after the LLM files.
+#
+# Also takes away the host ports nothing on marvin needs, so none of them is one BIND_ADDR typo
+# from the internet (Docker's published ports skip the host firewall). What stays, on loopback:
+# web :8000 for `tailscale serve` (the ts.net name: /admin and its /static, and Funnel's /inbound
+# until the Email Worker posts to the public host) and Restate :9070 for the Restate UI's Serve.
+# Postgres is still reachable for backups with `docker compose exec postgres pg_dump ...`.
+# `!reset` / `!override` need Docker Compose 2.24.4 or later.
+
+services:
+  caddy:
+    image: docker.io/library/caddy:2.11.7-alpine
+    restart: unless-stopped
+    # Only 443/tcp is forwarded by the router: certificates come over TLS-ALPN-01, no :80.
+    ports: ["443:443"]
+    environment:
+      PUBLIC_HOST: ${PUBLIC_HOST:?set PUBLIC_HOST, the public hostname (PUBLIC_BASE_URL without https://)}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data  # certificates and the ACME account: keep it, or hit Let's Encrypt limits
+      - caddy-config:/config
+    depends_on: [web]
+
+  web:
+    environment:
+      # Caddy replaces any X-Forwarded-For a client sends, and only Caddy, `tailscale serve` and
+      # compose neighbours can reach this port, so the header is ours: it's the address rate
+      # limits count against (triptych/web/ratelimit.py).
+      FORWARDED_ALLOW_IPS: "*"
+      # Refuse to come up on the internet with the development defaults.
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env before serving publicly}
+
+  postgres:
+    ports: !reset []
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env before serving publicly}
+
+  restate:
+    ports: !override
+      - "${RESTATE_ADMIN_BIND:-127.0.0.1}:9070:9070"
+
+  ollama:
+    ports: !reset []
+
+  # Mail arrives over HTTPS at /inbound; the SMTP listener is for local testing only.
+  smtp:
+    ports: !reset []
+
+volumes:
+  caddy-data:
+  caddy-config:
