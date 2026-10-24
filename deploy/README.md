@@ -92,6 +92,18 @@ The compose project is named `triptych` regardless of directory, so the Restate 
 carry over from wherever you run it today. Stop any Tilt session first, since it uses the same
 project name.
 
+**Ubuntu 26.04: let runc signal containers.** 26.04 confines runc in its own AppArmor profile,
+and Docker's `docker-default` container profile only accepts signals from unconfined processes, so
+`docker stop` can't deliver SIGTERM (journal: `runc ... unable to signal init: permission denied`;
+audit: `profile="docker-default" ... peer="runc"`). Every stop then waits out the 10s timeout and
+Docker kills the container, so the old `web` keeps serving until it dies mid-request. Unconfine runc
+(containers stay under `docker-default`); takes effect at once and survives reboots and upgrades:
+
+```bash
+sudo ln -s /etc/apparmor.d/runc /etc/apparmor.d/disable/ && sudo apparmor_parser -R /etc/apparmor.d/runc
+# undo: sudo rm /etc/apparmor.d/disable/runc && sudo apparmor_parser -r /etc/apparmor.d/runc
+```
+
 Membership in the `docker` group is effectively root on marvin. The restricted login shell and the
 `environment: marvin` trust subject are what keep that down to "deploy a commit from main".
 
