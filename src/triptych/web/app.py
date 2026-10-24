@@ -73,8 +73,10 @@ app = FastAPI(title="Triptych", lifespan=lifespan, docs_url=None, redoc_url=None
 app.mount("/static", Static(directory=STATIC, check_dir=False), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["duration"] = journeys.format_duration
+templates.env.filters["tz_abbr"] = journeys.tz_abbr
 # Jinja types globals by its own defaults' types; any value is allowed.
 cast(dict[str, Any], templates.env.globals)["static"] = Assets().url
+cast(dict[str, Any], templates.env.globals)["elapsed"] = journeys.elapsed
 
 
 def state(request: Request) -> AppState:

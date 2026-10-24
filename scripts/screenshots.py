@@ -100,7 +100,8 @@ async def seed() -> str:
         res(
             Kind.LODGING,
             "Casa do Miradouro",
-            at(d + timedelta(days=1), "20:00"),
+            # Check-in opens before the flight lands: the timeline still puts the hotel after it.
+            at(d + timedelta(days=1), "15:00"),
             at(d + timedelta(days=5), "11:00"),
             provider="Casa do Miradouro",
             confirmation_code="CM-20419",

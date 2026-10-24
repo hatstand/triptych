@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timedelta
 
-from triptych.journeys import Journey, format_duration, timeline
+from triptych.journeys import Item, Journey, Stay, format_duration, timeline
 from triptych.models import Kind, Reservation, Trip
 from triptych.web import app as web
 
@@ -30,13 +30,15 @@ def leg(
     )
 
 
-def hotel(start: str, end: str) -> Reservation:
+def hotel(start: str, end: str, tz: str | None = None, city: str | None = None) -> Reservation:
     return Reservation(
         id=f"hotel-{start}",
         kind=Kind.LODGING,
         title="Hotel",
         start_local=datetime.fromisoformat(start),
         end_local=datetime.fromisoformat(end),
+        start_tz=tz,
+        city=city,
     )
 
 
@@ -58,7 +60,7 @@ SGN_SYD = leg(
 )
 
 
-def items(rs: list[Reservation]) -> list[Reservation | Journey]:
+def items(rs: list[Reservation]) -> list[Item]:
     return [i for _, day in timeline(rs) for i in day]
 
 
@@ -74,8 +76,8 @@ def test_connecting_flights_form_one_journey() -> None:
 
 
 def test_overnight_hotel_makes_a_stopover() -> None:
-    rs = items([LHR_SGN, hotel("2026-12-02T08:00", "2026-12-03T05:00"), SGN_SYD])
-    assert [type(i) for i in rs] == [Reservation, Reservation, Reservation]
+    rs = items([LHR_SGN, hotel("2026-12-02T08:00", "2026-12-03T05:00", city="Ho Chi Minh City"), SGN_SYD])
+    assert [type(i) for i in rs] == [Reservation, Stay, Reservation, Stay]
 
 
 def test_long_layover_breaks_the_journey() -> None:
@@ -212,3 +214,82 @@ def test_trip_page_renders_journey_with_expandable_segments() -> None:
     assert "icons.svg#warning" not in html
     assert html.count('<article class="card segment flight">') == 2
     assert "/reservations/VN773/delete" in html
+
+
+def test_check_in_waits_for_the_train_that_gets_you_there() -> None:
+    # Check-in is allowed from 14:00, but the train doesn't arrive until 18:00.
+    train = leg(
+        "ES9024",
+        "2027-03-05T15:01",
+        "2027-03-05T18:20",
+        "London St Pancras",
+        "Paris Gare du Nord",
+        ("Europe/London", "Europe/Paris"),
+        kind=Kind.RAIL,
+        city="Paris",
+    )
+    stay = hotel("2027-03-05T14:00", "2027-03-08T11:00", "Europe/Paris", "Paris")
+    [(_, first), (_, last)] = timeline([stay, train])
+    assert first == [train, Stay(stay)]
+    assert last == [Stay(stay, checkout=True)]
+    trip = Trip(id="t", owner="u", name="Paris", reservations=[stay, train])
+    html = web.templates.get_template("trip.html").render(
+        email=None, trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
+    )
+    assert html.index("ES9024") < html.index("Check-in from 14:00") < html.index("Check out")
+    assert "3 nights" in html
+
+
+def test_check_out_comes_before_an_early_departure() -> None:
+    stay = hotel("2027-03-05T14:00", "2027-03-08T11:00", "Europe/Paris", "Paris")
+    train = leg(
+        "TGV6601",
+        "2027-03-08T07:30",
+        "2027-03-08T09:30",
+        "Paris Gare de Lyon",
+        "Lyon Part-Dieu",
+        ("Europe/Paris", "Europe/Paris"),
+        kind=Kind.RAIL,
+        city="Lyon",
+    )
+    assert timeline([stay, train])[-1][1] == [Stay(stay, checkout=True), train]
+
+
+def test_only_arrivals_in_the_hotels_city_move_its_check_in() -> None:
+    # Arriving in Lyon at 12:00 and going on to Marseille at 20:00: the Lyon hotel isn't after that.
+    into = leg("A", "2027-03-05T10:00", "2027-03-05T12:00", "Paris", "Lyon", kind=Kind.RAIL, city="Lyon")
+    onward = leg(
+        "B", "2027-03-05T20:00", "2027-03-05T22:00", "Lyon", "Marseille", kind=Kind.RAIL, city="Marseille"
+    )
+    stay = hotel("2027-03-05T15:00", "2027-03-05T19:00", city="Lyon")
+    assert items([onward, stay, into]) == [into, Stay(stay), onward]
+
+
+def test_times_in_different_zones_are_compared_as_instants() -> None:
+    # 17:00 in New York is after 18:00 in London on the same day.
+    flight = leg(
+        "BA117",
+        "2027-03-05T18:00",
+        "2027-03-05T21:00",
+        "London (LHR)",
+        "New York (JFK)",
+        ("Europe/London", "America/New_York"),
+    )
+    early = Reservation(
+        id="dinner",
+        kind=Kind.RESTAURANT,
+        title="Dinner",
+        start_local=datetime(2027, 3, 5, 17, 0),
+        start_tz="America/New_York",
+    )
+    assert items([early, flight]) == [flight, early]
+
+
+def test_a_hotel_at_the_destination_does_not_break_the_journey() -> None:
+    # Check-in in Lisbon opens at 15:00, during the London layover; it's not a stopover in London.
+    a = leg(
+        "BA286", "2026-11-05T19:40", "2026-11-06T13:55", "San Francisco (SFO)", "London (LHR)", city="London"
+    )
+    b = leg("BA500", "2026-11-06T16:10", "2026-11-06T18:50", "London (LHR)", "Lisbon (LIS)", city="Lisbon")
+    stay = hotel("2026-11-06T15:00", "2026-11-09T11:00", city="Lisbon")
+    assert items([a, b, stay])[:2] == [Journey([a, b]), Stay(stay)]

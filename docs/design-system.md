@@ -71,6 +71,7 @@ tokens change. Accent, danger, kind colours and badge colours are the same in bo
 | Times `.segment .when`, journey route | `1.05rem` | normal | Timeline |
 | Section title `h2` | `1.05rem` | bold | Card headings ("Inbox", "Ask about this trip") |
 | Day heading `.day` | `.95rem` | 600, `--muted` | Timeline days |
+| Clock `.clock time` | `1.05rem` | 600, tabular figures | Timeline times |
 | Body | `15px` (1rem) | normal | |
 | Facts `.facts`, `.trip-dates` | `.9rem` | normal | |
 | Small `.small` | `.85rem` | normal | Hints, secondary links, time zones |
@@ -152,9 +153,26 @@ beside it are `--muted`.
 `no_travel` grey, and the in-progress states (`queued`, `parsing`, `extracting`, `filing`) blue
 with a 1.2s pulse.
 
-**Timeline item** `.card.segment.<kind>`: icon column (28px, icon 24px in the kind colour),
-then the body: title row with a remove link, times (`.when`, with the zone in `.muted.small`),
-route or address, and a `.facts` definition list (two columns: muted label, value).
+**Timeline** `section.timeline`: the trip page, one `.day-group` per day with entries, each a
+`.day` heading ("Friday 6 November", then "Day 2" in `.day-number`) over an `ol.entries`. Each
+`li.entry.<kind>` is a three-column grid: the `.clock` (`52px`: start time at `1.05rem` 600 with
+tabular figures, its zone abbreviation below in `.75rem` `--muted`), the rail node `.node` (a `32px`
+`--card` circle with a 2px `--kind` ring and the kind's icon at text size), then the entry's card.
+A flight, train or connecting journey also has its arrival at the foot of the clock (with the weekday above it when it lands on a later day), level with a `12px` `.stop` ring on the rail; its card stretches to the row so the arrival lines up with the card's foot. The rail is a 2px `--line` rule behind the nodes, unbroken from the first node to the last: each entry draws it down to the next, and each day heading after the first carries it past the heading, which is indented to the card column. Under `520px` the clock and node shrink to `44px`
+and `28px`.
+
+Entries are in the order things happen, compared as instants across zones
+(`journeys.timeline`). A hotel stay is two entries: its check-in on the first day and a compact
+`.segment.lodging.checkout` card on the last. Their clocks show the hotel's own times with a
+"from" / "by" `.bound` above, since check-in is the earliest allowed and check-out the latest: a
+check-in sorts after transport arriving in its city that day and a check-out before transport
+leaving, so their clocks can be out of sequence with the entries around them.
+
+**Timeline item** `.card.segment.<kind>`: the body: title row with a remove link, times (`.when`:
+on the timeline the end, since the start is in the clock, or for a flight or train just its duration, since both times are; with the zone in `.muted.small`
+when it changes), route or address, and a `.facts` definition list (two columns: muted label,
+value). Inside a journey's legs, where there is no clock, a segment has its own icon column (28px,
+icon 24px in the kind colour) and its start time.
 
 **Alerts** `.card.alerts`: amber left border and a plain list of timestamped notifications.
 
@@ -212,6 +230,7 @@ Triptych uses its own names for the icons it needs, mapped to Lucide names in
 | `warning` | `triangle-alert` | Tight or risky connections, alerts |
 | `place` | `map-pin` | Other items, addresses |
 | `calendar` | `calendar` | Dates, calendar export |
+| `checkout` | `log-out` | Hotel check-out on the timeline |
 
 Only flight, lodging, car, rail, restaurant, activity and other are reservation kinds today.
 The journey view uses `warning` for airport and station changes and `layover` / `transfer` on
@@ -228,7 +247,7 @@ In templates, import the macro from `_icons.html`:
 ```
 
 Sizing: `.i` is `1.25em` square and sits on the text baseline, so inline icons scale with the
-text they are in. The timeline sets them to `24px` (the grid size) inside `.segment .icon`.
+text they are in. Journey legs set them to `24px` (the grid size) inside `.segment .icon`; timeline nodes keep text size.
 Draw icons at 24px or at text size; avoid other sizes so the 2px stroke stays crisp.
 
 ## Brand mark
