@@ -6,6 +6,7 @@ that ran out of retries), or whose photo's subject hasn't been found."""
 
 import asyncio
 import logging
+import signal
 
 import httpx
 import restate
@@ -73,18 +74,27 @@ async def request_photos() -> None:
         log.exception("couldn't ask for missing photos")
 
 
+async def start_up() -> None:
+    await asyncio.sleep(0.5)  # let the server bind before Restate calls it back
+    if await register():
+        await fill_timezones()
+        await request_photos()
+
+
 async def main() -> None:
     telemetry.setup("triptych-worker")
     config = Config()
     config.bind = ["0.0.0.0:9080"]
     # A Logger, not "-", so hypercorn logs through ours instead of adding a plain-text handler.
     config.errorlog = logging.getLogger("hypercorn.error")
-    server = asyncio.create_task(serve(app, config))
-    await asyncio.sleep(0.5)
-    if await register():
-        await fill_timezones()
-        await request_photos()
-    await server
+    # Stop on SIGINT, which compose sends this service (stop_signal). The Restate SDK takes over
+    # SIGTERM once serving, only to tell running invocations, so on its own the worker never exits
+    # and every deploy waits out Docker's stop timeout before killing it.
+    stop = asyncio.Event()
+    asyncio.get_running_loop().add_signal_handler(signal.SIGINT, stop.set)
+    startup = asyncio.create_task(start_up())
+    await serve(app, config, shutdown_trigger=stop.wait)
+    startup.cancel()
 
 
 if __name__ == "__main__":
