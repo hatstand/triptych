@@ -5,6 +5,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import secrets
 import struct
 import time
@@ -290,3 +291,21 @@ async def test_cross_origin_posts_are_refused(browser: httpx.AsyncClient) -> Non
     )
     assert (await browser.post("/logout", headers={"Origin": "https://evil.example"})).status_code == 403
     assert (await browser.get("/account")).status_code == 200
+
+
+async def test_account_page_adds_and_removes_sending_addresses(browser: httpx.AsyncClient) -> None:
+    await sign_up(browser, Authenticator())
+    page = await browser.post("/account/senders", data={"email": "Me@Work.example"})
+    assert page.status_code == 200
+    [code] = set(re.findall(r"TRIPTYCH-[A-Z0-9]{10}", page.text))
+    assert "me@work.example" in page.text and "mailto:" in page.text
+    # Codes are stored hashed: a later visit says it's pending but can't show the code again.
+    page = await browser.get("/account")
+    assert "me@work.example" in page.text and code not in page.text and "New code" in page.text
+
+    resp = await browser.post("/account/senders/delete", data={"email": "me@work.example"})
+    assert resp.status_code == 303
+    assert "me@work.example" not in (await browser.get("/account")).text
+
+    refused = await browser.post("/account/senders/delete", data={"email": ME})
+    assert refused.status_code == 400 and "only address" in refused.text

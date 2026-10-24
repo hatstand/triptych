@@ -23,7 +23,7 @@ from limits import RateLimitItem
 from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
-from triptych import auth, db, ical, inbound, journeys, llm
+from triptych import auth, db, ical, inbound, journeys, llm, senders
 from triptych.config import settings
 from triptych.models import (
     Answer,
@@ -219,12 +219,28 @@ async def logout(request: Request) -> Response:
     return resp
 
 
-async def render_account(request: Request, me: auth.Me, error: str | None = None) -> Response:
+async def render_account(
+    request: Request,
+    me: auth.Me,
+    error: str | None = None,
+    sender_error: str | None = None,
+    new_sender: tuple[str, str] | None = None,
+) -> Response:
+    """`new_sender` = (address, code) just issued: codes are stored hashed, so shown only now."""
     return templates.TemplateResponse(
         request,
         "account.html",
-        {"email": me.email, "passkeys": await auth.passkeys(me.id), "error": error},
-        status_code=400 if error else 200,
+        {
+            "email": me.email,
+            "passkeys": await auth.passkeys(me.id),
+            "senders": await senders.addresses(me.id),
+            "pending_senders": await senders.pending(me.id),
+            "new_sender": new_sender,
+            "inbound_address": settings.inbound_address,
+            "error": error,
+            "sender_error": sender_error,
+        },
+        status_code=400 if error or sender_error else 200,
     )
 
 
@@ -239,6 +255,24 @@ async def passkey_delete(request: Request, passkey_id: str, me: User) -> Respons
         await auth.delete_passkey(me.id, passkey_id)
     except auth.AuthError as e:
         return await render_account(request, me, str(e))
+    return RedirectResponse("/account", status_code=303)
+
+
+@app.post("/account/senders", response_class=HTMLResponse)
+async def sender_add(request: Request, me: User, email: Annotated[str, Form()]) -> Response:
+    try:
+        code = await senders.request(me.id, email)
+    except senders.SenderError as e:
+        return await render_account(request, me, sender_error=str(e))
+    return await render_account(request, me, new_sender=(db.normalise_email(email), code))
+
+
+@app.post("/account/senders/delete", response_class=HTMLResponse)
+async def sender_delete(request: Request, me: User, email: Annotated[str, Form()]) -> Response:
+    try:
+        await senders.remove(me.id, email)
+    except senders.SenderError as e:
+        return await render_account(request, me, sender_error=str(e))
     return RedirectResponse("/account", status_code=303)
 
 
@@ -308,6 +342,7 @@ async def home_context(me: auth.Me) -> dict[str, Any]:
     today = date.today()
     return {
         "email": me.email,
+        "inbound_address": settings.inbound_address,
         "upcoming": [t for t in ov.trips if t.end_date >= today],
         "past": [t for t in reversed(ov.trips) if t.end_date < today],
         "inbox": ov.inbox[:10],
@@ -454,7 +489,7 @@ async def notifications_dismiss(me: User) -> Response:
     return RedirectResponse("/", status_code=303)
 
 
-# --- inbound mail (Cloudflare Email Worker → Tailscale Funnel → here) -------------------------
+# --- inbound mail (Cloudflare Email Worker → here) -------------------------------------------
 
 
 @app.post("/inbound")
@@ -469,21 +504,46 @@ async def inbound_mail(request: Request, client: Client) -> dict[str, str]:
     if len(raw) > MAX_INBOUND:
         raise HTTPException(413, "message too large")
 
-    envelope_from = request.headers.get("x-envelope-from", "")
+    # Who may file is checked before authenticating, so mail from strangers costs no DNS lookups.
+    sender = inbound.canonical_sender(request.headers.get("x-envelope-from", ""))
+    code = inbound.verification_code(raw)
+    if code is not None and not await senders.is_pending(code, sender):
+        code = None
+    owner = await senders.owner(sender)
+    if sender != inbound.GMAIL_FORWARDING_VERIFIER and owner is None and code is None:
+        raise HTTPException(
+            403,
+            f"{sender or 'this address'} isn't a Triptych sender. Add it on your Triptych account page,"
+            f" or forward from an address you have already added.",
+        )
     try:
-        result = await asyncio.to_thread(inbound.verify, raw, envelope_from, settings.inbound_allowed_senders)
+        result = await asyncio.to_thread(inbound.verify, raw, sender)
     except inbound.Rejected as e:
         raise HTTPException(403, str(e)) from e
 
     now = datetime.now(UTC)
-    owner = await db.user_for_email(result.user)
     if isinstance(result, inbound.ForwardingConfirmation):
+        owners = [o for a in result.addresses if (o := await senders.owner(a))]
+        if not owners:
+            raise HTTPException(403, "forwarding was requested by an address that isn't a Triptych sender")
         text = "Gmail forwarding confirmation"
         text += f" — code {result.code}" if result.code else ""
         text += f" — confirm at {result.link}" if result.link else ""
-        await db.add_notification(owner, Notification(id=str(uuid.uuid4()), at=now, trip_id=None, text=text))
-        return {"status": "forwarding-confirmation", "user": result.user}
+        await db.add_notification(
+            owners[0], Notification(id=str(uuid.uuid4()), at=now, trip_id=None, text=text)
+        )
+        return {"status": "forwarding-confirmation", "user": owners[0]}
 
+    if code is not None:
+        try:
+            owner = await senders.confirm(code, result.sender)
+        except senders.SenderError as e:
+            raise HTTPException(403, str(e)) from e
+        text = f"Mail from {result.sender} will now be filed in your account."
+        await db.add_notification(owner, Notification(id=str(uuid.uuid4()), at=now, trip_id=None, text=text))
+        return {"status": "sender-verified", "user": owner, "auth": result.how}
+
+    assert owner is not None
     req = IngestRequest(
         user=owner,
         source="email",
@@ -491,9 +551,9 @@ async def inbound_mail(request: Request, client: Client) -> dict[str, str]:
         data_b64=base64.b64encode(raw).decode(),
         received_at=now,
     )
-    key = inbound.ingest_id_for(raw, result.user)
+    key = inbound.ingest_id_for(raw, result.sender)
     await client.workflow_send(ingest_svc.run, key, req)
-    return {"status": "queued", "ingest_id": key, "user": result.user, "auth": result.how}
+    return {"status": "queued", "ingest_id": key, "user": owner, "auth": result.how}
 
 
 # --- calendar feeds --------------------------------------------------------------------------

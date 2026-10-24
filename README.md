@@ -70,57 +70,80 @@ uv run python scripts/send_samples.py --from me@example.com
 ## Real email: plans@purplehatstands.com
 
 ```
-Gmail ─▶ MX: Cloudflare Email Routing ─▶ Email Worker ─HTTPS + bearer token─▶ Tailscale Funnel
-      ─▶ web :8000 /inbound  (allowlist + DKIM/ARC check) ─▶ Ingest workflow
+Gmail ─▶ MX: Cloudflare Email Routing ─▶ Email Worker ─HTTPS + bearer token─▶ triptych.purplehatstands.com
+      ─▶ web :8000 /inbound  (verified sender + DKIM/ARC check) ─▶ Ingest workflow
 ```
 
-**Several instances, one address.** `plans+<instance>@purplehatstands.com` is delivered to
-`https://<instance>.axolotl-goblin.ts.net/inbound`. Plain `plans@` goes to the default instance (`zem`).
-To add a test instance, just run the stack on another tailnet machine with the same
-`INBOUND_TOKEN` and turn on Funnel there; no Cloudflare changes are needed.
+The Worker posts every message to `INBOUND_URL_TEMPLATE` (`cloudflare/email-worker/wrangler.jsonc`),
+which is marvin's public `/inbound` (see `deploy/README.md`, "Public access").
 
-* **Hostname pinning:** the Worker substitutes only names matching `[a-z0-9-]` into a template
-  pinned to the tailnet's domain, so an address can't send it anywhere else.
-* **Existence check:** before delivering, the Worker looks the hostname up via public DNS.
-  Tailscale publishes public DNS only for Funnel-enabled machines, so a typo or a machine without
-  Funnel bounces with *"No Triptych instance …"* rather than going to the fallback mailbox.
+**Test instances over Funnel.** Set the template to
+`https://{instance}.axolotl-goblin.ts.net/inbound` and `plans+<instance>@purplehatstands.com`
+is delivered to that tailnet machine, with plain `plans@` going to `DEFAULT_INSTANCE`. Run the stack
+there with the same `INBOUND_TOKEN` and `tailscale funnel --bg --set-path /inbound
+http://127.0.0.1:8000/inbound`.
 
-Nothing listens on port 25 here, and Funnel exposes only the `/inbound` path. The Worker
+* **Hostname pinning:** the Worker substitutes only names matching `[a-z0-9-]` into the template,
+  so an address can't send it anywhere else.
+* **Existence check:** before delivering, the Worker looks the hostname up via public DNS, so a
+  typo'd instance (Tailscale publishes public DNS only for Funnel-enabled machines) bounces with
+  *"No Triptych instance …"* rather than being retried.
+
+Nothing listens on port 25 here. The Worker
 (`cloudflare/email-worker/`) passes the raw message through byte-for-byte. `/inbound`
 (`src/triptych/inbound.py`) then authenticates it:
 
-* **Allowlist:** the canonical envelope sender must be in `INBOUND_ALLOWED_SENDERS`.
+* **Verified senders:** the canonical envelope sender must be one of a user's verified sending
+  addresses, and the message is filed in that user's account. Anything else is refused before any
+  DNS lookups. A user's first address is the one their invite named; they add more on the account
+  page, which gives them a code to send from the new address to `plans@` (`src/triptych/senders.py`).
 * **Manual forwards** must carry a DKIM signature from the sender's own domain.
 * **Gmail auto-forwards**, whose envelope sender is rewritten to `you+caf_=…@gmail.com`, must
   carry a valid ARC chain sealed by `google.com`.
 * **Gmail's "confirm forwarding" email** is recognised, and its code appears as an alert in the
   web UI.
 
-If zem can't be reached, the Worker retries and then forwards the message to `FALLBACK_ADDRESS`,
-so nothing is lost.
+If Triptych can't be reached, the Worker retries for a few seconds and then refuses the message
+with *"Temporarily unable to process this message; please try again later"*, so the sender knows to
+resend. (`FALLBACK_ADDRESS` can instead forward it to a verified mailbox, but that mailbox would get
+every user's mail, so it's only for a single-user instance.)
 
 One-time setup:
 
-1. **DNS on Cloudflare**, with Email Routing enabled and catch-all off.
+1. **DNS on Cloudflare**, with Email Routing enabled on `purplehatstands.com` and catch-all off.
+   The address stays on the apex: `triptych.purplehatstands.com` is the web UI's (tunnel) CNAME,
+   and a name with a CNAME can't also have the MX records mail needs.
 2. **Shared token:** add `INBOUND_TOKEN` (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
-   and `INBOUND_ALLOWED_SENDERS` to `.env`.
-3. **Funnel:** `tailscale funnel --bg --set-path /inbound http://127.0.0.1:8000/inbound`
-4. **Deploy the Worker:**
-   ```bash
-   cd cloudflare/email-worker && npm ci
-   npx wrangler login
-   npx wrangler secret put INBOUND_TOKEN      # same value as .env
-   npm test && npm run deploy
-   ```
+   to `.env`. There is no sender allowlist to configure: users' addresses live in Postgres.
+3. **Public `/inbound`:** marvin's public site must be up (`deploy/README.md`, "Public access").
+4. **Create the Worker, deployed from GitHub.** Cloudflare's own CI (Workers Builds) deploys it on
+   every merge to `main` that touches it. Its deploy token is created and kept by Cloudflare, so no
+   Cloudflare credential is ever stored in GitHub. In the dashboard, go to **Workers & Pages →
+   Create → Import a repository**, pick `hatstand/triptych` (approve the Cloudflare GitHub app for
+   it the first time), and fill in:
+   - **Project name:** `triptych-email`. It must match `name` in `wrangler.jsonc`, or builds fail.
+   - **Build command:** empty. **Deploy command:** `npm run deploy` (type-checks, then `wrangler deploy`).
+   - **Preview command:** leave the default; **Enable Preview builds:** off, so branches never build.
+   - **Advanced settings → Path:** `cloudflare/email-worker`
+   - **API token:** *Create new token* (the one Cloudflare's builds use).
+   - **Variable name/value:** empty. These are build-time variables, not the Worker's secrets.
+
+   Then, on the Worker:
+   - **Settings → Variables and secrets → Add:** `INBOUND_TOKEN`, type *Secret*, the same value as
+     `.env`. Secrets survive deploys; the plain vars come from `wrangler.jsonc` on each deploy.
+   - **Settings → Build → Build watch paths:** include `cloudflare/email-worker/*`, so other
+     merges don't redeploy it.
+   - **Settings → Build → Branch control:** check the production branch is `main`.
+
+   Pull requests are still checked by `.github/workflows/email-worker.yml` (lint, types, tests).
+   To deploy by hand instead: `npx wrangler login && npm ci && npm run deploy` in that directory.
 5. **Routing:** in Cloudflare, go to Email Routing.
    - **Settings:** turn on **Subaddressing**, so the `plans@` rule also matches `plans+<instance>@`.
-   - **Destination addresses:** verify `FALLBACK_ADDRESS`.
    - **Routing rules:** set `plans@` to *Send to a Worker* → `triptych-email`.
 6. **Gmail:**
    - *Optional, automatic forwarding:* go to Settings → Forwarding, add `plans@purplehatstands.com`,
      and read the confirmation code from Triptych's alerts. Then add a filter (e.g. `subject:(booking
-     OR itinerary OR confirmation) -to:john.maguire+triptych-undelivered@gmail.com`) that forwards
-     to it. The `-to:` exclusion keeps fallback copies from being forwarded back.
+     OR itinerary OR confirmation)`) that forwards to it.
    - *Manual:* forward any confirmation to `plans@purplehatstands.com`.
 
 ## Running on a Ryzen AI MAX 385 (Radeon 8050S, 32 GB)

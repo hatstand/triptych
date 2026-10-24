@@ -213,8 +213,9 @@ def normalise_email(email: str) -> str:
 
 
 async def user_for_email(email: str) -> str:
-    """The user an address belongs to. A new address gets a new user: mail can arrive before its
-    owner has signed up, and invites can name an address that has never sent any."""
+    """The user an address belongs to. A new address gets a new user: invites can name an address
+    nobody has yet (and the local SMTP gateway files for any sender). Inbound mail from the internet
+    only ever looks addresses up (senders.owner), since that's what says who may file."""
     email = normalise_email(email)
     while True:
         async with connection() as conn:

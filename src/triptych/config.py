@@ -19,7 +19,7 @@ class Settings:
     llm_concurrency: int
     secret_key: str
     inbound_token: str | None
-    inbound_allowed_senders: frozenset[str]
+    inbound_address: str
     admin_logins: frozenset[str]
     restate_ui_url: str | None
 
@@ -66,9 +66,8 @@ def load() -> Settings:
         secret_key=env("SECRET_KEY", "dev-only-change-me"),
         # Shared secret between the Cloudflare Email Worker and POST /inbound (unset = disabled).
         inbound_token=env("INBOUND_TOKEN") or None,
-        inbound_allowed_senders=frozenset(
-            a.strip().lower() for a in env("INBOUND_ALLOWED_SENDERS", "").split(",") if a.strip()
-        ),
+        # Where users forward bookings (shown on the account page; routed by the Email Worker).
+        inbound_address=env("INBOUND_ADDRESS", "plans@purplehatstands.com"),
         webauthn_rp_id=env("WEBAUTHN_RP_ID") or urlsplit(public_base_url).hostname or "localhost",
         allowed_origins=allowed_origins,
         admin_origins=origins(env("ADMIN_ORIGINS", "")) or allowed_origins,

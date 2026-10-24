@@ -7,10 +7,11 @@ The *envelope sender* decides whose account a trip lands in, so it must be authe
 * Gmail auto-forward (filter): envelope = you+caf_=plans=domain@gmail.com, header From is the
   airline, and Google adds an ARC seal (d=google.com) vouching for where it came from.
 
-We accept a message when the canonical envelope sender is allow-listed AND either a valid DKIM
-signature from the sender's own domain is present, or (for Gmail) the latest ARC seal is Google's
-and the ARC chain validates. Verification is done here on the raw bytes (DKIM/ARC survive the
-Worker untouched), not delegated to Cloudflare.
+We accept a message when either a valid DKIM signature from the canonical envelope sender's own
+domain is present, or (for Gmail) the latest ARC seal is Google's and the ARC chain validates.
+Verification is done here on the raw bytes (DKIM/ARC survive the Worker untouched), not delegated
+to Cloudflare. Whose account an authenticated sender files into (and whether they may at all) is
+senders.py's business.
 """
 
 import email
@@ -23,6 +24,8 @@ from email.utils import parseaddr
 from typing import Any
 
 import dkim
+
+from triptych import senders
 
 # dkimpy's resolver hook: (name: bytes, timeout: int) -> TXT record bytes | None (untyped upstream).
 DnsFunc = Callable[..., Any]
@@ -37,15 +40,16 @@ class Rejected(Exception):
 
 @dataclass(frozen=True, slots=True)
 class Accepted:
-    user: str
+    sender: str
     how: str
 
 
 @dataclass(frozen=True, slots=True)
 class ForwardingConfirmation:
-    """Gmail's 'confirm forwarding to plans@…' email: surface the code to the requesting user."""
+    """Gmail's 'confirm forwarding to plans@…' email: surface the code to the requesting user,
+    who is whichever of `addresses` (every address in the body) is a verified sender."""
 
-    user: str
+    addresses: tuple[str, ...]
     code: str | None
     link: str | None
 
@@ -98,15 +102,24 @@ def _aligned(signer: str, domain: str) -> bool:
     return signer == domain or signer.endswith("." + domain)
 
 
+def verification_code(raw: bytes) -> str | None:
+    """A sender verification code (senders.py) in the subject or the text of the message."""
+    msg = email.message_from_bytes(raw, policy=email.policy.default)
+    if code := senders.find_code(str(msg.get("subject") or "")):
+        return code
+    body = msg.get_body(preferencelist=("plain", "html"))
+    return senders.find_code(body.get_content()) if body is not None else None
+
+
 def verify(
-    raw: bytes, envelope_from: str, allowed: frozenset[str], dnsfunc: DnsFunc = dkim.get_txt
+    raw: bytes, envelope_from: str, dnsfunc: DnsFunc = dkim.get_txt
 ) -> Accepted | ForwardingConfirmation:
     """Blocking (DNS lookups for keys); call via asyncio.to_thread."""
     sender = canonical_sender(envelope_from)
     if sender == GMAIL_FORWARDING_VERIFIER:
-        return _forwarding_confirmation(raw, allowed, dnsfunc)
-    if sender not in allowed:
-        raise Rejected(f"{sender or 'unknown sender'} is not allowed to send to this address")
+        return _forwarding_confirmation(raw, dnsfunc)
+    if not sender:
+        raise Rejected("no sender address")
 
     domain = sender.rpartition("@")[2]
     if any(_aligned(s, domain) for s in _dkim_domains(raw, dnsfunc)):
@@ -116,19 +129,17 @@ def verify(
     raise Rejected(f"could not authenticate {sender} (no aligned DKIM signature or trusted ARC seal)")
 
 
-def _forwarding_confirmation(raw: bytes, allowed: frozenset[str], dnsfunc: DnsFunc) -> ForwardingConfirmation:
+def _forwarding_confirmation(raw: bytes, dnsfunc: DnsFunc) -> ForwardingConfirmation:
     if not any(_aligned(s, "google.com") for s in _dkim_domains(raw, dnsfunc)):
         raise Rejected("forwarding confirmation not signed by google.com")
     msg = email.message_from_bytes(raw, policy=email.policy.default)
     body = msg.get_body(preferencelist=("plain", "html"))
     text = body.get_content() if body is not None else ""
-    requester = next(
-        (a.lower() for a in re.findall(r"[\w.+-]+@[\w-]+\.[\w.]+", text) if a.lower() in allowed), None
+    addresses = tuple(
+        dict.fromkeys(a.lower().rstrip(".") for a in re.findall(r"[\w.+-]+@[\w-]+\.[\w.]+", text))
     )
-    if requester is None:
-        raise Rejected("forwarding was requested by an address that is not allowed")
     code = re.search(r"Confirmation code:\s*(\d+)", text)
     link = re.search(r"https://mail(?:-settings)?\.google\.com/\S+", text)
     return ForwardingConfirmation(
-        user=requester, code=code.group(1) if code else None, link=link.group(0) if link else None
+        addresses=addresses, code=code.group(1) if code else None, link=link.group(0) if link else None
     )
