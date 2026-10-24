@@ -22,7 +22,8 @@ from webauthn.helpers import base64url_to_bytes, bytes_to_base64url, encode_cbor
 from triptych import auth, db
 from triptych.config import settings
 from triptych.models import Kind, Reservation
-from triptych.web.app import SESSION_COOKIE, app
+from triptych.web import ratelimit
+from triptych.web.app import SESSION_COOKIE, app, limiter
 
 pytestmark = [
     pytest.mark.anyio,
@@ -110,9 +111,13 @@ class Authenticator:
 
 @pytest.fixture
 async def browser(database: str) -> AsyncIterator[httpx.AsyncClient]:
+    # The lifespan doesn't run here, so give the app the rate limiter it would have made.
+    lim = ratelimit.limiter()
+    app.dependency_overrides[limiter] = lambda: lim
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
         yield c
+    app.dependency_overrides.clear()
 
 
 async def sign_up(browser: httpx.AsyncClient, device: Authenticator, email: str = ME) -> httpx.Response:
