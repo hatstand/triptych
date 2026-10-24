@@ -43,17 +43,19 @@ def normalise(x: ExtractedReservation, *, reservation_id: str, ingest_id: str) -
         return None
     end = parse_local(x.end_local)
 
-    start_tz = end_tz = valid_tz(x.timezone)
+    # Our places data names a city's zone more reliably than the model does (it once put a Shanghai
+    # hotel in Asia/Hong_Kong); the model's own guess is the fallback.
+    start_tz = end_tz = places.city_timezone(x.city, x.country_code) or valid_tz(x.timezone)
     city = x.city
     start_location, end_location = x.start_location, x.end_location
 
     if x.kind in TRANSPORT:
-        # The model's timezone is its city's, which for transport is where it arrives; where it
-        # departs from is the airport's, or else filled in from the previous leg (fill_timezones).
-        start_tz = None
+        # `city` is where transport arrives. It departs from the airport's zone, or start_city's, or
+        # else wherever the previous leg landed (fill_timezones).
+        start_tz = places.city_timezone(x.start_city, x.start_country_code)
         dep, arr = places.lookup(x.start_iata), places.lookup(x.end_iata)
         if dep:
-            start_tz = valid_tz(dep.timezone)
+            start_tz = valid_tz(dep.timezone) or start_tz
             start_location = f"{dep.city} ({dep.iata})"
         if arr:
             end_tz = valid_tz(arr.timezone) or end_tz
