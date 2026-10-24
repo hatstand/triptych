@@ -30,6 +30,22 @@ CREATE TABLE public.app_user (
 
 
 --
+-- Name: dismissed_reservation; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.dismissed_reservation (
+    owner uuid NOT NULL,
+    ingest_id text NOT NULL,
+    dedupe_key text NOT NULL,
+    kind text NOT NULL,
+    confirmation_code text,
+    start_date date NOT NULL,
+    city text,
+    dismissed_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: extraction_run; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -261,6 +277,14 @@ ALTER TABLE ONLY public.app_user
 
 
 --
+-- Name: dismissed_reservation dismissed_reservation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dismissed_reservation
+    ADD CONSTRAINT dismissed_reservation_pkey PRIMARY KEY (owner, ingest_id, dedupe_key);
+
+
+--
 -- Name: extraction_run extraction_run_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -466,6 +490,14 @@ CREATE INDEX web_session_user_idx ON public.web_session USING btree (user_id);
 
 
 --
+-- Name: dismissed_reservation dismissed_reservation_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.dismissed_reservation
+    ADD CONSTRAINT dismissed_reservation_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
 -- Name: extraction_run extraction_run_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -590,4 +622,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261023190000'),
     ('20261024120000'),
     ('20261024160000'),
-    ('20261024170000');
+    ('20261024170000'),
+    ('20261024210000');

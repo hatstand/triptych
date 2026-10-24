@@ -137,6 +137,47 @@ async def test_ownership_and_last_reservation_deletes_trip(me: str) -> None:
     assert await db.get_trip(me, trip_id) is None
 
 
+def from_ingest(r: Reservation, ingest_id: str) -> Reservation:
+    return r.model_copy(update={"source_ingest_id": ingest_id})
+
+
+async def test_deleted_reservation_stays_deleted_when_its_ingest_is_filed_again(me: str) -> None:
+    filed = await db.file_reservations(
+        me, "mail-1", [from_ingest(hotel(), "mail-1"), from_ingest(porto(), "mail-1")]
+    )
+    [trip_id] = filed.trip_ids
+    lisbon = next(f.reservation for f in filed.reservations if f.reservation.city == "Lisbon")
+    assert await db.remove_reservation(me, trip_id, lisbon.id) is True
+
+    # A re-extraction of the same email (new ids, the hotel retitled) brings back only Porto.
+    retitled = from_ingest(hotel(), "mail-1").model_copy(update={"title": "Hotel Avenida"})
+    again = await db.file_reservations(me, "mail-1", [retitled, from_ingest(porto(), "mail-1")])
+    assert [f.reservation.city for f in again.reservations] == ["Porto"]
+
+    # The same booking in a new email is the user sending it again: it's filed.
+    resent = await db.file_reservations(me, "mail-2", [from_ingest(hotel(), "mail-2")])
+    assert "Lisbon" in [f.reservation.city for f in resent.reservations]
+
+
+async def test_deleted_trip_dismisses_everything_in_it(me: str) -> None:
+    filed = await db.file_reservations(me, "mail-1", [from_ingest(hotel(), "mail-1")])
+    await db.delete_trip(me, filed.trip_ids[0])
+    again = await db.file_reservations(me, "mail-1", [from_ingest(hotel(), "mail-1")])
+    assert again.trip_ids == [] and await db.trip_summaries(me) == []
+
+
+def test_dismissal_matching() -> None:
+    gone = db.Dismissal(
+        dedupe_key=db.dedupe_key(hotel()), kind="lodging", confirmation_code="H3",
+        start_date=hotel().start_date, city="Lisbon",
+    )  # fmt: skip
+    assert db.dismissed(hotel(), gone)
+    assert db.dismissed(hotel().model_copy(update={"title": "Renamed", "city": None}), gone)  # same code
+    assert db.dismissed(hotel().model_copy(update={"title": "Renamed", "confirmation_code": None}), gone)
+    assert not db.dismissed(porto(), gone)
+    assert not db.dismissed(outbound(), gone)
+
+
 async def test_reminder_target_is_empty_once_rescheduled(me: str) -> None:
     filed = await db.file_reservations(me, "ingest-1", [outbound()])
     r = filed.reservations[0].reservation
