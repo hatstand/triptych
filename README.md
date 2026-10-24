@@ -108,13 +108,24 @@ One-time setup:
 2. **Shared token:** add `INBOUND_TOKEN` (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
    to `.env`. There is no sender allowlist to configure: users' addresses live in Postgres.
 3. **Funnel:** `tailscale funnel --bg --set-path /inbound http://127.0.0.1:8000/inbound`
-4. **Deploy the Worker:**
-   ```bash
-   cd cloudflare/email-worker && npm ci
-   npx wrangler login
-   npx wrangler secret put INBOUND_TOKEN      # same value as .env
-   npm test && npm run deploy
-   ```
+4. **Create the Worker, deployed from GitHub.** Cloudflare's own CI (Workers Builds) deploys it on
+   every merge to `main` that touches it, so there is no Cloudflare API token anywhere, GitHub
+   included. In the dashboard, go to **Workers & Pages → Create → Import a repository**:
+   - **Repository:** `hatstand/triptych` (approve the Cloudflare GitHub app for it the first time).
+   - **Project name:** `triptych-email`. It must match `name` in `wrangler.jsonc`, or builds fail.
+   - **Root directory:** `cloudflare/email-worker`
+   - **Build command:** empty. **Deploy command:** `npm run deploy` (type-checks, then `wrangler deploy`).
+
+   Then, on the Worker:
+   - **Settings → Variables and secrets → Add:** `INBOUND_TOKEN`, type *Secret*, the same value as
+     `.env`. Secrets survive deploys; the plain vars come from `wrangler.jsonc` on each deploy.
+   - **Settings → Build → Build watch paths:** include `cloudflare/email-worker/*`, so other
+     merges don't redeploy it.
+   - **Settings → Build → Branch control:** production branch `main`, and turn off builds for
+     non-production branches, so pull requests never reach the live Worker.
+
+   Pull requests are still checked by `.github/workflows/email-worker.yml` (lint, types, tests).
+   To deploy by hand instead: `npx wrangler login && npm ci && npm run deploy` in that directory.
 5. **Routing:** in Cloudflare, go to Email Routing.
    - **Settings:** turn on **Subaddressing**, so the `plans@` rule also matches `plans+<instance>@`.
    - **Destination addresses:** verify `FALLBACK_ADDRESS`.
