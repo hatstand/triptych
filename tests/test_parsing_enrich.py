@@ -95,3 +95,74 @@ def test_fill_timezones_from_arrival_flight() -> None:
     enrich.fill_timezones(rs)
     assert hotel.start_tz == "Europe/Lisbon"
     assert pre.start_tz == "America/Los_Angeles"
+
+
+def _shanghai_trip() -> list[Reservation]:
+    """A flight into China, then the G324 train as the model extracted it from a Trip.com
+    confirmation: station names with no IATA codes, and no timezone."""
+    flight = ExtractedReservation(
+        kind=Kind.FLIGHT,
+        title="MU 5401 PVG→CTU",
+        start_local="2026-10-13T08:30",
+        end_local="2026-10-13T11:50",
+        start_iata="PVG",
+        end_iata="CTU",
+        flight_number="MU5401",
+    )
+    train = ExtractedReservation(
+        kind=Kind.RAIL,
+        title="Chengdu East to Beijing West",
+        provider="Trip.com",
+        confirmation_code="1167733927549689",
+        start_local="2026-10-15T15:02",
+        end_local="2026-10-15T22:32",
+        start_location="Chengdudong(Chengdu East)",
+        end_location="Beijingxi(Beijing West)",
+        flight_number="G324",
+    )
+    rs = [enrich.normalise(x, reservation_id=x.title, ingest_id="i") for x in (flight, train)]
+    assert all(rs)
+    return [r for r in rs if r]
+
+
+def test_train_without_timezone_departs_where_the_flight_arrived() -> None:
+    rs = _shanghai_trip()
+    train = rs[1]
+    assert (train.start_tz, train.end_tz) == (None, None)
+    enrich.fill_timezones(rs)
+    assert (train.start_tz, train.end_tz) == ("Asia/Shanghai", "Asia/Shanghai")
+    # The feed then says when it leaves in China time, not floating (shown in the viewer's zone).
+    ics = calendar([Trip(id="t", owner="me", name="Shanghai", reservations=rs)], "test").decode()
+    assert "DTSTART;TZID=Asia/Shanghai:20261015T150200" in ics
+    assert "DTEND;TZID=Asia/Shanghai:20261015T223200" in ics
+
+
+def test_lone_train_takes_its_city_timezone() -> None:
+    train = ExtractedReservation(
+        kind=Kind.RAIL,
+        title="G324",
+        start_local="2026-10-15T15:02",
+        end_local="2026-10-15T22:32",
+        city="Beijing",
+    )
+    r = enrich.normalise(train, reservation_id="r", ingest_id="i")
+    assert r is not None
+    enrich.fill_timezones([r])
+    assert (r.start_tz, r.end_tz) == ("Asia/Shanghai", "Asia/Shanghai")
+
+
+def test_cross_border_train_departs_from_previous_arrival() -> None:
+    flight = ExtractedReservation(
+        kind=Kind.FLIGHT, title="BA 286", start_local="2027-01-20T16:30", end_local="2027-01-21T10:40",
+        start_iata="SFO", end_iata="LHR",
+    )  # fmt: skip
+    # The model's timezone is the city's, which for transport is where it arrives.
+    eurostar = ExtractedReservation(
+        kind=Kind.RAIL, title="Eurostar 9014", start_local="2027-01-22T08:31", end_local="2027-01-22T11:47",
+        city="Paris", timezone="Europe/Paris",
+    )  # fmt: skip
+    rs = [enrich.normalise(x, reservation_id=x.title, ingest_id="i") for x in (flight, eurostar)]
+    assert all(rs)
+    rs = [r for r in rs if r]
+    enrich.fill_timezones(rs)
+    assert (rs[1].start_tz, rs[1].end_tz) == ("Europe/London", "Europe/Paris")

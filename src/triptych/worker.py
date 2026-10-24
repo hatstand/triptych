@@ -53,6 +53,13 @@ async def register() -> bool:
     return False
 
 
+async def fill_timezones() -> None:
+    try:
+        await db.fill_missing_timezones()
+    except Exception:
+        log.exception("couldn't fill in missing timezones")
+
+
 async def request_photos() -> None:
     try:
         await db.fill_places()
@@ -73,6 +80,7 @@ async def main() -> None:
     server = asyncio.create_task(serve(app, config))
     await asyncio.sleep(0.5)
     if await register():
+        await fill_timezones()
         await request_photos()
     await server
 
