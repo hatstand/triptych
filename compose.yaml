@@ -22,6 +22,7 @@ x-app: &app
     INBOUND_TOKEN: ${INBOUND_TOKEN:-}
     INBOUND_ADDRESS: ${INBOUND_ADDRESS:-plans@purplehatstands.com}
     ADMIN_TAILSCALE_LOGINS: ${ADMIN_TAILSCALE_LOGINS:-}
+    ADMIN_ORIGINS: ${ADMIN_ORIGINS:-}
     RESTATE_UI_URL: ${RESTATE_UI_URL:-}
 
 x-after-migrations: &after-migrations
@@ -67,7 +68,7 @@ services:
     image: docker.io/restatedev/restate:1.8.1
     restart: unless-stopped
     ports:
-      # Host ports bind to loopback by default; the internet reaches only /inbound, via Funnel.
+      # Host ports bind to loopback by default. compose/public.yaml drops this one entirely.
       - "${BIND_ADDR:-127.0.0.1}:8080:8080"   # ingress
       # Admin API + UI. RESTATE_ADMIN_BIND can put just this on the tailnet; it has no auth.
       - "${RESTATE_ADMIN_BIND:-${BIND_ADDR:-127.0.0.1}}:9070:9070"

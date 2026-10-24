@@ -24,6 +24,7 @@ dependencies = [
     "psycopg-pool==3.3.3",
     "webauthn>=3.0.1",
     "pillow>=13.0.0",
+    "limits>=5",
 ]
 
 [dependency-groups]
