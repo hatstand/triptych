@@ -191,21 +191,12 @@ URLs change too (new host and `SECRET_KEY`), so re-subscribe.
 3. **Router**: give marvin a fixed LAN address (DHCP reservation) and forward **TCP 443** to it.
    Nothing else: SSH and deploys go over Tailscale.
 
-4. **Firewall on marvin**: deny inbound by default, allow 443 and the tailnet. With ufw:
-
-   ```bash
-   sudo ufw default deny incoming && sudo ufw default allow outgoing
-   sudo ufw allow in on tailscale0
-   sudo ufw allow 443/tcp
-   sudo ufw enable
-   ```
-
-   (firewalld: `sudo firewall-cmd --permanent --zone=trusted --add-interface=tailscale0`,
-   `sudo firewall-cmd --permanent --add-service=https`, `sudo firewall-cmd --reload`.)
-   Docker's published ports skip these rules, which is why `compose/public.yaml` publishes only
-   443 and leaves the rest on loopback or unpublished. Check what is listening beyond loopback:
+4. **Check exposure**: the router's single forward is the perimeter, and Docker's published
+   ports skip host firewall rules anyway, which is why `compose/public.yaml` publishes only 443
+   and leaves the rest on loopback or unpublished. After the switch-over,
    `sudo ss -tlnp | grep -v -e 127.0.0.1 -e '\[::1\]'` should show Caddy's 443, Tailscale and
-   nothing else of ours.
+   nothing else of ours. If the router passes inbound IPv6 to marvin, anything else listening on
+   all interfaces (sshd, say) is reachable that way; a host firewall would be the fix then.
 
 5. **Switch over**: add to `/srv/triptych/.env` (keep the other lines):
 
