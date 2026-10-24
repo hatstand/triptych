@@ -12,10 +12,14 @@
   .invite-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
   .invite-form input[type=email] { flex: 1; min-width: 220px; width: auto; }
   .invite-form input[type=number] { width: 4.5em; }
-  .reprocess-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 12px; align-items: end; margin: 10px 0; }
-  .reprocess-form label { display: grid; gap: 4px; }
-  .reprocess-form .wide { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
-  .reprocess-form .wide label { display: flex; gap: 6px; align-items: center; }
+  .reprocess-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px 12px; align-items: end; margin: 10px 0; }
+  .reprocess-form > label { display: grid; gap: 4px; }
+  .reprocess-form fieldset { grid-column: 1 / -1; display: grid; gap: 8px; border: 0; margin: 0; padding: 0; }
+  .reprocess-form fieldset label { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .reprocess-form input[type=radio] { width: auto; margin: 0; }
+  .reprocess-form input[name=model] { width: auto; flex: 1; min-width: 200px; max-width: 360px; }
+  .reprocess-form select { font: inherit; width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
+  button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
   .diff { margin: 6px 0 0; }
   .diff del { color: var(--muted); }
   .diff ins { text-decoration: none; font-weight: 600; }
@@ -82,11 +86,11 @@
   {% endif %}
   <form method="post" class="reprocess-form">
     <input type="hidden" name="action" value="reprocess">
-    <div class="wide">
-      <label><input type="radio" name="source" value="extract" checked> Extract the original again with</label>
-      <input name="model" value="{{ llm_model }}" aria-label="Model" class="mono" style="width:auto;flex:1;min-width:200px">
+    <fieldset>
+      <label><input type="radio" name="source" value="extract" checked> Extract the original again with
+        <input name="model" value="{{ llm_model }}" aria-label="Model" class="mono"></label>
       <label><input type="radio" name="source" value="stored"> Re-derive from the stored output (no GPU)</label>
-    </div>
+    </fieldset>
     <label class="small">Ingests
       <select name="state">
         <option value="">all finished</option>
