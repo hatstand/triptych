@@ -1,4 +1,4 @@
-// Cloudflare Email Worker for plans@purplehatstands.com.
+// Cloudflare Email Worker for plans@triptych.purplehatstands.com.
 //
 // Hands each message (raw RFC 822, byte-for-byte so DKIM/ARC still verify) to a Triptych
 // instance's POST /inbound over Tailscale Funnel. `plans+<instance>@` picks the instance (needs

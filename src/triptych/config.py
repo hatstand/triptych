@@ -60,7 +60,7 @@ def load() -> Settings:
         # Shared secret between the Cloudflare Email Worker and POST /inbound (unset = disabled).
         inbound_token=env("INBOUND_TOKEN") or None,
         # Where users forward bookings (shown on the account page; routed by the Email Worker).
-        inbound_address=env("INBOUND_ADDRESS", "plans@purplehatstands.com"),
+        inbound_address=env("INBOUND_ADDRESS", "plans@triptych.purplehatstands.com"),
         webauthn_rp_id=env("WEBAUTHN_RP_ID") or urlsplit(public_base_url).hostname or "localhost",
         allowed_origins=tuple(
             o.strip().rstrip("/") for o in env("WEBAUTHN_ORIGINS", "").split(",") if o.strip()

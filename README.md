@@ -67,14 +67,14 @@ Forward mail with any client: SMTP to `localhost:2525`, any recipient. It's file
 uv run python scripts/send_samples.py --from me@example.com
 ```
 
-## Real email: plans@purplehatstands.com
+## Real email: plans@triptych.purplehatstands.com
 
 ```
 Gmail ─▶ MX: Cloudflare Email Routing ─▶ Email Worker ─HTTPS + bearer token─▶ Tailscale Funnel
       ─▶ web :8000 /inbound  (verified sender + DKIM/ARC check) ─▶ Ingest workflow
 ```
 
-**Several instances, one address.** `plans+<instance>@purplehatstands.com` is delivered to
+**Several instances, one address.** `plans+<instance>@triptych.purplehatstands.com` is delivered to
 `https://<instance>.axolotl-goblin.ts.net/inbound`. Plain `plans@` goes to the default instance (`zem`).
 To add a test instance, just run the stack on another tailnet machine with the same
 `INBOUND_TOKEN` and turn on Funnel there; no Cloudflare changes are needed.
@@ -104,7 +104,10 @@ so nothing is lost.
 
 One-time setup:
 
-1. **DNS on Cloudflare**, with Email Routing enabled and catch-all off.
+1. **DNS on Cloudflare**, with Email Routing enabled and catch-all off. The address lives on the
+   `triptych.purplehatstands.com` subdomain: in Email Routing → **Settings → Subdomains**, add
+   `triptych` and let Cloudflare create its MX and SPF records. They sit alongside the web UI's A
+   record for the same name.
 2. **Shared token:** add `INBOUND_TOKEN` (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
    to `.env`. There is no sender allowlist to configure: users' addresses live in Postgres.
 3. **Funnel:** `tailscale funnel --bg --set-path /inbound http://127.0.0.1:8000/inbound`
@@ -131,11 +134,11 @@ One-time setup:
    - **Destination addresses:** verify `FALLBACK_ADDRESS`.
    - **Routing rules:** set `plans@` to *Send to a Worker* → `triptych-email`.
 6. **Gmail:**
-   - *Optional, automatic forwarding:* go to Settings → Forwarding, add `plans@purplehatstands.com`,
+   - *Optional, automatic forwarding:* go to Settings → Forwarding, add `plans@triptych.purplehatstands.com`,
      and read the confirmation code from Triptych's alerts. Then add a filter (e.g. `subject:(booking
      OR itinerary OR confirmation) -to:john.maguire+triptych-undelivered@gmail.com`) that forwards
      to it. The `-to:` exclusion keeps fallback copies from being forwarded back.
-   - *Manual:* forward any confirmation to `plans@purplehatstands.com`.
+   - *Manual:* forward any confirmation to `plans@triptych.purplehatstands.com`.
 
 ## Running on a Ryzen AI MAX 385 (Radeon 8050S, 32 GB)
 

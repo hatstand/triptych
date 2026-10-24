@@ -38,7 +38,7 @@ def dns(pub: bytes, domains: set[str]) -> inbound.DnsFunc:
 
 def message(frm: str, body: str = "Booking ref QZ7K2M") -> bytes:
     return (
-        f"From: {frm}\r\nTo: plans@purplehatstands.com\r\nSubject: Fwd: booking\r\n"
+        f"From: {frm}\r\nTo: plans@triptych.purplehatstands.com\r\nSubject: Fwd: booking\r\n"
         f"Message-ID: <abc@example>\r\n\r\n{body}\r\n"
     ).encode()
 
@@ -49,7 +49,7 @@ def sign(raw: bytes, domain: str, priv: bytes) -> bytes:
 
 
 def test_canonical_sender_undoes_gmail_autoforward_rewrite() -> None:
-    assert inbound.canonical_sender("Me <ME+caf_=plans=purplehatstands.com@gmail.com>") == "me@gmail.com"
+    assert inbound.canonical_sender("Me <ME+caf_=plans=triptych.purplehatstands.com@gmail.com>") == "me@gmail.com"
     assert inbound.canonical_sender("me+trips@gmail.com") == "me+trips@gmail.com"
 
 
@@ -81,7 +81,7 @@ def test_autoforward_accepted_via_google_arc_seal(keys: tuple[bytes, bytes]) -> 
     )
     seal = b"".join(dkim.arc_sign(raw, b"arc", b"google.com", priv, b"mx.google.com"))
     result = inbound.verify(
-        seal + raw, "me+caf_=plans=purplehatstands.com@gmail.com", dns(pub, {"google.com"})
+        seal + raw, "me+caf_=plans=triptych.purplehatstands.com@gmail.com", dns(pub, {"google.com"})
     )
     assert result == inbound.Accepted("me@gmail.com", "arc:google.com")
 
@@ -90,13 +90,13 @@ def test_gmail_forwarding_confirmation_surfaces_code(keys: tuple[bytes, bytes]) 
     priv, pub = keys
     body = (
         "me@gmail.com has requested to automatically forward mail to your email address "
-        "plans@purplehatstands.com.\r\nConfirmation code: 123456789\r\n"
+        "plans@triptych.purplehatstands.com.\r\nConfirmation code: 123456789\r\n"
         "https://mail-settings.google.com/mail/vf-abc123\r\n"
     )
     raw = sign(message("Gmail Team <forwarding-noreply@google.com>", body), "google.com", priv)
     result = inbound.verify(raw, "forwarding-noreply@google.com", dns(pub, {"google.com"}))
     assert result == inbound.ForwardingConfirmation(
-        ("me@gmail.com", "plans@purplehatstands.com"),
+        ("me@gmail.com", "plans@triptych.purplehatstands.com"),
         "123456789",
         "https://mail-settings.google.com/mail/vf-abc123",
     )
