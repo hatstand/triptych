@@ -43,17 +43,19 @@ def normalise(x: ExtractedReservation, *, reservation_id: str, ingest_id: str) -
         return None
     end = parse_local(x.end_local)
 
-    start_tz = end_tz = valid_tz(x.timezone)
+    # Our places data names a city's zone more reliably than the model does (it once put a Shanghai
+    # hotel in Asia/Hong_Kong); the model's own guess is the fallback.
+    start_tz = end_tz = places.city_timezone(x.city, x.country_code) or valid_tz(x.timezone)
     city = x.city
     start_location, end_location = x.start_location, x.end_location
 
     if x.kind in TRANSPORT:
-        # The model's timezone is its city's, which for transport is where it arrives; where it
-        # departs from is the airport's, or else filled in from the previous leg (fill_timezones).
-        start_tz = None
+        # `city` is where transport arrives. It departs from the airport's zone, or start_city's, or
+        # else wherever the previous leg landed (fill_timezones).
+        start_tz = places.city_timezone(x.start_city, x.start_country_code)
         dep, arr = places.lookup(x.start_iata), places.lookup(x.end_iata)
         if dep:
-            start_tz = valid_tz(dep.timezone)
+            start_tz = valid_tz(dep.timezone) or start_tz
             start_location = f"{dep.city} ({dep.iata})"
         if arr:
             end_tz = valid_tz(arr.timezone) or end_tz
@@ -86,27 +88,37 @@ def normalise(x: ExtractedReservation, *, reservation_id: str, ingest_id: str) -
     )
 
 
+STILL_THERE = timedelta(days=1)
+"""How long after landing a transport leg with no departure zone is taken to leave from where the
+previous one arrived. Later than that there may be legs we haven't been sent in between (a week
+after landing in Hong Kong, a train from Chengdu), so its own arrival zone is the better guess."""
+
+
 def fill_timezones(rs: list[Reservation]) -> None:
     """Fill in timezones the document didn't give. Hotels and restaurants rarely state one, and
     trains have no airport codes to look up, but the leg that got you there says where you are.
 
-    A reservation with no timezone takes its city's, if that name is unambiguous. Failing that a
-    hotel/restaurant takes the arrival tz of the latest earlier transport leg (or the departure tz
-    of the next one), and a transport leg departs from wherever the previous one arrived and
-    arrives in the same zone unless told otherwise. `rs` must be sorted by start time; mutated in
-    place."""
+    A hotel/restaurant in a city whose name is unambiguous takes that city's zone, even over the
+    model's (which once put a Shanghai hotel in Asia/Hong_Kong), as does a transport leg with no
+    arrival zone. Failing that a hotel/restaurant takes the arrival tz of the latest earlier
+    transport leg (or the departure tz of the next one). A transport leg with no departure zone
+    leaves from where the previous one landed if that was within STILL_THERE, and otherwise from
+    the zone it arrives in. `rs` must be sorted by start time; mutated in place."""
     for r in rs:
         if r.kind in TRANSPORT:
             # A transport leg's city is where it arrives.
             r.end_tz = r.end_tz or places.city_timezone(r.city)
-        elif r.start_tz is None:
-            r.start_tz = r.end_tz = places.city_timezone(r.city)
+        else:
+            r.start_tz = r.end_tz = places.city_timezone(r.city) or r.start_tz
     arrival: str | None = None
+    landed: datetime | None = None
     for r in rs:
         if r.kind in TRANSPORT:
-            r.start_tz = r.start_tz or arrival or r.end_tz
+            recent = landed is not None and r.start_local - landed <= STILL_THERE
+            r.start_tz = r.start_tz or (arrival if recent else None) or r.end_tz or arrival
             r.end_tz = r.end_tz or r.start_tz
-            arrival = r.end_tz or arrival
+            if r.end_tz:
+                arrival, landed = r.end_tz, r.end_local or r.start_local
         elif r.start_tz is None and arrival:
             r.start_tz = r.end_tz = arrival
     departure: str | None = None

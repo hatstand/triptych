@@ -247,14 +247,17 @@ async def test_older_trips_get_their_place_filled_in(me: str) -> None:
     assert await db.places_needing_photos([trip_id]) == ["Lisbon"]
 
 
-async def test_older_trains_get_their_timezone_filled_in(me: str) -> None:
+async def test_older_reservations_get_their_timezone_refilled(me: str) -> None:
     train = res(Kind.RAIL, "2026-11-14T09:00", "2026-11-14T12:00", "Porto")
-    trip_id = (await db.file_reservations(me, "i1", [outbound(), train])).trip_ids[0]
+    trip_id = (await db.file_reservations(me, "i1", [outbound(), hotel(), train])).trip_ids[0]
     async with db.connection() as conn:
         await conn.execute("UPDATE reservation SET start_tz = NULL, end_tz = NULL WHERE kind = 'rail'")
+        await conn.execute("UPDATE reservation SET start_tz = 'Europe/Madrid' WHERE kind = 'lodging'")
         await conn.commit()
-    await db.fill_missing_timezones()
+    await db.refill_timezones()
     trip = await db.get_trip(me, trip_id)
     assert trip is not None
     stored = next(r for r in trip.reservations if r.kind is Kind.RAIL)
     assert (stored.start_tz, stored.end_tz) == ("Europe/Lisbon", "Europe/Lisbon")
+    lodging = next(r for r in trip.reservations if r.kind is Kind.LODGING)
+    assert (lodging.start_tz, lodging.end_tz) == ("Europe/Lisbon", "Europe/Lisbon")

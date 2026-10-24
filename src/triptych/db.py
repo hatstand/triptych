@@ -481,14 +481,12 @@ async def fill_places() -> None:
                 )
 
 
-async def fill_missing_timezones() -> None:
-    """Fill in the timezones of reservations filed before we could (`_fill_timezones` on every trip
-    that has a gap). Not under the User object: it only fills empty columns, as filing would."""
+async def refill_timezones() -> None:
+    """Re-run `_fill_timezones` on every trip, for reservations filed before it knew better (a gap,
+    or the model's guess where the city says otherwise). Not under the User object: it only does
+    what filing would, and writes only the rows it changes."""
     async with connection() as conn, conn.transaction():
-        cur = await conn.execute(
-            """SELECT DISTINCT trip_id::text FROM reservation
-               WHERE start_tz IS NULL OR (end_local IS NOT NULL AND end_tz IS NULL)"""
-        )
+        cur = await conn.execute("SELECT id::text FROM trip")
         for (trip_id,) in await cur.fetchall():
             await _fill_timezones(conn, trip_id)
 

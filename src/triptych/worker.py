@@ -55,7 +55,7 @@ async def register() -> bool:
 
 async def fill_timezones() -> None:
     try:
-        await db.fill_missing_timezones()
+        await db.refill_timezones()
     except Exception:
         log.exception("couldn't fill in missing timezones")
 

@@ -6,9 +6,11 @@ is a pydantic model so the SDK can (de)serialise it with type information.
 
 from datetime import date, datetime
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, WithJsonSchema
+
+from triptych import places
 
 
 class Kind(StrEnum):
@@ -24,6 +26,29 @@ class Kind(StrEnum):
 # --- What the LLM produces -------------------------------------------------------------------
 # Kept deliberately flat with string datetimes: small local models follow flat schemas far more
 # reliably than nested ones, and we validate/normalise afterwards in enrich.py.
+
+
+def _known_country(code: str | None) -> str | None:
+    code = (code or "").strip().upper()
+    return code if code in places.country_codes() else None
+
+
+def _country_code(description: str) -> Any:
+    """An ISO 3166-1 alpha-2 code of a country we have places in, or null. The schema lists the
+    codes, so Ollama's grammar only lets the model write one of them; anything else read back (a
+    truncated reply) becomes null."""
+    return Annotated[
+        str | None,
+        AfterValidator(_known_country),
+        WithJsonSchema(
+            {"anyOf": [{"type": "string", "enum": list(places.country_codes())}, {"type": "null"}],
+             "description": description}
+        ),
+    ]  # fmt: skip
+
+
+CityCountry = _country_code("ISO 3166-1 alpha-2 code of the country `city` is in, e.g. CN")
+StartCountry = _country_code("ISO 3166-1 alpha-2 code of the country `start_city` is in, e.g. GB")
 
 
 def _all_keys_required(schema: dict[str, Any]) -> None:
@@ -56,6 +81,9 @@ class ExtractedReservation(BaseModel):
     city: str | None = Field(
         None, description="City in English where this takes place (arrival city for transport)"
     )
+    country_code: CityCountry = None
+    start_city: str | None = Field(None, description="City in English the transport departs from")
+    start_country_code: StartCountry = None
     timezone: str | None = Field(None, description="IANA timezone of the city, e.g. Europe/Lisbon")
     flight_number: str | None = None
     seat: str | None = None

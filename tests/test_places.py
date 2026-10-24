@@ -31,3 +31,14 @@ def test_city_timezone_only_when_unambiguous() -> None:
     assert places.city_timezone("Lisbon") == "Europe/Lisbon"
     assert places.city_timezone("Paris") is None  # Paris, Texas
     assert places.city_timezone("Atlantis") is None and places.city_timezone(None) is None
+
+
+def test_city_timezone_with_country() -> None:
+    assert places.city_timezone("Paris", "FR") == "Europe/Paris"
+    assert places.city_timezone("paris", "us") == "America/Chicago"
+    assert places.city_timezone("Kashgar", "CN") == "Asia/Urumqi"
+    # A city we have no places in takes its country's zone, if one dominates.
+    assert places.city_timezone("Leshan", "CN") == "Asia/Shanghai"
+    assert places.city_timezone(None, "JP") == "Asia/Tokyo"
+    assert places.city_timezone("Smalltown", "US") is None
+    assert places.city_timezone("Springfield", "US") is None
