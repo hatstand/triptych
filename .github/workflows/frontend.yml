@@ -4,15 +4,11 @@ on:
   pull_request:
     paths:
       - frontend/**
-      - src/triptych/web/biome.json
-      - src/triptych/web/static/**
       - .github/workflows/frontend.yml
   push:
     branches: [main]
     paths:
       - frontend/**
-      - src/triptych/web/biome.json
-      - src/triptych/web/static/**
       - .github/workflows/frontend.yml
 
 concurrency:
@@ -36,7 +32,7 @@ jobs:
       - run: npm ci
       - name: Lint
         run: npm run lint
-      # The app's stylesheet, formatted and linted by src/triptych/web/biome.json (fix: npm run format:css).
+      # The app's stylesheet, formatted and linted by biome.json's CSS override (fix: npm run format:css).
       - name: CSS
         run: npm run check:css
       - name: Type check

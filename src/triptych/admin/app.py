@@ -24,7 +24,7 @@ from fastapi.templating import Jinja2Templates
 from triptych import auth, db, llm
 from triptych.config import settings
 from triptych.models import IngestState
-from triptych.web.assets import static_url
+from triptych.web.assets import Assets
 
 HERE = Path(__file__).parent
 LOGIN_HEADER = "Tailscale-User-Login"
@@ -42,7 +42,7 @@ app = FastAPI(title="Triptych admin", lifespan=lifespan, docs_url=None, redoc_ur
 # Admin templates extend the web app's base.html; /static is served by the web app on the same host.
 templates = Jinja2Templates(directory=[HERE / "templates", HERE.parent / "web" / "templates"])
 # Jinja types globals by its own defaults' types; any value is allowed.
-cast(dict[str, Any], templates.env.globals)["static"] = static_url
+cast(dict[str, Any], templates.env.globals)["static"] = Assets().url
 
 
 def tailscale_admin(request: Request) -> str:

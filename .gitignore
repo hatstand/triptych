@@ -9,6 +9,6 @@ node_modules/
 *.swo
 *~
 # Compiled from frontend/ (npm run build, or the Dockerfile).
-src/triptych/web/static/js/
+src/triptych/web/static/
 run/
 screenshots/

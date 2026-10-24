@@ -319,7 +319,7 @@ async def test_account_page_has_a_tab_per_setting(browser: httpx.AsyncClient) ->
 
     addresses = await browser.get("/account/senders")
     assert 'href="/account/senders" aria-current="page"' in addresses.text and "Add address" in addresses.text
-    assert "Add a passkey" not in addresses.text and "passkey.js" not in addresses.text
+    assert "Add a passkey" not in addresses.text and not re.search(r'src="[^"]*passkey', addresses.text)
 
     resp = await browser.get("/account/passkeys")
     assert resp.status_code == 308 and resp.headers["location"] == "/account"

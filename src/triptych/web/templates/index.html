@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% block head %}<script type="module" src="{{ static('js/live.js') }}"></script>{% endblock %}
+{% block head %}<script type="module" src="{{ static('live.ts') }}"></script>{% endblock %}
 {% block content %}
 {# /events re-renders the sse-swap sections from these same partials as they change (web/live.py) #}
 <div hx-ext="sse" sse-connect="/events">

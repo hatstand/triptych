@@ -7,8 +7,8 @@
     "watch": "vite build --watch",
     "typecheck": "tsc",
     "lint": "biome lint .",
-    "check:css": "cd ../src/triptych/web && biome check .",
-    "format:css": "cd ../src/triptych/web && biome check --write ."
+    "check:css": "biome check src/*.css",
+    "format:css": "biome check --write src/*.css"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",

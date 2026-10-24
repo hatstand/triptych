@@ -1,14 +1,14 @@
 # Triptych design system
 
-What the web UI looks like today, written down from `src/triptych/web/static/style.css` and the
+What the web UI looks like today, written down from `frontend/src/style.css` and the
 Jinja templates in `src/triptych/web/templates/`. It describes the system as it is (gaps
 included, at the end), so a new page or component can match it without reverse-engineering the
 CSS. If you change a token or a component, change this file in the same PR.
 
-Everything lives in one stylesheet, `/static/style.css`, loaded by `base.html`. Templates link
-static files with `static('style.css')`, which adds a hash of the file to the URL so a deploy
-never leaves a browser on an old copy. There is no CSS
-framework and no build step for CSS. Biome formats and lints it (`src/triptych/web/biome.json`), and
+Everything lives in one stylesheet, `frontend/src/style.css`, loaded by `base.html`. Templates
+link it with `static('style.css')`: the Vite build minifies it to a file named by its content
+hash, so a deploy never leaves a browser (or Cloudflare's cache) on an old copy. There is no CSS
+framework or preprocessor. Biome formats and lints it (`frontend/biome.json`), and
 CI fails a PR whose CSS isn't formatted: run `npm run format:css` in `frontend/` before pushing. Pages may add a small `<style>` block in `{% block head %}`
 for page-only rules (the admin page does).
 
@@ -187,7 +187,7 @@ takes the colour of the text or element around it.
 
 Triptych uses its own names for the icons it needs, mapped to Lucide names in
 `frontend/src/icons.json`. The Vite build turns that list into one SVG sprite,
-`/static/js/icons.svg`, with a `<symbol>` per icon. To add an icon, add a line to
+`static('icons.svg')`, with a `<symbol>` per icon. To add an icon, add a line to
 `icons.json` (browse names at lucide.dev) and rebuild.
 
 | Name | Lucide | For |

@@ -1,3 +1,4 @@
+import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -122,14 +123,30 @@ def test_trip_photo_is_served_cacheably_and_only_to_its_owner(
     assert client.get("/trips/someone-elses/photo").status_code == 404
 
 
-def test_static_urls_change_with_the_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(assets, "STATIC", tmp_path)
-    css = tmp_path / "style.css"
-    css.write_text("a {}")
-    os.utime(css, ns=(1, 1))
-    first = assets.static_url("style.css")
-    assert first.startswith("/static/style.css?v=")
-    css.write_text("b {}")
-    os.utime(css, ns=(2, 2))  # a deploy's copy is newer
-    assert assets.static_url("style.css") not in (first, "/static/style.css")
-    assert assets.static_url("js/missing.js") == "/static/js/missing.js"
+def manifest(static: Path, css: str, mtime_ns: int) -> None:
+    file = static / ".vite/manifest.json"
+    file.parent.mkdir(exist_ok=True)
+    file.write_text(json.dumps({"src/style.css": {"file": f"assets/{css}", "src": "src/style.css"}}))
+    os.utime(file, ns=(mtime_ns, mtime_ns))
+
+
+def test_static_urls_are_the_hashed_files_vite_built(tmp_path: Path) -> None:
+    static = assets.Assets(tmp_path)
+    assert static.url("style.css") == "/static/style.css"  # not built
+    manifest(tmp_path, "style-aaa.css", 1)
+    assert static.url("style.css") == "/static/assets/style-aaa.css"
+    manifest(tmp_path, "style-bbb.css", 2)  # vite build --watch rebuilt it
+    assert static.url("style.css") == "/static/assets/style-bbb.css"
+    with pytest.raises(KeyError):
+        static.url("missing.ts")
+
+
+def test_hashed_static_files_are_immutable(tmp_path: Path) -> None:
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets/style-aaa.css").write_text("a {}")
+    (tmp_path / "robots.txt").write_text("")
+    client = TestClient(assets.Static(directory=tmp_path))
+    resp = client.get("/assets/style-aaa.css")
+    assert resp.status_code == 200
+    assert resp.headers["cache-control"] == assets.IMMUTABLE
+    assert "cache-control" not in client.get("/robots.txt").headers
