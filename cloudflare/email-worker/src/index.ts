@@ -8,7 +8,8 @@
 //
 //   2xx       → done
 //   403 / 413 → permanent: bounce to the sender with Triptych's reason
-//   other / network error → retry briefly, then forward to FALLBACK_ADDRESS so nothing is lost
+//   other / network error → retry briefly, then forward to FALLBACK_ADDRESS if set (a single-user
+//                           instance), else refuse so the sender can try again later
 
 import { route } from "./routing.ts";
 

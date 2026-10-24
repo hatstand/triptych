@@ -83,7 +83,7 @@ To add a test instance, just run the stack on another tailnet machine with the s
   pinned to the tailnet's domain, so an address can't send it anywhere else.
 * **Existence check:** before delivering, the Worker looks the hostname up via public DNS.
   Tailscale publishes public DNS only for Funnel-enabled machines, so a typo or a machine without
-  Funnel bounces with *"No Triptych instance …"* rather than going to the fallback mailbox.
+  Funnel bounces with *"No Triptych instance …"* rather than being retried.
 
 Nothing listens on port 25 here, and Funnel exposes only the `/inbound` path. The Worker
 (`cloudflare/email-worker/`) passes the raw message through byte-for-byte. `/inbound`
@@ -99,8 +99,10 @@ Nothing listens on port 25 here, and Funnel exposes only the `/inbound` path. Th
 * **Gmail's "confirm forwarding" email** is recognised, and its code appears as an alert in the
   web UI.
 
-If zem can't be reached, the Worker retries and then forwards the message to `FALLBACK_ADDRESS`,
-so nothing is lost.
+If Triptych can't be reached, the Worker retries for a few seconds and then refuses the message
+with *"Temporarily unable to process this message; please try again later"*, so the sender knows to
+resend. (`FALLBACK_ADDRESS` can instead forward it to a verified mailbox, but that mailbox would get
+every user's mail, so it's only for a single-user instance.)
 
 One-time setup:
 
@@ -134,13 +136,11 @@ One-time setup:
    To deploy by hand instead: `npx wrangler login && npm ci && npm run deploy` in that directory.
 5. **Routing:** in Cloudflare, go to Email Routing.
    - **Settings:** turn on **Subaddressing**, so the `plans@` rule also matches `plans+<instance>@`.
-   - **Destination addresses:** verify `FALLBACK_ADDRESS`.
    - **Routing rules:** set `plans@` to *Send to a Worker* → `triptych-email`.
 6. **Gmail:**
    - *Optional, automatic forwarding:* go to Settings → Forwarding, add `plans@triptych.purplehatstands.com`,
      and read the confirmation code from Triptych's alerts. Then add a filter (e.g. `subject:(booking
-     OR itinerary OR confirmation) -to:john.maguire+triptych-undelivered@gmail.com`) that forwards
-     to it. The `-to:` exclusion keeps fallback copies from being forwarded back.
+     OR itinerary OR confirmation)`) that forwards to it.
    - *Manual:* forward any confirmation to `plans@triptych.purplehatstands.com`.
 
 ## Running on a Ryzen AI MAX 385 (Radeon 8050S, 32 GB)
