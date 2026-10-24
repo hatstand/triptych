@@ -176,23 +176,17 @@ URLs change too (new host and `SECRET_KEY`), so re-subscribe.
 
 ### One-time setup
 
-1. **Secrets.** In `/srv/triptych/.env`, set `SECRET_KEY` to a new random value
-   (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`). Postgres only reads
-   `POSTGRES_PASSWORD` when it creates its volume, so change the role first, then `.env`:
+1. **Secret key.** In `/srv/triptych/.env`, set `SECRET_KEY` to a new random value
+   (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`). The repo is public, so the
+   default is too, and it signs calendar feed URLs and passkey ceremony state.
+   `compose/public.yaml` refuses to start without it. (The Postgres password can stay: the overlay
+   unpublishes its port, so only compose neighbours, which hold `DATABASE_URL` anyway, reach it.)
 
-   ```bash
-   cd /srv/triptych
-   sudo -u deploy docker compose exec postgres psql -U triptych -c '\password triptych'
-   sudoedit /srv/triptych/.env     # POSTGRES_PASSWORD=<the same password>
-   ```
-
-   `compose/public.yaml` refuses to start if either is unset.
-
-2. **DNS** (Cloudflare dashboard → purplehatstands.com → DNS): an `A` record
-   `triptych` → marvin's public IP, proxy status **DNS only** (grey cloud). No `AAAA` unless
-   marvin is reachable on IPv6 and the router allows inbound 443 to it. If mail is routed to
-   addresses at the same name (Email Routing on the `triptych` subdomain), its MX and TXT records
-   sit alongside the A record without conflict; only a CNAME on `triptych` would clash.
+2. **DNS** (Cloudflare dashboard → purplehatstands.com → DNS): `triptych` as an `A` record to
+   marvin's public IP, or a CNAME to a name that resolves to it, proxy status **DNS only** (grey
+   cloud). No `AAAA` unless marvin is reachable on IPv6 and the router allows inbound 443 to it.
+   A CNAME can't share its name with MX records, so mail at `@triptych.purplehatstands.com`
+   would need an `A` record instead.
 
 3. **Router**: give marvin a fixed LAN address (DHCP reservation) and forward **TCP 443** to it.
    Nothing else: SSH and deploys go over Tailscale.

@@ -5,7 +5,8 @@
 # from the internet (Docker's published ports skip the host firewall). What stays, on loopback:
 # web :8000 for `tailscale serve` (the ts.net name: /admin and its /static, and Funnel's /inbound
 # until the Email Worker posts to the public host) and Restate :9070 for the Restate UI's Serve.
-# Postgres is still reachable for backups with `docker compose exec postgres pg_dump ...`.
+# Postgres is still reachable for backups with `docker compose exec postgres pg_dump ...`; with
+# no published port, only compose neighbours (which hold DATABASE_URL anyway) can reach it.
 # `!reset` / `!override` need Docker Compose 2.24.4 or later.
 
 services:
@@ -28,13 +29,11 @@ services:
       # compose neighbours can reach this port, so the header is ours: it's the address rate
       # limits count against (triptych/web/ratelimit.py).
       FORWARDED_ALLOW_IPS: "*"
-      # Refuse to come up on the internet with the development defaults.
+      # Refuse to come up on the internet with the development default (the repo is public).
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env before serving publicly}
 
   postgres:
     ports: !reset []
-    environment:
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env before serving publicly}
 
   restate:
     ports: !override
