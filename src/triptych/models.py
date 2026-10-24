@@ -120,6 +120,8 @@ class Reservation(BaseModel):
     travelers: list[str] = Field(default_factory=list)
     notes: str | None = None
     source_ingest_id: str | None = None
+    source_run_id: str | None = None
+    """The extraction run (db extraction_run) this came from."""
 
     @property
     def start_date(self) -> date:
@@ -230,6 +232,40 @@ class ParsedDocument(BaseModel):
     subject: str | None
     text: str
     images_b64: list[str] = Field(default_factory=list)
+
+
+class RawInput(BaseModel):
+    """An original input as it was received, kept so it can be reprocessed (inputs.py)."""
+
+    id: str
+    owner: str
+    sha256: bytes
+    object_key: str
+    size: int
+    source: IngestSource
+    content_type: str
+    filename: str | None = None
+    received_at: datetime
+
+
+ExtractionPurpose = Literal["ingest", "reprocess", "shadow", "eval"]
+
+
+class ExtractionRun(BaseModel):
+    """One extraction of an ingest: what ran, on what, and what came back (or why it didn't)."""
+
+    id: str
+    ingest_id: str
+    owner: str
+    input_id: str | None
+    model: str
+    model_digest: str | None
+    prompt_version: str
+    code_version: str
+    params: dict[str, Any]
+    purpose: ExtractionPurpose
+    output: Extraction | None = None
+    error: str | None = None
 
 
 class InboxItem(BaseModel):

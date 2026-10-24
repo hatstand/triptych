@@ -22,6 +22,15 @@ class Settings:
     inbound_address: str
     admin_logins: frozenset[str]
     restate_ui_url: str | None
+    # Where originals are kept (inputs.py): an S3-compatible bucket (R2 in production) and the Tink
+    # master keyset that encrypts each user's keys. No bucket = originals aren't kept.
+    inputs_bucket: str | None
+    inputs_endpoint_url: str | None
+    inputs_access_key_id: str | None
+    inputs_secret_access_key: str | None
+    inputs_master_keyset: str | None
+    # What's deployed, recorded with each extraction run (the image tag on marvin).
+    code_version: str
 
     # Passkeys are bound to the RP ID: the UI's hostname, or a parent domain of it. Changing it
     # later strands every registered passkey, so set WEBAUTHN_RP_ID to the parent domain up front
@@ -77,6 +86,14 @@ def load() -> Settings:
         ),
         # Where a browser reaches the Restate UI (RESTATE_ADMIN_URL is the in-network address).
         restate_ui_url=env("RESTATE_UI_URL") or None,
+        inputs_bucket=env("INPUTS_BUCKET") or None,
+        # R2: https://<account id>.r2.cloudflarestorage.com
+        inputs_endpoint_url=env("INPUTS_ENDPOINT_URL") or None,
+        inputs_access_key_id=env("INPUTS_ACCESS_KEY_ID") or None,
+        inputs_secret_access_key=env("INPUTS_SECRET_ACCESS_KEY") or None,
+        # A Tink JSON keyset holding one AEAD key (`python -m triptych.inputs new-master-keyset`).
+        inputs_master_keyset=env("INPUTS_MASTER_KEYSET") or None,
+        code_version=env("CODE_VERSION", "dev"),
     )
 
 

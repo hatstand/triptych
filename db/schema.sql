@@ -30,6 +30,28 @@ CREATE TABLE public.app_user (
 
 
 --
+-- Name: extraction_run; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.extraction_run (
+    id uuid NOT NULL,
+    ingest_id text NOT NULL,
+    owner uuid NOT NULL,
+    input_id uuid,
+    model text NOT NULL,
+    model_digest text,
+    prompt_version text NOT NULL,
+    code_version text NOT NULL,
+    params jsonb NOT NULL,
+    purpose text NOT NULL,
+    output jsonb,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT extraction_run_purpose_check CHECK ((purpose = ANY (ARRAY['ingest'::text, 'reprocess'::text, 'shadow'::text, 'eval'::text])))
+);
+
+
+--
 -- Name: inbox_item; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -41,7 +63,9 @@ CREATE TABLE public.inbox_item (
     received_at timestamp with time zone NOT NULL,
     state text NOT NULL,
     message text,
-    trip_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL
+    trip_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
+    input_id uuid,
+    current_run_id uuid
 );
 
 
@@ -109,6 +133,24 @@ CREATE TABLE public.place_photo (
 
 
 --
+-- Name: raw_input; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.raw_input (
+    id uuid NOT NULL,
+    owner uuid NOT NULL,
+    sha256 bytea NOT NULL,
+    object_key text NOT NULL,
+    size bigint NOT NULL,
+    source text NOT NULL,
+    content_type text NOT NULL,
+    filename text,
+    received_at timestamp with time zone NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: reservation; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -133,6 +175,7 @@ CREATE TABLE public.reservation (
     notes text,
     source_ingest_id text,
     dedupe_key text NOT NULL,
+    source_run_id uuid,
     CONSTRAINT reservation_kind_check CHECK ((kind = ANY (ARRAY['flight'::text, 'lodging'::text, 'car'::text, 'rail'::text, 'restaurant'::text, 'activity'::text, 'other'::text])))
 );
 
@@ -186,6 +229,18 @@ CREATE TABLE public.user_email (
 
 
 --
+-- Name: user_key; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.user_key (
+    user_id uuid NOT NULL,
+    aead_keyset bytea NOT NULL,
+    prf_keyset bytea NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: web_session; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -203,6 +258,14 @@ CREATE TABLE public.web_session (
 
 ALTER TABLE ONLY public.app_user
     ADD CONSTRAINT app_user_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: extraction_run extraction_run_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.extraction_run
+    ADD CONSTRAINT extraction_run_pkey PRIMARY KEY (id);
 
 
 --
@@ -243,6 +306,22 @@ ALTER TABLE ONLY public.passkey
 
 ALTER TABLE ONLY public.place_photo
     ADD CONSTRAINT place_photo_pkey PRIMARY KEY (place);
+
+
+--
+-- Name: raw_input raw_input_owner_sha256_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.raw_input
+    ADD CONSTRAINT raw_input_owner_sha256_key UNIQUE (owner, sha256);
+
+
+--
+-- Name: raw_input raw_input_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.raw_input
+    ADD CONSTRAINT raw_input_pkey PRIMARY KEY (id);
 
 
 --
@@ -294,11 +373,40 @@ ALTER TABLE ONLY public.user_email
 
 
 --
+-- Name: user_key user_key_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_key
+    ADD CONSTRAINT user_key_pkey PRIMARY KEY (user_id);
+
+
+--
 -- Name: web_session web_session_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.web_session
     ADD CONSTRAINT web_session_pkey PRIMARY KEY (token_hash);
+
+
+--
+-- Name: extraction_run_ingest_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX extraction_run_ingest_idx ON public.extraction_run USING btree (ingest_id);
+
+
+--
+-- Name: extraction_run_input_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX extraction_run_input_idx ON public.extraction_run USING btree (input_id);
+
+
+--
+-- Name: extraction_run_owner_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX extraction_run_owner_idx ON public.extraction_run USING btree (owner);
 
 
 --
@@ -358,6 +466,22 @@ CREATE INDEX web_session_user_idx ON public.web_session USING btree (user_id);
 
 
 --
+-- Name: extraction_run extraction_run_input_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.extraction_run
+    ADD CONSTRAINT extraction_run_input_id_fkey FOREIGN KEY (input_id) REFERENCES public.raw_input(id) ON DELETE CASCADE;
+
+
+--
+-- Name: extraction_run extraction_run_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.extraction_run
+    ADD CONSTRAINT extraction_run_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
 -- Name: inbox_item inbox_item_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -387,6 +511,14 @@ ALTER TABLE ONLY public.notification
 
 ALTER TABLE ONLY public.passkey
     ADD CONSTRAINT passkey_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
+-- Name: raw_input raw_input_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.raw_input
+    ADD CONSTRAINT raw_input_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id) ON DELETE CASCADE;
 
 
 --
@@ -422,6 +554,14 @@ ALTER TABLE ONLY public.user_email
 
 
 --
+-- Name: user_key user_key_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.user_key
+    ADD CONSTRAINT user_key_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
 -- Name: web_session web_session_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -449,4 +589,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261023180000'),
     ('20261023190000'),
     ('20261024120000'),
-    ('20261024160000');
+    ('20261024160000'),
+    ('20261024170000');

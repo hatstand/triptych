@@ -3,6 +3,8 @@
 Errors are raised, never swallowed: callers run these inside `ctx.run`, so Restate owns retries.
 """
 
+import hashlib
+import json
 from typing import Any
 
 import httpx
@@ -60,15 +62,38 @@ class LlmError(RuntimeError):
     pass
 
 
+def chat_params() -> dict[str, Any]:
+    """The generation settings every call uses (recorded with each extraction run)."""
+    return {
+        # Gemma 4 thinks by default; for extraction that mostly burns tokens (and can loop until
+        # the context is exhausted), so turn it off and cap output to fail fast and retry instead.
+        "think": False,
+        "options": {"temperature": 0, "num_ctx": settings.llm_num_ctx, "num_predict": 4096},
+    }
+
+
+def prompt_version() -> str:
+    """Names the extraction prompt: changes whenever the system prompt or the output schema does."""
+    schema = json.dumps(Extraction.model_json_schema(), sort_keys=True)
+    return hashlib.sha256(f"{EXTRACT_SYSTEM}\n{schema}".encode()).hexdigest()[:12]
+
+
+async def model_digest() -> str | None:
+    """Ollama's digest of the configured model, which tells apart two pulls of the same tag."""
+    async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=5) as client:
+        tags = (await client.get("/api/tags")).json()
+    for m in tags.get("models", []):
+        if m.get("name") == settings.llm_model or m.get("model") == settings.llm_model:
+            return m.get("digest")
+    return None
+
+
 async def _chat(messages: list[dict[str, Any]], *, fmt: dict[str, Any] | None = None) -> str:
     body: dict[str, Any] = {
         "model": settings.llm_model,
         "messages": messages,
         "stream": False,
-        # Gemma 4 thinks by default; for extraction that mostly burns tokens (and can loop until
-        # the context is exhausted), so turn it off and cap output to fail fast and retry instead.
-        "think": False,
-        "options": {"temperature": 0, "num_ctx": settings.llm_num_ctx, "num_predict": 4096},
+        **chat_params(),
         "keep_alive": "30m",
     }
     if fmt is not None:
