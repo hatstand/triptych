@@ -23,7 +23,7 @@ from limits import RateLimitItem
 from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
-from triptych import auth, db, ical, inbound, journeys, llm, senders
+from triptych import auth, db, ical, inbound, journeys, llm, senders, telemetry
 from triptych.config import settings
 from triptych.models import (
     Answer,
@@ -58,6 +58,7 @@ class AppState(TypedDict):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[AppState]:
+    telemetry.setup("triptych-web")
     db.init()
     hub = live.Hub(settings.database_url)
     changes = asyncio.create_task(hub.run())

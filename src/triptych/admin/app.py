@@ -21,7 +21,7 @@ from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from triptych import auth, db, llm
+from triptych import auth, db, llm, telemetry
 from triptych.config import settings
 from triptych.models import IngestState
 from triptych.web.assets import Assets
@@ -33,6 +33,7 @@ STATES: tuple[str, ...] = get_args(IngestState)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
+    telemetry.setup("triptych-admin")
     db.init()
     yield
     await db.close()

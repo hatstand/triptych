@@ -1,9 +1,15 @@
-# Added by the Tiltfile: hot-reload the Python processes when Tilt live-syncs ./src.
+# Added by the Tiltfile: hot-reload the Python processes when Tilt live-syncs ./src, and log
+# plain lines rather than JSON.
+x-text-logs: &text-logs
+  LOG_FORMAT: ${LOG_FORMAT:-text}
 services:
   worker:
+    environment: *text-logs
     command: ["watchfiles", "--filter", "python", "python -m triptych.worker", "/app/src"]
   web:
+    environment: *text-logs
     command: ["uvicorn", "triptych.web.app:app", "--host", "0.0.0.0", "--port", "8000",
               "--reload", "--reload-dir", "/app/src", "--timeout-graceful-shutdown", "2"]
   smtp:
+    environment: *text-logs
     command: ["watchfiles", "--filter", "python", "python -m triptych.smtp", "/app/src"]
