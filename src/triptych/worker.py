@@ -12,7 +12,7 @@ import restate
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 
-from triptych import db
+from triptych import db, telemetry
 from triptych.config import settings
 from triptych.models import PhotoRequest
 from triptych.services import place_photo
@@ -74,9 +74,11 @@ async def request_photos() -> None:
 
 
 async def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    telemetry.setup("triptych-worker")
     config = Config()
     config.bind = ["0.0.0.0:9080"]
+    # A Logger, not "-", so hypercorn logs through ours instead of adding a plain-text handler.
+    config.errorlog = logging.getLogger("hypercorn.error")
     server = asyncio.create_task(serve(app, config))
     await asyncio.sleep(0.5)
     if await register():

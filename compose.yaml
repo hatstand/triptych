@@ -30,6 +30,9 @@ x-app: &app
     INPUTS_SECRET_ACCESS_KEY: ${INPUTS_SECRET_ACCESS_KEY:-}
     INPUTS_MASTER_KEYSET: ${INPUTS_MASTER_KEYSET:-}
     CODE_VERSION: ${TRIPTYCH_IMAGE:-dev}
+    # Logs are JSON lines on stdout (LOG_FORMAT=text for plain lines). README → "Logs".
+    LOG_FORMAT: ${LOG_FORMAT:-json}
+    LOG_LEVEL: ${LOG_LEVEL:-INFO}
 
 x-after-migrations: &after-migrations
   restate:

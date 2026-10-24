@@ -27,6 +27,7 @@ dependencies = [
     "limits>=5",
     "tink>=1.16.1",
     "boto3>=1.43.118",
+    "python-json-logger>=4.2.0",
 ]
 
 [dependency-groups]

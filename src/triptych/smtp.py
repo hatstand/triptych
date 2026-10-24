@@ -18,7 +18,7 @@ import restate
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import SMTP, Envelope, Session
 
-from triptych import db
+from triptych import db, telemetry
 from triptych.config import settings
 from triptych.inbound import ingest_id_for
 from triptych.models import IngestRequest
@@ -56,7 +56,7 @@ class Handler:
 
 
 async def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
+    telemetry.setup("triptych-smtp")
     controller = Controller(Handler(), hostname="0.0.0.0", port=2525, data_size_limit=25 * 1024 * 1024)
     controller.start()
     log.info("SMTP gateway listening on :2525")

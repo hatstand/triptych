@@ -246,6 +246,21 @@ page, and can remove any passkey except their last.
   response from the same ceremony. Invites are still spent in the database.
 * **WebAuthn user handle** is the 16 bytes of the user's UUID: stable, random, and not an address.
 
+## Logs
+
+Logging is stdlib `logging` (`src/triptych/telemetry.py`, set up in each process's lifespan or
+`main`). Every process writes one JSON object per line to stdout, with OpenTelemetry log data
+model names where there is one, plus the process and the deployed image:
+
+```json
+{"severity_text": "INFO", "logger": "triptych.worker", "message": "registered …", "service": "triptych-worker", "version": "ghcr.io/hatstand/triptych:<sha>", "timestamp": "2026-10-24T17:12:07.367596+00:00"}
+```
+
+Fields passed with `extra={...}` become keys of their own, so `docker compose logs worker | jq`
+can filter on them. uvicorn's and hypercorn's own logs (access log included) come out the same
+way. `LOG_FORMAT=text` prints plain lines instead, which Tilt uses (`compose/dev.yaml`), and
+`LOG_LEVEL` sets the level (default `INFO`).
+
 ## Development
 
 ```bash
@@ -296,6 +311,7 @@ src/triptych/
   models.py        pydantic models for every Restate payload and state value
   parsing.py       .eml / HTML / PDF (text, or rasterised if scanned) / image → LLM input
   llm.py           Ollama client: structured-output extraction + Q&A
+  telemetry.py     logging setup (JSON lines on stdout)
   enrich.py        times, airports → city/tz, tz inheritance
   grouping.py      reservation → trip assignment and trip merging (pure)
   ical.py          .ics export
