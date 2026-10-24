@@ -166,3 +166,42 @@ def test_cross_border_train_departs_from_previous_arrival() -> None:
     rs = [r for r in rs if r]
     enrich.fill_timezones(rs)
     assert (rs[1].start_tz, rs[1].end_tz) == ("Europe/London", "Europe/Paris")
+
+
+def test_hotel_takes_its_citys_timezone_over_the_models_guess() -> None:
+    hotel = ExtractedReservation(
+        kind=Kind.LODGING,
+        title="Holiday Inn Express Shanghai Jing'an Temple by IHG",
+        provider="Booking.com",
+        confirmation_code="5424473414",
+        start_local="2026-10-19T14:00",
+        end_local="2026-10-21T12:00",
+        address="No. 839 Yan an Middle Road, Jing'an, Shanghai, 200040, China",
+        city="Shanghai",
+        timezone="Asia/Hong_Kong",
+    )
+    r = enrich.normalise(hotel, reservation_id="r", ingest_id="i")
+    assert r is not None
+    enrich.fill_timezones([r])
+    assert (r.start_tz, r.end_tz) == ("Asia/Shanghai", "Asia/Shanghai")
+    # A city we can't place unambiguously keeps the model's zone.
+    paris = r.model_copy(update={"city": "Paris", "start_tz": "Europe/Paris", "end_tz": "Europe/Paris"})
+    enrich.fill_timezones([paris])
+    assert paris.start_tz == "Europe/Paris"
+
+
+def test_train_a_week_after_landing_departs_in_its_own_zone() -> None:
+    """John's trip: BA031 lands in Hong Kong, then nothing until a train from Chengdu a week later."""
+    flight = ExtractedReservation(
+        kind=Kind.FLIGHT, title="BA031", start_local="2026-10-07T19:20", end_local="2026-10-08T15:25",
+        start_iata="LHR", end_iata="HKG",
+    )  # fmt: skip
+    train = ExtractedReservation(
+        kind=Kind.RAIL, title="Chengdu East to Beijing West", start_local="2026-10-15T15:02",
+        end_local="2026-10-15T22:32", city="Beijing",
+    )  # fmt: skip
+    rs = [enrich.normalise(x, reservation_id=x.title, ingest_id="i") for x in (flight, train)]
+    assert all(rs)
+    rs = [r for r in rs if r]
+    enrich.fill_timezones(rs)
+    assert (rs[1].start_tz, rs[1].end_tz) == ("Asia/Shanghai", "Asia/Shanghai")
