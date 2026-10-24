@@ -190,7 +190,9 @@ URLs change too (new host and `SECRET_KEY`), so re-subscribe.
 
 2. **DNS** (Cloudflare dashboard → purplehatstands.com → DNS): an `A` record
    `triptych` → marvin's public IP, proxy status **DNS only** (grey cloud). No `AAAA` unless
-   marvin is reachable on IPv6 and the router allows inbound 443 to it.
+   marvin is reachable on IPv6 and the router allows inbound 443 to it. If mail is routed to
+   addresses at the same name (Email Routing on the `triptych` subdomain), its MX and TXT records
+   sit alongside the A record without conflict; only a CNAME on `triptych` would clash.
 
 3. **Router**: give marvin a fixed LAN address (DHCP reservation) and forward **TCP 443** to it.
    Nothing else: SSH and deploys go over Tailscale.
