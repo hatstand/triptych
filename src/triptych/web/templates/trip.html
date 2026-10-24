@@ -3,6 +3,7 @@
 {% block content %}
 {% from "_icons.html" import icon, kind_icons as icons %}
 {% from "_photo.html" import photo_credit %}
+<script type="module" src="{{ static('dialog.ts') }}"></script>
 {% macro segment(r) %}
 <article class="card segment {{ r.kind.value }}">
   <div class="icon">{{ icons[r.kind.value] }}</div>
@@ -72,14 +73,24 @@
   </div>
   <div class="actions">
     <a class="button secondary" href="/trips/{{ trip.id }}/calendar.ics">Export .ics</a>
-    <details class="menu"><summary class="button secondary">Edit</summary><div class="menu-panel stack">
-      <form method="post" action="/trips/{{ trip.id }}/rename" class="stack">
-        <input name="name" value="{{ trip.name }}"><button>Rename</button></form>
-      <form method="post" action="/trips/{{ trip.id }}/delete" onsubmit="return confirm('Delete this trip?')">
-        <button class="danger">Delete trip</button></form>
-    </div></details>
+    <button type="button" class="button secondary" commandfor="trip-edit" command="show-modal">Edit</button>
   </div>
 </div>
+{#- Cancel, Escape and a click outside all close it unsaved; dialog.ts puts the name back. -#}
+<dialog id="trip-edit" class="dialog" closedby="any" aria-labelledby="trip-edit-title">
+  <h2 id="trip-edit-title">Edit trip</h2>
+  <form method="post" action="/trips/{{ trip.id }}/rename" class="stack">
+    <input name="name" value="{{ trip.name }}" aria-label="Trip name" required autofocus>
+    <div class="dialog-actions">
+      <button type="button" class="button secondary" commandfor="trip-edit" command="close">Cancel</button>
+      <button>Rename</button>
+    </div>
+  </form>
+  <form method="post" action="/trips/{{ trip.id }}/delete" class="dialog-footer"
+        onsubmit="return confirm('Delete this trip?')">
+    <button class="danger">Delete trip</button>
+  </form>
+</dialog>
 
 <div class="grid">
   <section class="timeline">
