@@ -12,6 +12,7 @@
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.15",
+    "@resvg/resvg-js": "2.6.2",
     "@types/node": "22.20.5",
     "lucide-static": "1.55.0",
     "typescript": "7.0.2",

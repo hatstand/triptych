@@ -76,7 +76,7 @@ tokens change. Accent, danger, kind colours and badge colours are the same in bo
 | Small `.small` | `.85rem` | normal | Hints, secondary links, time zones |
 | Badge `.badge` | `.72rem` | uppercase, `.04em` tracking | Status pills |
 
-The brand mark in the top bar is bold with `.02em` letter spacing.
+The brand name in the top bar is bold with `.02em` letter spacing, after the mark (see Brand mark).
 
 ## Spacing, shape and layout
 
@@ -111,7 +111,7 @@ Layout:
 
 ## Components
 
-**Top bar** `.topbar`: `--topbar-h` tall, card-coloured strip with the brand (`▲ Triptych`) on the left and the
+**Top bar** `.topbar`: `--topbar-h` tall, card-coloured strip with the brand (the mark at `24px`, then "Triptych") on the left and the
 signed-in email plus a "Sign out" link button on the right.
 
 **Card** `.card`: the basic container. Every sidebar section, trip card and timeline item is
@@ -228,6 +228,24 @@ Sizing: `.i` is `1.25em` square and sits on the text baseline, so inline icons s
 text they are in. The timeline sets them to `24px` (the grid size) inside `.segment .icon`.
 Draw icons at 24px or at text size; avoid other sizes so the 2px stroke stays crisp.
 
+## Brand mark
+
+Triptych's mark is three trip cards fanned out: rail (`--rail`) and lodging (`--lodging`) behind,
+flight (`--flight`) in front with a white plane on it. It lives in one file,
+`frontend/src/brand/mark.svg`, on the same 24×24 grid as the icons. The gaps between the cards are
+cut out with masks rather than drawn in a background colour, so the one file works on light and dark
+surfaces and needs no dark variant.
+
+The Vite build (`brandIcons()` in `frontend/vite.config.ts`) uses it three ways:
+
+- **Favicon:** the SVG itself, `<link rel="icon">` in `base.html`.
+- **Top bar logo:** the same SVG at `24px` in `.brand`.
+- **Home-screen icon:** the mark at 70% on a white square, rendered to a `180px` PNG with resvg for
+  `<link rel="apple-touch-icon">` (iOS takes no SVG there and rounds the corners itself).
+
+All three go through `static('brand/…')`, so they are hashed like the other assets. To change the
+mark, edit `mark.svg` and rebuild; nothing else holds a copy.
+
 ## Known gaps
 
 Written down so they are decisions, not accidents:
@@ -242,4 +260,3 @@ Written down so they are decisions, not accidents:
   the queued and no_travel badges are 3.8:1 and 4.2:1. As icon colours (3:1 wanted),
   `--activity` (2.4:1) and `--car` (2.9:1) are faint on white cards, and `--lodging` (2.8:1)
   and `--restaurant` (3.0:1) on dark ones.
-- The brand mark is a text `▲`, not an icon.

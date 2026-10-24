@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { Resvg } from "@resvg/resvg-js";
 import { defineConfig, type Plugin } from "vite";
 import icons from "./src/icons.json" with { type: "json" };
 
@@ -30,8 +31,33 @@ function iconSprite(): Plugin {
   };
 }
 
+// Triptych's own mark, src/brand/mark.svg, is the favicon and the top-bar logo as it is. The home-screen
+// icon is the same mark on a white tile, rendered to PNG because iOS won't take an SVG
+// apple-touch-icon (and draws its own rounded corners, so the tile is square).
+function brandIcons(): Plugin {
+  const mark = new URL("src/brand/mark.svg", import.meta.url);
+  return {
+    name: "triptych-brand-icons",
+    buildStart() {
+      this.addWatchFile(mark.pathname);
+    },
+    generateBundle() {
+      const svg = readFileSync(mark, "utf8");
+      this.emitFile({ type: "asset", name: "mark.svg", originalFileName: "src/brand/mark.svg", source: svg });
+      const body = svg.slice(svg.indexOf(">", svg.indexOf("<svg")) + 1, svg.lastIndexOf("</svg>"));
+      const tile = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><rect width="24" height="24" fill="#fff"/><g transform="translate(3.6 3.6) scale(0.7)">${body}</g></svg>`;
+      this.emitFile({
+        type: "asset",
+        name: "apple-touch-icon.png",
+        originalFileName: "src/brand/apple-touch-icon.png",
+        source: new Resvg(tile, { fitTo: { mode: "width", value: 180 } }).render().asPng(),
+      });
+    },
+  };
+}
+
 export default defineConfig({
-  plugins: [iconSprite()],
+  plugins: [iconSprite(), brandIcons()],
   base: "/static/",
   build: {
     outDir: "../src/triptych/web/static", // gitignored; FastAPI serves it from /static
