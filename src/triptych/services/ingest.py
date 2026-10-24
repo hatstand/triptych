@@ -1,7 +1,7 @@
 """`Ingest` workflow (key = ingest id): one forwarded email / upload → reservations filed into trips.
 
     keep original ─▶ parse ─▶ Llm.extract (scope "gpu": flow-controlled + retried) ─▶ record run
-        ─▶ normalise ─▶ User.file_reservations
+        ─▶ normalise ─▶ User.file_reservations ─▶ (SHADOW_MODEL set) start a shadow Reprocess
 
 The original is kept first (inputs.py), so it survives even when extraction fails, and every
 extraction is recorded with the model and prompt that made it (db extraction_run).
@@ -16,18 +16,18 @@ from datetime import timedelta
 
 import restate
 
-from triptych import db, enrich, inputs, llm, parsing
+from triptych import db, enrich, inputs, parsing
 from triptych.config import settings
 from triptych.models import (
-    Extraction,
-    ExtractionRun,
     FileRequest,
     InboxItem,
     IngestRequest,
     LlmExtractRequest,
     ParsedDocument,
+    ReprocessRequest,
 )
-from triptych.services.llm_service import GPU_SCOPE, limit_key
+from triptych.services import reprocess
+from triptych.services.llm_service import GPU_SCOPE, limit_key, record_run
 from triptych.services.llm_service import extract as llm_extract
 from triptych.services.user import file_reservations
 
@@ -48,35 +48,8 @@ def _label(req: IngestRequest) -> str:
     return req.subject or req.filename or f"{req.source} {req.received_at:%Y-%m-%d %H:%M}"
 
 
-async def record_run(
-    run_id: str,
-    ingest_id: str,
-    req: IngestRequest,
-    input_id: str | None,
-    output: Extraction | None,
-    error: str | None,
-) -> None:
-    try:
-        digest = await llm.model_digest()
-    except Exception:
-        log.warning("couldn't get the digest of %s", settings.llm_model, exc_info=True)
-        digest = None
-    await db.add_extraction_run(
-        ExtractionRun(
-            id=run_id,
-            ingest_id=ingest_id,
-            owner=req.user,
-            input_id=input_id,
-            model=settings.llm_model,
-            model_digest=digest,
-            prompt_version=llm.prompt_version(),
-            code_version=settings.code_version,
-            params=llm.chat_params(),
-            purpose="ingest",
-            output=output,
-            error=error,
-        )
-    )
+async def shadow_model() -> str | None:
+    return settings.shadow_model
 
 
 def queued_item(ingest_id: str, req: IngestRequest) -> InboxItem:
@@ -84,6 +57,15 @@ def queued_item(ingest_id: str, req: IngestRequest) -> InboxItem:
     return InboxItem(
         ingest_id=ingest_id, source=req.source, label=_label(req), received_at=req.received_at, state="queued"
     )
+
+
+async def shadow(ctx: restate.WorkflowContext, input_id: str | None) -> None:
+    """With SHADOW_MODEL set, extract every kept original again with that model too, and record
+    what it would have changed without changing anything (Reprocess, mode "shadow")."""
+    model = await ctx.run_typed("shadow model", shadow_model, restate.RunOptions[str | None]())
+    if model and input_id:
+        req = ReprocessRequest(batch_id="shadow", ingest_id=ctx.key(), mode="shadow", model=model)
+        ctx.workflow_send(reprocess.run, req.key, req)
 
 
 @ingest.main(inactivity_timeout=timedelta(minutes=5))
@@ -122,13 +104,13 @@ async def run(ctx: restate.WorkflowContext, req: IngestRequest) -> InboxItem:
             )
         except restate.TerminalError as e:
             await ctx.run_typed(
-                "record run", record_run, restate.RunOptions[None](), run_id, ctx.key(), req, input_id,
-                None, str(e)[:2000],
+                "record run", record_run, restate.RunOptions[None](), run_id, ctx.key(), req.user,
+                input_id, settings.llm_model, "ingest", None, str(e)[:2000],
             )  # fmt: skip
             raise
         await ctx.run_typed(
-            "record run", record_run, restate.RunOptions[None](), run_id, ctx.key(), req, input_id,
-            extraction, None,
+            "record run", record_run, restate.RunOptions[None](), run_id, ctx.key(), req.user, input_id,
+            settings.llm_model, "ingest", extraction, None,
         )  # fmt: skip
 
         reservations = [
@@ -139,6 +121,7 @@ async def run(ctx: restate.WorkflowContext, req: IngestRequest) -> InboxItem:
         ]
         if not reservations:
             await publish(state="no_travel", message="No travel reservations found in this document.")
+            await shadow(ctx, input_id)
             return item
 
         await publish(state="filing")
@@ -149,6 +132,7 @@ async def run(ctx: restate.WorkflowContext, req: IngestRequest) -> InboxItem:
         await publish(
             state="done", trip_ids=filed.trip_ids, message=f"Added {n} reservation{'s' * (n != 1)}."
         )
+        await shadow(ctx, input_id)
     except restate.TerminalError as e:
         await publish(state="failed", message=str(e)[:500])
     return item

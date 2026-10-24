@@ -12,6 +12,14 @@
   .invite-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 10px 0; }
   .invite-form input[type=email] { flex: 1; min-width: 220px; width: auto; }
   .invite-form input[type=number] { width: 4.5em; }
+  .reprocess-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 8px 12px; align-items: end; margin: 10px 0; }
+  .reprocess-form label { display: grid; gap: 4px; }
+  .reprocess-form .wide { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+  .reprocess-form .wide label { display: flex; gap: 6px; align-items: center; }
+  .diff { margin: 6px 0 0; }
+  .diff del { color: var(--muted); }
+  .diff ins { text-decoration: none; font-weight: 600; }
+  .ingests form { margin: 0; }
 </style>
 {% endblock %}
 {% block content %}
@@ -32,6 +40,7 @@
   <input class="mono" readonly value="{{ invite_link }}">
   {% endif %}
   <form method="post" class="invite-form">
+    <input type="hidden" name="action" value="invite">
     <input type="email" name="email" required placeholder="someone@example.com" aria-label="Email address">
     <label class="muted small">valid for <input type="number" name="days" value="{{ invite_days }}" min="1" max="90" step="1"> days</label>
     <button>Create invite</button>
@@ -60,6 +69,102 @@
     <span class="mono">{{ llm.model }}</span>
     <span class="muted small">· installed: {{ llm.models | join(', ') or 'none' }}</span>
   </p>
+  {% endif %}
+</section>
+
+<section class="card" id="reprocess">
+  <h2>Reprocess</h2>
+  <p class="muted small">Do finished ingests again and see what changes. A dry run only records the
+    diff; applying updates matching reservations in place, files new ones, and never deletes or
+    brings back what someone deleted.</p>
+  {% if started is defined %}
+  <p>Started {{ started }} ingest{{ 's' if started != 1 }} as batch <span class="mono">{{ batch }}</span>.</p>
+  {% endif %}
+  <form method="post" class="reprocess-form">
+    <input type="hidden" name="action" value="reprocess">
+    <div class="wide">
+      <label><input type="radio" name="source" value="extract" checked> Extract the original again with</label>
+      <input name="model" value="{{ llm_model }}" aria-label="Model" class="mono" style="width:auto;flex:1;min-width:200px">
+      <label><input type="radio" name="source" value="stored"> Re-derive from the stored output (no GPU)</label>
+    </div>
+    <label class="small">Ingests
+      <select name="state">
+        <option value="">all finished</option>
+        <option value="failed">failed</option>
+        <option value="no_travel">no travel</option>
+        <option value="done">done</option>
+      </select>
+    </label>
+    <label class="small">From user <input type="email" name="email" placeholder="anyone"></label>
+    <label class="small">Received since <input type="date" name="since"></label>
+    <label class="small">At most <input type="number" name="limit" value="50" min="1" max="500"></label>
+    <label class="small">Mode
+      <select name="mode">
+        <option value="dry_run">dry run</option>
+        <option value="apply">apply</option>
+      </select>
+    </label>
+    <button>Start</button>
+  </form>
+
+  {% if batches %}
+  <table class="ingests">
+    <tr><th>Started</th><th>Batch</th><th>Using</th><th>Ingests</th><th>Changed</th><th>Added</th><th>Missing</th><th>Skipped</th><th></th></tr>
+    {% for b in batches %}
+    <tr>
+      <td class="mono">{{ b.started.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td><a href="?batch={{ b.batch_id }}#reprocess" class="mono">{{ b.batch_id }}</a>
+        <div class="muted small">{{ b.mode | replace('_', ' ') }}</div></td>
+      <td class="mono small">{{ b.model or 'stored output' }}</td>
+      <td>{{ b.total }}{% if b.queued %} <span class="badge queued">{{ b.queued }} queued</span>{% endif %}
+        {% if b.failed %} <span class="badge failed">{{ b.failed }} failed</span>{% endif %}</td>
+      <td>{{ b.changed }}</td><td>{{ b.added }}</td><td>{{ b.missing }}</td><td>{{ b.skipped }}</td>
+      <td>{% if b.mode != 'apply' %}
+        <form method="post">
+          <input type="hidden" name="action" value="apply">
+          <input type="hidden" name="batch" value="{{ b.batch_id }}">
+          <button class="secondary">Apply</button>
+        </form>{% endif %}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+
+  {% if batch %}
+  <h3>Batch <span class="mono">{{ batch }}</span></h3>
+  {% if items %}
+  <table class="ingests">
+    <tr><th>Item</th><th>User</th><th>Result</th></tr>
+    {% for i in items %}
+    <tr>
+      <td>{{ i.label or i.ingest_id }}<div class="muted small mono">{{ i.ingest_id }}</div></td>
+      <td>{{ i.owner }}</td>
+      <td>
+        <span class="badge {{ i.state }}">{{ i.state }}</span>
+        {% if i.model %}<span class="muted small mono">{{ i.model }}</span>{% endif %}
+        {% if i.error %}<div class="muted small">{{ i.error }}</div>{% endif %}
+        {% if i.diff %}{% set d = i.diff %}
+        <div class="small">{{ d.changes | length }} changed · {{ d.unchanged }} unchanged · {{ d.added | length }} added · {{ d.missing | length }} missing · {{ d.skipped | length }} skipped</div>
+        {% if d.changes or d.added or d.missing or d.skipped %}
+        <details class="diff small">
+          <summary>Details</summary>
+          {% for c in d.changes %}
+          <div><b>{{ c.title }}</b>
+            {% for f in c.fields %}<div class="mono">{{ f.field }}: <del>{{ f.old if f.old is not none else '∅' }}</del> → <ins>{{ f.new if f.new is not none else '∅' }}</ins></div>{% endfor %}
+          </div>
+          {% endfor %}
+          {% for r in d.added %}<div>+ {{ r.title }} <span class="muted mono">{{ r.start_local.strftime('%Y-%m-%d %H:%M') }}</span></div>{% endfor %}
+          {% for r in d.missing %}<div>? {{ r.title }} <span class="muted">not in the new run, kept</span></div>{% endfor %}
+          {% for s in d.skipped %}<div>− {{ s.reservation.title }} <span class="muted">{{ 'deleted by the user' if s.reason == 'dismissed' else 'already filed' }}</span></div>{% endfor %}
+        </details>
+        {% endif %}{% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Nothing in this batch.</p>
+  {% endif %}
   {% endif %}
 </section>
 

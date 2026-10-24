@@ -13,19 +13,32 @@ wait behind the whole batch backlog.
 """
 
 import hashlib
+import logging
 from datetime import timedelta
 from typing import Literal
 
 import restate
 
-from triptych import llm, photos
-from triptych.models import Answer, Extraction, LlmAskRequest, LlmExtractRequest, PhotoRequest, PhotoSubject
+from triptych import db, llm, photos
+from triptych.config import settings
+from triptych.models import (
+    Answer,
+    Extraction,
+    ExtractionPurpose,
+    ExtractionRun,
+    LlmAskRequest,
+    LlmExtractRequest,
+    PhotoRequest,
+    PhotoSubject,
+)
+
+log = logging.getLogger("triptych.llm")
 
 GPU_SCOPE = "gpu"
 
 llm_service = restate.Service("Llm")
 
-Lane = Literal["batch", "interactive", "photos"]
+Lane = Literal["batch", "interactive", "photos", "reprocess"]
 
 
 def limit_key(lane: Lane, user: str) -> str:
@@ -66,3 +79,37 @@ async def locate_subject(ctx: restate.Context, req: PhotoRequest) -> PhotoSubjec
     """Where the main subject of a place's stored photo is. Loads the image itself, so it isn't
     copied into the journal on the way here."""
     return await ctx.run_typed("ollama locate subject", photos.locate_subject, SUBJECT_RETRY, req.place)
+
+
+async def record_run(
+    run_id: str,
+    ingest_id: str,
+    owner: str,
+    input_id: str | None,
+    model: str,
+    purpose: ExtractionPurpose,
+    output: Extraction | None,
+    error: str | None,
+) -> None:
+    """Record one extraction (db extraction_run), inside `ctx.run`."""
+    try:
+        digest = await llm.model_digest(model)
+    except Exception:
+        log.warning("couldn't get the digest of %s", model, exc_info=True)
+        digest = None
+    await db.add_extraction_run(
+        ExtractionRun(
+            id=run_id,
+            ingest_id=ingest_id,
+            owner=owner,
+            input_id=input_id,
+            model=model,
+            model_digest=digest,
+            prompt_version=llm.prompt_version(),
+            code_version=settings.code_version,
+            params=llm.chat_params(),
+            purpose=purpose,
+            output=output,
+            error=error,
+        )
+    )

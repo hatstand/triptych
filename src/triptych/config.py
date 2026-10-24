@@ -13,6 +13,9 @@ class Settings:
     worker_public_url: str
     ollama_url: str
     llm_model: str
+    # A candidate model that extracts every new ingest again, recorded but never applied (Reprocess
+    # "shadow" runs, compared on /admin). Unset = no shadow runs.
+    shadow_model: str | None
     llm_num_ctx: int
     llm_timeout_s: float
     public_base_url: str
@@ -67,6 +70,7 @@ def load() -> Settings:
         worker_public_url=env("WORKER_PUBLIC_URL", "http://worker:9080"),
         ollama_url=env("OLLAMA_URL", "http://localhost:11434"),
         llm_model=env("LLM_MODEL", "gemma4:26b-a4b-it-qat"),
+        shadow_model=env("SHADOW_MODEL") or None,
         llm_num_ctx=int(env("LLM_NUM_CTX", "16384")),
         llm_timeout_s=float(env("LLM_TIMEOUT_S", "600")),
         public_base_url=public_base_url,

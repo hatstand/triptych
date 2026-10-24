@@ -9,7 +9,7 @@ Each write is one `ctx.run` step wrapping an idempotent DB transaction (see db.p
 import restate
 
 from triptych import db
-from triptych.models import FileRequest, FileResult, RemoveReservation, RenameTrip, TripRef
+from triptych.models import FileRequest, FileResult, ReconcileRequest, RemoveReservation, RenameTrip, TripRef
 from triptych.services import place_photo, reminders
 
 user = restate.VirtualObject("User")
@@ -28,6 +28,23 @@ async def file_reservations(ctx: restate.ObjectContext, req: FileRequest) -> Fil
     await reminders.schedule(ctx, ctx.key(), filed.reservations)
     await place_photo.request(ctx, filed.trip_ids)
     return FileResult(trip_ids=filed.trip_ids)
+
+
+@user.handler()
+async def reconcile(ctx: restate.ObjectContext, req: ReconcileRequest) -> db.Reconciliation:
+    """Make a reprocessed run the ingest's current one (services/reprocess.py)."""
+    done = await ctx.run_typed(
+        "reconcile in postgres",
+        db.apply_reprocess,
+        restate.RunOptions[db.Reprocessed](),
+        ctx.key(),
+        req.ingest_id,
+        req.run_id,
+        req.reservations,
+    )
+    await reminders.schedule(ctx, ctx.key(), done.filed.reservations)
+    await place_photo.request(ctx, done.filed.trip_ids)
+    return done.reconciliation
 
 
 @user.handler()

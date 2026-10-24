@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from triptych import auth, db
 from triptych.admin import app as admin
+from triptych.models import ReprocessRequest
 
 OWNER = "john.maguire@gmail.com"
 SITE = "https://triptych.example.ts.net"
@@ -62,7 +63,53 @@ def filters(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str | None]]:
     monkeypatch.setattr(admin.db, "ingest_counts", ingest_counts)
     monkeypatch.setattr(admin.db, "recent_ingests", recent_ingests)
     monkeypatch.setattr(admin.llm, "health", health)
+    monkeypatch.setattr(admin.db, "reprocess_batches", reprocess_batches)
+    monkeypatch.setattr(admin.db, "reprocess_batch", reprocess_batch)
     yield seen
+
+
+async def reprocess_batches(limit: int = 20) -> list[db.ReprocessBatch]:
+    return [
+        db.ReprocessBatch(
+            batch_id="b1", mode="dry_run", model="gemma4:31b",
+            started=datetime(2026, 10, 24, 22, 0, tzinfo=UTC),
+            total=2, queued=0, failed=0, changed=1, added=1, missing=0, skipped=0,
+        )
+    ]  # fmt: skip
+
+
+async def reprocess_batch(batch_id: str, limit: int = 200) -> list[db.ReprocessItem]:
+    change = db.Change(id="r1", title="Casa", fields=[db.FieldChange(field="address", old=None, new="Rua 1")])
+    diff = db.Reconciliation(changes=[change])
+    return [
+        db.ReprocessItem(
+            id=f"{batch_id}:mail-1", ingest_id="mail-1", owner="you@example.com", label="Lisbon hotel",
+            mode="dry_run", state="done", model="gemma4:31b", run_id="run-1", diff=diff, error=None,
+        )
+    ]  # fmt: skip
+
+
+class FakeRestate:
+    def __init__(self) -> None:
+        self.sent: list[ReprocessRequest] = []
+
+    async def workflow_send(self, handler: object, key: str, req: ReprocessRequest) -> None:
+        assert key == req.key
+        self.sent.append(req)
+
+
+@pytest.fixture
+def restate_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeRestate]:
+    fake = FakeRestate()
+    added: list[tuple[str, str]] = []
+
+    async def add_reprocess(req: ReprocessRequest, owner: str) -> None:
+        added.append((req.ingest_id, owner))
+
+    monkeypatch.setattr(admin.db, "add_reprocess", add_reprocess)
+    monkeypatch.setattr(admin, "rs", lambda request: fake)
+    yield fake
+    assert [(r.ingest_id) for r in fake.sent] == [i for i, _ in added]  # every one is recorded first
 
 
 # Not entered as a context manager, so the lifespan never opens a Postgres pool.
@@ -152,3 +199,80 @@ def test_invite_input_is_validated(filters: list[str | None], data: dict[str, st
     r = client.post("/", data=data, headers={**as_login(OWNER), "Origin": SITE})
     assert r.status_code in (400, 422)
     assert invites == []
+
+
+def test_dashboard_shows_reprocess_batches_and_a_batch_diff(filters: list[str | None]) -> None:
+    r = client.get("/?batch=b1", headers=as_login(OWNER))
+    assert r.status_code == 200
+    assert "gemma4:31b" in r.text and "Lisbon hotel" in r.text
+    assert "address: <del>∅</del> → <ins>Rua 1</ins>" in r.text
+
+
+def test_reprocess_starts_a_workflow_per_ingest_with_an_original(
+    filters: list[str | None], restate_client: FakeRestate, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[dict[str, Any]] = []
+
+    async def reprocess_candidates(**kw: Any) -> list[db.ReprocessCandidate]:
+        asked.append(kw)
+        return [
+            db.ReprocessCandidate(ingest_id="mail-1", owner="u1", input_id="i1", current_run_id="run-1"),
+            db.ReprocessCandidate(ingest_id="mail-0", owner="u1", input_id=None, current_run_id="run-0"),
+        ]
+
+    monkeypatch.setattr(admin.db, "reprocess_candidates", reprocess_candidates)
+    data = {
+        "action": "reprocess",
+        "source": "extract",
+        "model": "gemma4:31b",
+        "state": "failed",
+        "limit": "10",
+    }
+    r = client.post("/", data=data, headers={**as_login(OWNER), "Origin": SITE})
+    assert r.status_code == 200
+    assert "Started 1 ingest as batch" in r.text
+    assert asked == [{"state": "failed", "email": None, "since": None, "limit": 10}]
+    [req] = restate_client.sent
+    assert (req.ingest_id, req.mode, req.model, req.from_run_id) == ("mail-1", "dry_run", "gemma4:31b", None)
+
+    # Re-deriving needs no original, only a stored run.
+    data = {"action": "reprocess", "source": "stored", "mode": "apply", "email": "", "since": "", "state": ""}
+    client.post("/", data=data, headers={**as_login(OWNER), "Origin": SITE})
+    assert [(r.ingest_id, r.mode, r.from_run_id) for r in restate_client.sent[1:]] == [
+        ("mail-1", "apply", "run-1"),
+        ("mail-0", "apply", "run-0"),
+    ]
+
+
+def test_applying_a_dry_run_rederives_from_its_runs(
+    filters: list[str | None], restate_client: FakeRestate, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def reprocess_runs(batch_id: str) -> list[tuple[str, str, str]]:
+        assert batch_id == "b1"
+        return [("mail-1", "u1", "run-1")]
+
+    monkeypatch.setattr(admin.db, "reprocess_runs", reprocess_runs)
+    r = client.post("/", data={"action": "apply", "batch": "b1"}, headers={**as_login(OWNER), "Origin": SITE})
+    assert r.status_code == 200
+    [req] = restate_client.sent
+    assert (req.ingest_id, req.mode, req.model, req.from_run_id) == ("mail-1", "apply", None, "run-1")
+
+
+@pytest.mark.parametrize(
+    "data", [{"action": "reprocess", "source": "elsewhere"}, {"action": "apply"}, {"action": "drop tables"}]
+)
+def test_reprocess_input_is_validated(
+    filters: list[str | None], restate_client: FakeRestate, data: dict[str, str]
+) -> None:
+    r = client.post("/", data=data, headers={**as_login(OWNER), "Origin": SITE})
+    assert r.status_code in (400, 422)
+    assert restate_client.sent == []
+
+
+def test_reprocess_from_another_origin_is_refused(
+    filters: list[str | None], restate_client: FakeRestate
+) -> None:
+    data = {"action": "reprocess", "source": "stored"}
+    r = client.post("/", data=data, headers={**as_login(OWNER), "Origin": "https://evil.example"})
+    assert r.status_code == 403
+    assert restate_client.sent == []

@@ -28,13 +28,14 @@ from datetime import datetime
 from typing import Any, Self
 
 import boto3
+import restate
 import tink
 from botocore.config import Config
 from tink import aead, prf, secret_key_access
 
-from triptych import db
+from triptych import db, parsing
 from triptych.config import Settings, settings
-from triptych.models import IngestRequest, IngestSource, RawInput
+from triptych.models import IngestRequest, IngestSource, ParsedDocument, RawInput
 
 LAYOUT = "v1"
 
@@ -171,6 +172,30 @@ async def keep(ingest_id: str, req: IngestRequest) -> str | None:
         received_at=req.received_at,
     )
     return kept.id
+
+
+async def load_original(input_id: str) -> ParsedDocument:
+    """The Reprocess workflow's first step: an original, decrypted and parsed as Ingest parsed it."""
+    store = InputStore.from_settings(settings)
+    if store is None:
+        raise restate.TerminalError("originals aren't kept here (INPUTS_BUCKET isn't set)")
+    kept = await db.raw_input(input_id)
+    if kept is None:
+        raise restate.TerminalError(f"no original {input_id}")
+    try:
+        data = await store.load(kept)
+    except IntegrityError as e:
+        raise restate.TerminalError(str(e)) from e
+    return parsing.parse(
+        IngestRequest(
+            user=kept.owner,
+            source=kept.source,
+            filename=kept.filename,
+            content_type=kept.content_type,
+            data_b64=base64.b64encode(data).decode(),
+            received_at=kept.received_at,
+        )
+    )
 
 
 if __name__ == "__main__":

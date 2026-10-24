@@ -167,6 +167,29 @@ CREATE TABLE public.raw_input (
 
 
 --
+-- Name: reprocess; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.reprocess (
+    id text NOT NULL,
+    batch_id text NOT NULL,
+    ingest_id text NOT NULL,
+    owner uuid NOT NULL,
+    mode text NOT NULL,
+    model text,
+    from_run_id uuid,
+    run_id uuid,
+    state text DEFAULT 'queued'::text NOT NULL,
+    diff jsonb,
+    error text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone,
+    CONSTRAINT reprocess_mode_check CHECK ((mode = ANY (ARRAY['dry_run'::text, 'apply'::text, 'shadow'::text]))),
+    CONSTRAINT reprocess_state_check CHECK ((state = ANY (ARRAY['queued'::text, 'done'::text, 'failed'::text])))
+);
+
+
+--
 -- Name: reservation; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -349,6 +372,14 @@ ALTER TABLE ONLY public.raw_input
 
 
 --
+-- Name: reprocess reprocess_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reprocess
+    ADD CONSTRAINT reprocess_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: reservation reservation_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -455,6 +486,20 @@ CREATE INDEX passkey_user_idx ON public.passkey USING btree (user_id);
 
 
 --
+-- Name: reprocess_batch_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX reprocess_batch_idx ON public.reprocess USING btree (batch_id);
+
+
+--
+-- Name: reprocess_ingest_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX reprocess_ingest_idx ON public.reprocess USING btree (ingest_id);
+
+
+--
 -- Name: reservation_trip_start_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -554,6 +599,14 @@ ALTER TABLE ONLY public.raw_input
 
 
 --
+-- Name: reprocess reprocess_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reprocess
+    ADD CONSTRAINT reprocess_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
 -- Name: reservation reservation_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -623,4 +676,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261024120000'),
     ('20261024160000'),
     ('20261024170000'),
-    ('20261024210000');
+    ('20261024210000'),
+    ('20261024220000');

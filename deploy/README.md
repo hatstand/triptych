@@ -252,6 +252,20 @@ can be reprocessed later (src/triptych/inputs.py). Until `INPUTS_BUCKET` is set,
    INPUTS_MASTER_KEYSET='<the JSON from step 3>'
    ```
 
+### Reprocessing
+
+/admin → Reprocess does finished ingests again (src/triptych/services/reprocess.py), either by
+extracting the kept original with a model you name, or by re-deriving from the output already
+stored (no GPU, for after a change to `enrich` or grouping). Start with a dry run, read the diff,
+then press **Apply** on that batch: it re-derives from the runs the dry run recorded, so nothing is
+extracted twice. Applying updates matching reservations in place, files new ones, and never deletes
+anything or brings back what someone deleted. Ingests from before originals were kept can only be
+re-derived.
+
+To try a candidate model on real mail, `ollama pull` it and set `SHADOW_MODEL=<model>` in `.env`:
+every new ingest is then also extracted with it, and the diff shows up on /admin as batch `shadow`,
+never applied.
+
 <a id="zero-downtime-web"></a>
 ## Zero-downtime deploys
 
