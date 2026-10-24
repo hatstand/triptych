@@ -2,9 +2,11 @@ import { readFileSync } from "node:fs";
 import { defineConfig, type Plugin } from "vite";
 import icons from "./src/icons.json" with { type: "json" };
 
-// Each src/<name>.ts is a page script that the Jinja templates load as /static/js/<name>.js, so
-// entries keep fixed names (no manifest to read back) and only shared chunks are hashed.
-const ENTRIES = ["drop", "live", "passkey"];
+// Each src/<name>.ts is a page script and src/style.css the stylesheet. Every output file name
+// carries a content hash, so a deploy never meets a stale copy in a browser or Cloudflare's cache;
+// the Jinja static('<name>') helper (src/triptych/web/assets.py) finds the hashed name in Vite's
+// manifest.
+const ENTRIES = ["drop.ts", "live.ts", "passkey.ts", "style.css"];
 
 // Triptych's icon names -> Lucide icons (lucide.dev, ISC), emitted as one <symbol> sprite that the
 // Jinja icon() macro in templates/_icons.html points <use> at. Lucide's own attributes (24px grid,
@@ -20,7 +22,8 @@ function iconSprite(): Plugin {
       });
       this.emitFile({
         type: "asset",
-        fileName: "icons.svg",
+        name: "icons.svg",
+        originalFileName: "src/icons.svg", // its manifest key, like the entries'
         source: `<svg xmlns="http://www.w3.org/2000/svg"><!-- Lucide icons, ISC licence: https://lucide.dev/license -->\n${symbols.join("\n")}\n</svg>\n`,
       });
     },
@@ -29,22 +32,25 @@ function iconSprite(): Plugin {
 
 export default defineConfig({
   plugins: [iconSprite()],
-  base: "/static/js/",
+  base: "/static/",
   build: {
-    outDir: "../src/triptych/web/static/js", // gitignored; FastAPI serves it from /static
+    outDir: "../src/triptych/web/static", // gitignored; FastAPI serves it from /static
+    manifest: true, // .vite/manifest.json
     emptyOutDir: true,
     target: "es2022",
     sourcemap: true,
     rollupOptions: {
-      input: Object.fromEntries(ENTRIES.map((name) => [name, `src/${name}.ts`])),
+      input: ENTRIES.map((name) => `src/${name}`),
       // htmx keeps an eval() for hx-on/js: attributes; live.ts turns that off (allowEval).
       onwarn(warning, warn) {
         if (warning.code === "EVAL" && warning.id?.includes("/htmx.org/")) return;
         warn(warning);
       },
+      // Everything under assets/ is hashed, so the web app serves it as immutable.
       output: {
-        entryFileNames: "[name].js",
-        chunkFileNames: "chunks/[name]-[hash].js",
+        entryFileNames: "assets/[name]-[hash].js",
+        chunkFileNames: "assets/[name]-[hash].js",
+        assetFileNames: "assets/[name]-[hash][extname]",
       },
     },
   },

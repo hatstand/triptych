@@ -17,7 +17,6 @@ import restate
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.sse import EventSourceResponse, ServerSentEvent
-from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from limits import RateLimitItem
 from pydantic import BaseModel
@@ -40,7 +39,7 @@ from triptych.services import assistant as assistant_svc
 from triptych.services import ingest as ingest_svc
 from triptych.services import user as user_svc
 from triptych.web import live, ratelimit
-from triptych.web.assets import static_url
+from triptych.web.assets import STATIC, Assets, Static
 
 HERE = Path(__file__).parent
 log = logging.getLogger("triptych.web")
@@ -69,11 +68,12 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[AppState]:
 
 # No /docs or /openapi.json: the UI is public, and the JSON API is ours, not a published one.
 app = FastAPI(title="Triptych", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
-app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
+# Built by the frontend (gitignored), so absent until then; templates still render without it.
+app.mount("/static", Static(directory=STATIC, check_dir=False), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["duration"] = journeys.format_duration
 # Jinja types globals by its own defaults' types; any value is allowed.
-cast(dict[str, Any], templates.env.globals)["static"] = static_url
+cast(dict[str, Any], templates.env.globals)["static"] = Assets().url
 
 
 def state(request: Request) -> AppState:

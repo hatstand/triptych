@@ -6,7 +6,7 @@ from pathlib import Path
 from triptych.models import Kind, Reservation, Trip
 from triptych.web import app as web
 
-# The frontend build turns this into the /static/js/icons.svg sprite (frontend/vite.config.ts).
+# The frontend build turns this into the /static/assets/icons-<hash>.svg sprite (vite.config.ts).
 SPRITE = json.loads((Path(__file__).parents[1] / "frontend/src/icons.json").read_text())
 
 
@@ -19,7 +19,7 @@ def test_every_kind_has_an_icon_in_the_sprite() -> None:
     kind_icons = icons_module()["kind_icons"]
     assert set(kind_icons) == {k.value for k in Kind}
     for html in kind_icons.values():
-        [name] = re.findall(r'icons\.svg(?:\?v=\w+)?#([\w-]+)"', str(html))
+        [name] = re.findall(r'icons(?:-[\w-]+)?\.svg#([\w-]+)"', str(html))
         assert name in SPRITE
 
 
@@ -35,4 +35,4 @@ def test_trip_page_draws_kind_icons() -> None:
     html = web.templates.get_template("trip.html").render(
         email=None, trip=trip, summary=trip.summary(), days=[(r.start_date, [r])]
     )
-    assert re.search(r'<use href="/static/js/icons\.svg(\?v=\w+)?#train"/>', html)
+    assert re.search(r'<use href="/static/(assets/)?icons(-[\w-]+)?\.svg#train"/>', html)

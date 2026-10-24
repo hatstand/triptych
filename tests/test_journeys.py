@@ -125,8 +125,8 @@ def test_changing_airport_in_the_same_city_still_connects() -> None:
     html = web.templates.get_template("trip.html").render(
         email=None, trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
     )
-    html = re.sub(r"\?v=\w+", "", html)  # the sprite's version tag, when the frontend is built
-    icon = '<svg class="i" aria-hidden="true"><use href="/static/js/icons.svg#warning"/></svg>'
+    html = re.sub(r"/static/assets/icons-[\w-]+\.svg", "/static/icons.svg", html)  # when built
+    icon = '<svg class="i" aria-hidden="true"><use href="/static/icons.svg#warning"/></svg>'
     assert f'<div class="warning small">{icon} Airport change: LHR → LGW' in html
 
 

@@ -1,5 +1,5 @@
 # The browser code is TypeScript (frontend/), bundled by Vite with its npm dependencies (htmx)
-# into plain JS served from /static/js.
+# into plain JS, with the stylesheet and icon sprite, served from /static under hashed names.
 FROM docker.io/library/node:22.23.4-slim AS frontend
 WORKDIR /frontend
 COPY frontend/package.json frontend/package-lock.json ./
@@ -22,7 +22,7 @@ RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-install-proj
 
 # The project is installed editable, so Tilt can live-sync ./src (owned by `app`) without a rebuild.
 COPY --chown=app src ./src
-COPY --chown=app --from=frontend /out ./src/triptych/web/static/js
+COPY --chown=app --from=frontend /out ./src/triptych/web/static
 RUN --mount=type=cache,target=/root/.cache/uv uv sync --frozen --no-dev
 
 USER app
