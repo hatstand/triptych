@@ -19,6 +19,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from limits import RateLimitItem
 from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
@@ -38,7 +39,7 @@ from triptych.models import (
 from triptych.services import assistant as assistant_svc
 from triptych.services import ingest as ingest_svc
 from triptych.services import user as user_svc
-from triptych.web import live
+from triptych.web import live, ratelimit
 from triptych.web.assets import static_url
 
 HERE = Path(__file__).parent
@@ -52,6 +53,7 @@ class AppState(TypedDict):
 
     restate: restate.RestateClient
     hub: live.Hub
+    limiter: ratelimit.Limiter
 
 
 @asynccontextmanager
@@ -60,12 +62,13 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[AppState]:
     hub = live.Hub(settings.database_url)
     changes = asyncio.create_task(hub.run())
     async with restate.create_client(settings.restate_ingress_url) as client:
-        yield {"restate": client, "hub": hub}
+        yield {"restate": client, "hub": hub, "limiter": ratelimit.limiter()}
     changes.cancel()
     await db.close()
 
 
-app = FastAPI(title="Triptych", lifespan=lifespan)
+# No /docs or /openapi.json: the UI is public, and the JSON API is ours, not a published one.
+app = FastAPI(title="Triptych", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["duration"] = journeys.format_duration
@@ -85,6 +88,10 @@ def rs(request: Request) -> restate.RestateClient:
 
 def live_hub(request: Request) -> live.Hub:
     return state(request)["hub"]
+
+
+def limiter(request: Request) -> ratelimit.Limiter:
+    return state(request)["limiter"]
 
 
 # __Host- pins the cookie to this exact host over HTTPS (no Domain, Path=/); plain HTTP is local dev.
@@ -142,6 +149,25 @@ async def current_user(request: Request) -> auth.Me:
 
 User = Annotated[auth.Me, Depends(current_user)]
 Client = Annotated[restate.RestateClient, Depends(rs)]
+Limiter = Annotated[ratelimit.Limiter, Depends(limiter)]
+
+
+def per_client(rate: RateLimitItem, scope: str) -> Any:
+    """A route dependency limiting each client address (Caddy's X-Forwarded-For, via uvicorn)."""
+
+    async def check(request: Request, lim: Limiter) -> None:
+        await ratelimit.check(lim, rate, scope, request.client.host if request.client else "unknown")
+
+    return Depends(check)
+
+
+def per_user(rate: RateLimitItem, scope: str) -> Any:
+    """A route dependency limiting each signed-in user, whatever address they come from."""
+
+    async def check(me: User, lim: Limiter) -> None:
+        await ratelimit.check(lim, rate, scope, me.id)
+
+    return Depends(check)
 
 
 def feed_token(user_id: str) -> str:
@@ -172,7 +198,11 @@ async def login_page(request: Request) -> Response:
     return templates.TemplateResponse(request, "login.html", {})
 
 
-@app.get("/register/{invite}", response_class=HTMLResponse)
+@app.get(
+    "/register/{invite}",
+    response_class=HTMLResponse,
+    dependencies=[per_client(ratelimit.INVITE_PAGE, "invite-page")],
+)
 async def register_page(request: Request, invite: str) -> Response:
     email = await auth.invite_email(invite)
     return templates.TemplateResponse(
@@ -238,18 +268,18 @@ class RegisterFinish(BaseModel):
     name: str = ""
 
 
-@app.post("/auth/login/options")
+@app.post("/auth/login/options", dependencies=[per_client(ratelimit.LOGIN, "login")])
 async def login_options() -> Response:
     return options_response(*auth.start_login())
 
 
-@app.post("/auth/login/verify")
+@app.post("/auth/login/verify", dependencies=[per_client(ratelimit.LOGIN, "login")])
 async def login_verify(request: Request, credential: Annotated[dict[str, Any], Body()]) -> Response:
     user_id = await auth.finish_login(request.cookies.get(CEREMONY_COOKIE), credential)
     return signed_in_response("/", await auth.create_session(user_id))
 
 
-@app.post("/auth/register/options")
+@app.post("/auth/register/options", dependencies=[per_client(ratelimit.REGISTER, "register")])
 async def register_options(request: Request, body: RegisterStart) -> Response:
     """With an invite: a passkey for the user the invited address belongs to (new or not).
     Without: another passkey for whoever is signed in."""
@@ -265,7 +295,7 @@ async def register_options(request: Request, body: RegisterStart) -> Response:
     return options_response(*await auth.start_registration(user_id, email, body.invite))
 
 
-@app.post("/auth/register/verify")
+@app.post("/auth/register/verify", dependencies=[per_client(ratelimit.REGISTER, "register")])
 async def register_verify(request: Request, body: RegisterFinish) -> Response:
     user_id = await auth.finish_registration(request.cookies.get(CEREMONY_COOKIE), body.credential, body.name)
     if (me := await signed_in(request)) and me.id == user_id:
@@ -308,7 +338,7 @@ async def events(me: User, hub: Annotated[live.Hub, Depends(live_hub)]) -> Async
         yield e
 
 
-@app.post("/plans")
+@app.post("/plans", dependencies=[per_user(ratelimit.ADD_PLANS, "plans")])
 async def add_plans(
     me: User,
     client: Client,
@@ -376,7 +406,7 @@ async def trip_photo(trip_id: str, me: User) -> Response:
     )
 
 
-@app.post("/trips/{trip_id}/ask", response_class=HTMLResponse)
+@app.post("/trips/{trip_id}/ask", response_class=HTMLResponse, dependencies=[per_user(ratelimit.ASK, "ask")])
 async def trip_ask(
     request: Request, trip_id: str, me: User, client: Client, question: Annotated[str, Form()]
 ) -> Response:

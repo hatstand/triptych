@@ -30,6 +30,8 @@ class Settings:
     # Origins the UI is served from (scheme://host[:port], exactly as in the address bar). Passkey
     # ceremonies and state-changing requests from any other origin are refused.
     allowed_origins: tuple[str, ...]
+    # Where the admin pages are served from (the tailnet name), when that isn't the public UI's.
+    admin_origins: tuple[str, ...]
 
     @property
     def secure_cookies(self) -> bool:
@@ -41,9 +43,14 @@ def origin_of(url: str) -> str:
     return f"{u.scheme}://{u.netloc}"
 
 
+def origins(value: str) -> tuple[str, ...]:
+    return tuple(o.strip().rstrip("/") for o in value.split(",") if o.strip())
+
+
 def load() -> Settings:
     env = os.environ.get
     public_base_url = env("PUBLIC_BASE_URL", "http://localhost:8000")
+    allowed_origins = origins(env("WEBAUTHN_ORIGINS", "")) or (origin_of(public_base_url),)
     return Settings(
         restate_ingress_url=env("RESTATE_INGRESS_URL", "http://localhost:8080"),
         database_url=env("DATABASE_URL", "postgresql://triptych:triptych@localhost:5432/triptych"),
@@ -63,10 +70,8 @@ def load() -> Settings:
             a.strip().lower() for a in env("INBOUND_ALLOWED_SENDERS", "").split(",") if a.strip()
         ),
         webauthn_rp_id=env("WEBAUTHN_RP_ID") or urlsplit(public_base_url).hostname or "localhost",
-        allowed_origins=tuple(
-            o.strip().rstrip("/") for o in env("WEBAUTHN_ORIGINS", "").split(",") if o.strip()
-        )
-        or (origin_of(public_base_url),),
+        allowed_origins=allowed_origins,
+        admin_origins=origins(env("ADMIN_ORIGINS", "")) or allowed_origins,
         # Tailscale logins (Tailscale-User-Login) allowed into the admin app; empty = nobody.
         admin_logins=frozenset(
             a.strip().lower() for a in env("ADMIN_TAILSCALE_LOGINS", "").split(",") if a.strip()

@@ -53,7 +53,8 @@ def filters(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str | None]]:
         admin_logins=frozenset({OWNER}),
         restate_ui_url=None,
         public_base_url=SITE,
-        allowed_origins=(SITE,),
+        allowed_origins=("https://triptych.example.com",),
+        admin_origins=(SITE,),
     )
     monkeypatch.setattr(admin, "settings", settings)
     monkeypatch.setattr(admin.auth, "pending_invites", pending_invites)

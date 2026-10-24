@@ -13,7 +13,7 @@ async function postJSON<T>(url: string, body: unknown = {}): Promise<T> {
     body: JSON.stringify(body),
   });
   const data = await resp.json().catch(() => ({}));
-  if (!resp.ok) throw new Error(data.error || `Request failed (${resp.status})`);
+  if (!resp.ok) throw new Error(data.error || data.detail || `Request failed (${resp.status})`);
   return data as T;
 }
 
