@@ -21,7 +21,7 @@ All colours are CSS custom properties on `:root`. Use the variable, never the he
 | Token | Light | Dark | Use |
 | --- | --- | --- | --- |
 | `--bg` | `#f4f5f7` | `#11141a` | Page background; also input fields and the answer box, which sit "inset" in a card |
-| `--card` | `#fff` | `#1a1f28` | Cards, top bar, menus, drop panel |
+| `--card` | `#fff` | `#1a1f28` | Cards, top bar, dialogs, drop panel |
 | `--ink` | `#1d2330` | `#e6e9ef` | Body text |
 | `--muted` | `#6b7280` | `#9aa3b2` | Secondary text: dates, labels, `<dt>`, hints |
 | `--line` | `#e3e6eb` | `#2a313d` | 1px borders, dividers, the neutral badge |
@@ -86,7 +86,7 @@ There is no spacing scale variable; values in use cluster around a 2/4px rhythm:
 - **Gaps:** `8px` inside stacks and between actions, `12px` between cards and in rows, `14px`
   between a timeline icon and its text, `20px` between the two layout columns.
 - **Card padding:** `14px 16px`. Inputs `8px 10px`, buttons `8px 14px`.
-- **Radius:** `10px` cards and panels, `8px` inputs, buttons, menus and toasts, `99px` badges.
+- **Radius:** `10px` cards and panels, `8px` inputs, buttons and toasts, `99px` badges.
 - **Borders:** `1px solid var(--line)` everywhere; a `4px` left border marks a card's kind or
   an alert.
 - **Layout tokens:** `--topbar-h` (`50px`, the top bar's fixed height, which the sticky sidebar
@@ -190,8 +190,12 @@ its link `aria-current="page"`: `--card` fill, `3px` `--accent` left edge and `-
 the others are `--muted` until hovered. In the one-column layout the accent edge moves to the
 bottom of the link.
 
-**Menu** `details.menu`: a `<summary>` styled as a button opening an absolutely positioned
-`.menu-panel` card (260px). No JS.
+**Dialog** `dialog.dialog`: a native modal `<dialog closedby="any">`, opened and closed by
+buttons with `commandfor`/`command`. A `10px` `--card` panel (360px, or the screen less 16px a
+side) over a 45% black backdrop; `.dialog-actions` puts Cancel and the primary button at the
+bottom right, and `.dialog-footer` sets a destructive action apart under a `--line` rule.
+Cancel, Escape and a backdrop click close it, and `dialog.ts` resets its forms so nothing
+unsaved survives (it also fills in commands and backdrop clicks where a browser lacks them).
 
 **Answer** `.answer`: `--bg` inset box that keeps the model's line breaks.
 

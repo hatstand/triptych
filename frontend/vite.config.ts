@@ -7,7 +7,7 @@ import icons from "./src/icons.json" with { type: "json" };
 // carries a content hash, so a deploy never meets a stale copy in a browser or Cloudflare's cache;
 // the Jinja static('<name>') helper (src/triptych/web/assets.py) finds the hashed name in Vite's
 // manifest.
-const ENTRIES = ["copy.ts", "drop.ts", "live.ts", "passkey.ts", "style.css"];
+const ENTRIES = ["copy.ts", "dialog.ts", "drop.ts", "live.ts", "passkey.ts", "style.css"];
 
 // Triptych's icon names -> Lucide icons (lucide.dev, ISC), emitted as one <symbol> sprite that the
 // Jinja icon() macro in templates/_icons.html points <use> at. Lucide's own attributes (24px grid,

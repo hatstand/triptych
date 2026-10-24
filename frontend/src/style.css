@@ -416,23 +416,27 @@ button.danger {
   gap: 8px;
   align-items: flex-start;
 }
-.menu {
-  position: relative;
-}
-.menu summary {
-  list-style: none;
-}
-.menu-panel {
-  position: absolute;
-  right: 0;
-  top: 44px;
-  width: 260px;
-  z-index: 2;
-  background: var(--card);
+/* A modal <dialog> card (dialog.ts): centred over a dimmed page, actions at the bottom right. */
+.dialog {
+  width: min(360px, calc(100vw - 32px));
+  padding: 18px;
   border: 1px solid var(--line);
-  padding: 10px;
-  border-radius: 8px;
-  gap: 12px;
+  border-radius: 10px;
+  background: var(--card);
+  color: var(--ink);
+}
+.dialog::backdrop {
+  background: color-mix(in srgb, #000 45%, transparent);
+}
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.dialog-footer {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
 }
 /* The timeline: a clock column, then the rail with a node per entry, then the entry's card. The
    rail is one line from the first node to the last: each entry draws it from its node down to the
