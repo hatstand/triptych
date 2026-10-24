@@ -49,7 +49,10 @@ def sign(raw: bytes, domain: str, priv: bytes) -> bytes:
 
 
 def test_canonical_sender_undoes_gmail_autoforward_rewrite() -> None:
-    assert inbound.canonical_sender("Me <ME+caf_=plans=triptych.purplehatstands.com@gmail.com>") == "me@gmail.com"
+    assert (
+        inbound.canonical_sender("Me <ME+caf_=plans=triptych.purplehatstands.com@gmail.com>")
+        == "me@gmail.com"
+    )
     assert inbound.canonical_sender("me+trips@gmail.com") == "me+trips@gmail.com"
 
 
