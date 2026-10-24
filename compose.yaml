@@ -30,9 +30,13 @@ x-app: &app
     INPUTS_SECRET_ACCESS_KEY: ${INPUTS_SECRET_ACCESS_KEY:-}
     INPUTS_MASTER_KEYSET: ${INPUTS_MASTER_KEYSET:-}
     CODE_VERSION: ${TRIPTYCH_IMAGE:-dev}
-    # Logs are JSON lines on stdout (LOG_FORMAT=text for plain lines). README → "Logs".
+    # Logs are JSON lines on stdout (LOG_FORMAT=text for plain lines). Traces and logs go to an
+    # OTLP/HTTP endpoint only once one is set (README → "Logs and traces"; compose/otel.yaml).
     LOG_FORMAT: ${LOG_FORMAT:-json}
     LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+    OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+    OTEL_RESOURCE_ATTRIBUTES: ${OTEL_RESOURCE_ATTRIBUTES:-}
 
 x-after-migrations: &after-migrations
   restate:

@@ -1,6 +1,9 @@
 """Thin typed client for the local Ollama server (Gemma 4 by default).
 
 Errors are raised, never swallowed: callers run these inside `ctx.run`, so Restate owns retries.
+
+Each generation is an OTel span following the GenAI semantic conventions (model, token usage, finish
+reason), plus which prompt it was and that prompt's version, so a trace says what produced an output.
 """
 
 import hashlib
@@ -8,6 +11,8 @@ import json
 from typing import Any
 
 import httpx
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind
 
 from triptych.config import settings
 from triptych.models import (
@@ -72,10 +77,15 @@ def chat_params() -> dict[str, Any]:
     }
 
 
+def prompt_hash(system: str, fmt: dict[str, Any] | None = None) -> str:
+    """A prompt's version: changes whenever its system prompt or output schema does."""
+    schema = json.dumps(fmt, sort_keys=True) if fmt is not None else ""
+    return hashlib.sha256(f"{system}\n{schema}".encode()).hexdigest()[:12]
+
+
 def prompt_version() -> str:
-    """Names the extraction prompt: changes whenever the system prompt or the output schema does."""
-    schema = json.dumps(Extraction.model_json_schema(), sort_keys=True)
-    return hashlib.sha256(f"{EXTRACT_SYSTEM}\n{schema}".encode()).hexdigest()[:12]
+    """Names the extraction prompt (recorded with each extraction run, and on its span)."""
+    return prompt_hash(EXTRACT_SYSTEM, Extraction.model_json_schema())
 
 
 async def model_digest() -> str | None:
@@ -88,7 +98,11 @@ async def model_digest() -> str | None:
     return None
 
 
-async def _chat(messages: list[dict[str, Any]], *, fmt: dict[str, Any] | None = None) -> str:
+async def _chat(
+    messages: list[dict[str, Any]], *, prompt: str, system: str, fmt: dict[str, Any] | None = None
+) -> str:
+    """`prompt` names the call and `system` is its fixed system prompt (without per-call context
+    like an itinerary), which with `fmt` makes the prompt version."""
     body: dict[str, Any] = {
         "model": settings.llm_model,
         "messages": messages,
@@ -98,16 +112,39 @@ async def _chat(messages: list[dict[str, Any]], *, fmt: dict[str, Any] | None = 
     }
     if fmt is not None:
         body["format"] = fmt
-    async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=settings.llm_timeout_s) as client:
-        resp = await client.post("/api/chat", json=body)
-    if resp.status_code != 200:
-        # 404 usually means the model is still being pulled; Restate will retry with backoff.
-        raise LlmError(f"ollama {resp.status_code}: {resp.text[:500]}")
-    data = resp.json()
-    content = data.get("message", {}).get("content", "")
-    if not isinstance(content, str) or not content.strip():
-        raise LlmError(f"ollama returned an empty message (done_reason={data.get('done_reason')})")
-    return content
+    attributes = {
+        "gen_ai.operation.name": "chat",
+        "gen_ai.provider.name": "ollama",
+        "gen_ai.request.model": settings.llm_model,
+        "gen_ai.request.temperature": body["options"]["temperature"],
+        "gen_ai.request.max_tokens": body["options"]["num_predict"],
+        "gen_ai.output.type": "json" if fmt is not None else "text",
+        "triptych.prompt.name": prompt,
+        "triptych.prompt.version": prompt_hash(system, fmt),
+        "triptych.prompt.images": sum(len(m.get("images", ())) for m in messages),
+    }
+    tracer = trace.get_tracer("triptych.llm")
+    with tracer.start_as_current_span(
+        f"chat {settings.llm_model}", kind=SpanKind.CLIENT, attributes=attributes
+    ) as span:
+        async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=settings.llm_timeout_s) as client:
+            resp = await client.post("/api/chat", json=body)
+        if resp.status_code != 200:
+            # 404 usually means the model is still being pulled; Restate will retry with backoff.
+            raise LlmError(f"ollama {resp.status_code}: {resp.text[:500]}")
+        data = resp.json()
+        done_reason = data.get("done_reason")
+        response = {
+            "gen_ai.response.model": data.get("model"),
+            "gen_ai.response.finish_reasons": [done_reason] if done_reason else None,
+            "gen_ai.usage.input_tokens": data.get("prompt_eval_count"),
+            "gen_ai.usage.output_tokens": data.get("eval_count"),
+        }
+        span.set_attributes({k: v for k, v in response.items() if v is not None})
+        content = data.get("message", {}).get("content", "")
+        if not isinstance(content, str) or not content.strip():
+            raise LlmError(f"ollama returned an empty message (done_reason={done_reason})")
+        return content
 
 
 async def extract(req: LlmExtractRequest) -> Extraction:
@@ -124,6 +161,8 @@ async def extract(req: LlmExtractRequest) -> Extraction:
         user_msg["images"] = doc.images_b64
     raw = await _chat(
         [{"role": "system", "content": EXTRACT_SYSTEM}, user_msg],
+        prompt="extract",
+        system=EXTRACT_SYSTEM,
         fmt=Extraction.model_json_schema(),
     )
     try:
@@ -139,6 +178,8 @@ async def locate_subject(req: LlmSubjectRequest) -> SubjectBox:
             {"role": "system", "content": SUBJECT_SYSTEM},
             {"role": "user", "content": f"A photo of {req.place}.", "images": [req.image_b64]},
         ],
+        prompt="locate_subject",
+        system=SUBJECT_SYSTEM,
         fmt=SubjectBox.model_json_schema(),
     )
     try:
@@ -152,7 +193,9 @@ async def ask(req: LlmAskRequest) -> Answer:
         [
             {"role": "system", "content": f"{ASK_SYSTEM}\n\nITINERARY:\n{req.context}"},
             {"role": "user", "content": req.question},
-        ]
+        ],
+        prompt="ask",
+        system=ASK_SYSTEM,
     )
     return Answer(text=text.strip())
 

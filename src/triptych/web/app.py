@@ -20,6 +20,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.templating import Jinja2Templates
 from limits import RateLimitItem
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
@@ -58,18 +59,21 @@ class AppState(TypedDict):
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[AppState]:
-    telemetry.setup("triptych-web")
-    db.init()
-    hub = live.Hub(settings.database_url)
-    changes = asyncio.create_task(hub.run())
-    async with restate.create_client(settings.restate_ingress_url) as client:
-        yield {"restate": client, "hub": hub, "limiter": ratelimit.limiter()}
-    changes.cancel()
-    await db.close()
+    with telemetry.running("triptych-web"):
+        db.init()
+        hub = live.Hub(settings.database_url)
+        changes = asyncio.create_task(hub.run())
+        async with restate.create_client(settings.restate_ingress_url) as client:
+            yield {"restate": client, "hub": hub, "limiter": ratelimit.limiter()}
+        changes.cancel()
+        await db.close()
 
 
 # No /docs or /openapi.json: the UI is public, and the JSON API is ours, not a published one.
 app = FastAPI(title="Triptych", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+# A server span per request, continuing any incoming traceparent. Its tracer resolves to whatever
+# provider the lifespan sets up; send/receive spans would add one per SSE event.
+FastAPIInstrumentor.instrument_app(app, excluded_urls="/static/.*,/livez", exclude_spans=["receive", "send"])
 # Built by the frontend (gitignored), so absent until then; templates still render without it.
 app.mount("/static", Static(directory=STATIC, check_dir=False), name="static")
 templates = Jinja2Templates(directory=HERE / "templates")

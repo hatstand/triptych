@@ -6,11 +6,15 @@ that ran out of retries), or whose photo's subject hasn't been found."""
 
 import asyncio
 import logging
+from typing import cast
 
 import httpx
 import restate
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
+from hypercorn.typing import ASGIFramework
+from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+from restate.server_types import RestateAppT
 
 from triptych import db, telemetry
 from triptych.config import settings
@@ -73,18 +77,30 @@ async def request_photos() -> None:
         log.exception("couldn't ask for missing photos")
 
 
+def traced(endpoint: RestateAppT) -> ASGIFramework:
+    """Restate sends each attempt's trace context (W3C traceparent) as request headers, so a server
+    span per attempt puts everything the handler does (Ollama, Postgres, photo lookups) into the
+    invocation's trace.
+    Per-message send/receive spans would be noise on these long-lived HTTP/2 streams."""
+    middleware = OpenTelemetryMiddleware(
+        endpoint, excluded_urls="/discover,/health", exclude_spans=["receive", "send"]
+    )
+    # Typed with plain mappings rather than hypercorn's TypedDicts; it is an ASGI 3 app all the same.
+    return cast(ASGIFramework, middleware)
+
+
 async def main() -> None:
-    telemetry.setup("triptych-worker")
-    config = Config()
-    config.bind = ["0.0.0.0:9080"]
-    # A Logger, not "-", so hypercorn logs through ours instead of adding a plain-text handler.
-    config.errorlog = logging.getLogger("hypercorn.error")
-    server = asyncio.create_task(serve(app, config))
-    await asyncio.sleep(0.5)
-    if await register():
-        await fill_timezones()
-        await request_photos()
-    await server
+    with telemetry.running("triptych-worker"):
+        config = Config()
+        config.bind = ["0.0.0.0:9080"]
+        # A Logger, not "-", so hypercorn logs through ours instead of adding a plain-text handler.
+        config.errorlog = logging.getLogger("hypercorn.error")
+        server = asyncio.create_task(serve(traced(app), config))
+        await asyncio.sleep(0.5)
+        if await register():
+            await fill_timezones()
+            await request_photos()
+        await server
 
 
 if __name__ == "__main__":
