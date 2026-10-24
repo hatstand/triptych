@@ -20,7 +20,7 @@ x-app: &app
     WEBAUTHN_ORIGINS: ${WEBAUTHN_ORIGINS:-}
     SECRET_KEY: ${SECRET_KEY:-dev-only-change-me}
     INBOUND_TOKEN: ${INBOUND_TOKEN:-}
-    INBOUND_ADDRESS: ${INBOUND_ADDRESS:-plans@purplehatstands.com}
+    INBOUND_ADDRESS: ${INBOUND_ADDRESS:-plans@triptych.purplehatstands.com}
     ADMIN_TAILSCALE_LOGINS: ${ADMIN_TAILSCALE_LOGINS:-}
     ADMIN_ORIGINS: ${ADMIN_ORIGINS:-}
     RESTATE_UI_URL: ${RESTATE_UI_URL:-}
