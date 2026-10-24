@@ -150,6 +150,16 @@ configs:
         servers {
           trusted_proxies static private_ranges
         }
+        # The proxy warns "aborting with incomplete response ... context canceled" whenever a client
+        # drops a stream mid-response, i.e. every time a tab leaves or reloads the home page and its
+        # /events stream closes. So log only its errors; failed upstreams still show, via http.log.error.
+        log default {
+          exclude http.handlers.reverse_proxy
+        }
+        log proxy {
+          include http.handlers.reverse_proxy
+          level ERROR
+        }
       }
       :8000 {
         reverse_proxy web:8000 {
