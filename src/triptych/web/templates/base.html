@@ -5,11 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Triptych{% endblock %}</title>
   <link rel="stylesheet" href="{{ static('style.css') }}">
+  <link rel="icon" type="image/svg+xml" href="{{ static('brand/mark.svg') }}">
+  <link rel="apple-touch-icon" href="{{ static('brand/apple-touch-icon.png') }}">
   {% block head %}{% endblock %}
 </head>
 <body>
   <header class="topbar">
-    <a class="brand" href="/">▲ Triptych</a>
+    <a class="brand" href="/"><img src="{{ static('brand/mark.svg') }}" alt="" width="24" height="24">Triptych</a>
     {% if email %}
     <form method="post" action="/logout" class="who">
       <a href="/account">{{ email }}</a><button class="link">Sign out</button>

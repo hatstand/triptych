@@ -36,3 +36,12 @@ def test_trip_page_draws_kind_icons() -> None:
         email=None, trip=trip, summary=trip.summary(), days=[(r.start_date, [r])]
     )
     assert re.search(r'<use href="/static/(assets/)?icons(-[\w-]+)?\.svg#train"/>', html)
+
+
+def test_pages_carry_the_brand_mark() -> None:
+    html = web.templates.get_template("base.html").render(email=None)
+    mark = r"/static/(brand|assets)/mark(-[\w-]+)?\.svg"
+    assert re.search(rf'<link rel="icon" type="image/svg\+xml" href="{mark}">', html)
+    touch = r"/static/(brand|assets)/apple-touch-icon(-[\w-]+)?\.png"
+    assert re.search(rf'<link rel="apple-touch-icon" href="{touch}">', html)
+    assert re.search(rf'<a class="brand" href="/"><img src="{mark}" alt=""', html)
