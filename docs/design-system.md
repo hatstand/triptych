@@ -158,7 +158,7 @@ with a 1.2s pulse.
 `li.entry.<kind>` is a three-column grid: the `.clock` (`52px`: start time at `1.05rem` 600 with
 tabular figures, its zone abbreviation below in `.75rem` `--muted`), the rail node `.node` (a `32px`
 `--card` circle with a 2px `--kind` ring and the kind's icon at text size), then the entry's card.
-The rail is a 2px `--line` rule behind the nodes, unbroken from the first node to the last: each entry draws it down to the next, and each day heading after the first carries it past the heading, which is indented to the card column. Under `520px` the clock and node shrink to `44px`
+A flight, train or connecting journey also has its arrival at the foot of the clock (with the weekday above it when it lands on a later day), level with a `12px` `.stop` ring on the rail; its card stretches to the row so the arrival lines up with the card's foot. The rail is a 2px `--line` rule behind the nodes, unbroken from the first node to the last: each entry draws it down to the next, and each day heading after the first carries it past the heading, which is indented to the card column. Under `520px` the clock and node shrink to `44px`
 and `28px`.
 
 Entries are in the order things happen, compared as instants across zones
@@ -169,7 +169,7 @@ check-in sorts after transport arriving in its city that day and a check-out bef
 leaving, so their clocks can be out of sequence with the entries around them.
 
 **Timeline item** `.card.segment.<kind>`: the body: title row with a remove link, times (`.when`:
-on the timeline the arrival or end, since the start is in the clock; with the zone in `.muted.small`
+on the timeline the end, since the start is in the clock, or for a flight or train just its duration, since both times are; with the zone in `.muted.small`
 when it changes), route or address, and a `.facts` definition list (two columns: muted label,
 value). Inside a journey's legs, where there is no clock, a segment has its own icon column (28px,
 icon 24px in the kind colour) and its start time.

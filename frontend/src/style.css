@@ -510,15 +510,23 @@ button.danger {
   --kind: var(--activity);
 }
 .entry > .card {
+  align-self: stretch;
   margin: 0;
 }
 .clock {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  padding-top: 12px;
+  justify-content: space-between;
+  align-self: stretch;
+  gap: 8px;
+  padding: 12px 0;
   line-height: 1.2;
   font-variant-numeric: tabular-nums;
+}
+.clock .at {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
 }
 .clock time {
   font-size: 1.05rem;
@@ -528,6 +536,23 @@ button.danger {
 .clock .zone {
   color: var(--muted);
   font-size: 0.75rem;
+}
+.track {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: center;
+  align-self: stretch;
+}
+/* Where a flight or train arrives, level with the arrival time at the foot of the clock. */
+.stop {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  margin-bottom: 27px;
+  border: 2px solid var(--kind);
+  border-radius: 50%;
+  background: var(--card);
 }
 .node {
   position: relative;
