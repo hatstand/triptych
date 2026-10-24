@@ -41,6 +41,7 @@ EMAIL = "sam@example.com"
 ADMIN_LOGIN = "admin@example.com"
 BATCH = "dry-run-1"  # the reprocess batch the admin page opens
 VIEWPORT: ViewportSize = {"width": 1280, "height": 800}
+SHORT: ViewportSize = {"width": 1280, "height": 700}  # a laptop with browser chrome; home's sidebar unpins
 
 
 def load_schema(url: str) -> None:
@@ -338,6 +339,16 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
         await page.evaluate("document.fonts.ready")
         await page.screenshot(path=out / scheme / f"{name}.png", full_page=True, animations="disabled")
         await page.close()
+    # The home page again in a short window, where the sidebar scrolls with the page instead of pinning.
+    # Viewport shots, top and bottom: a full-page shot would grow the viewport and pin the sidebar again.
+    page = await user.new_page()
+    await page.set_viewport_size(SHORT)
+    await page.goto(f"{WEB}/", wait_until="load")
+    await page.evaluate("document.fonts.ready")
+    await page.screenshot(path=out / scheme / "07-home-short-top.png", animations="disabled")
+    await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    await page.screenshot(path=out / scheme / "08-home-short-bottom.png", animations="disabled")
+    await page.close()
     for ctx in (anon, user, admin):
         await ctx.close()
 

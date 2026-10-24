@@ -100,9 +100,10 @@ Layout:
 - `main` is centred, max `1100px` wide, padded `20px 16px 60px`.
 - `.grid` is the two-column page: content plus a `340px` sidebar, collapsing to one column
   under `820px`. Home and trip pages use it.
-- On the home page the sidebar (`aside.sidebar`) is sticky above `820px` and capped at the
-  viewport height, so the inbox scrolls inside its card and the calendar feed stays on screen.
-  If the viewport is too short even for a minimum-height inbox, the sidebar itself scrolls.
+- On the home page the sidebar (`aside.sidebar`) is sticky above `820px` wide and `900px` tall,
+  and capped at the viewport height, so the inbox scrolls inside its card and the calendar feed
+  stays on screen. Below `900px` tall it scrolls with the page instead, with the inbox capped at
+  `20rem`, since there isn't room for Add plans, a usable inbox and the calendar feed at once.
 - `.narrow` is a single `420px` column for sign-in and registration.
 - `.account` is the settings layout: a `760px` grid with the page header across the top, a
   `180px` column of `.tabs` on the left and the current tab's `.card.tab-panel` beside it. Under
