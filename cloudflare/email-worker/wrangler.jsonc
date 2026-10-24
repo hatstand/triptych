@@ -10,8 +10,14 @@
     // and the template stays pinned to our tailnet so an address can't point the Worker elsewhere.
     "INBOUND_URL_TEMPLATE": "https://triptych.purplehatstands.com/inbound",
     "DEFAULT_INSTANCE": "marvin"
-    // No FALLBACK_ADDRESS: mail from every user would land in that one mailbox during an outage.
-    // Without it, undeliverable mail is refused with "try again later" so its sender can resend.
+  },
+  // Mail Triptych couldn't take (a deploy restarting it, marvin offline) waits here and is retried
+  // from the queue with backoff (src/deliver.ts). Create both once: see README.md.
+  "r2_buckets": [{ "binding": "PARKED", "bucket_name": "triptych-email-parked" }],
+  "queues": {
+    "producers": [{ "binding": "RETRIES", "queue": "triptych-email-retries" }],
+    // Above MAX_ATTEMPTS in src/deliver.ts, so the Worker gives up (and logs it) before the queue does.
+    "consumers": [{ "queue": "triptych-email-retries", "max_batch_size": 10, "max_retries": 30 }]
   }
   // Secret (not in source): `npx wrangler secret put INBOUND_TOKEN` — same value as INBOUND_TOKEN in ../../.env
 }
