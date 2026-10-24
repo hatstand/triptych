@@ -89,6 +89,7 @@ services:
   worker:
     <<: *app
     command: ["python", "-m", "triptych.worker"]
+    stop_signal: SIGINT  # the Restate SDK swallows SIGTERM (see triptych/worker.py)
     depends_on: *after-migrations
 
   web:

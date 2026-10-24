@@ -92,6 +92,22 @@ The compose project is named `triptych` regardless of directory, so the Restate 
 carry over from wherever you run it today. Stop any Tilt session first, since it uses the same
 project name.
 
+**Check that `docker stop` can signal containers.** Docker loads its own `docker-default` AppArmor
+profile only when none is loaded, so a stale `/etc/apparmor.d/docker` left by an old package wins at
+every boot. marvin had one from 2019, older than the rule letting runc signal containers, so every
+stop waited out the 10s timeout and Docker killed the container: the old `web` kept serving until
+it died mid-request (journal: `runc ... unable to signal init: permission denied`; audit:
+`profile="docker-default" ... peer="runc"`). Move it aside and let Docker load its own:
+
+```bash
+sudo mv /etc/apparmor.d/docker /root/apparmor.d-docker.old
+sudo apparmor_parser -R /root/apparmor.d-docker.old && sudo systemctl restart docker
+# check: well under a second, not 10 (the sleep lets Python install its handler first)
+docker run -d --name sigtest python:3.13-slim python -c \
+  "import signal,time; signal.signal(signal.SIGTERM, lambda *a: exit(0)); time.sleep(300)"
+sleep 3; time docker stop sigtest; docker rm sigtest
+```
+
 Membership in the `docker` group is effectively root on marvin. The restricted login shell and the
 `environment: marvin` trust subject are what keep that down to "deploy a commit from main".
 
