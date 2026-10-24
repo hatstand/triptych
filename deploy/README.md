@@ -157,14 +157,15 @@ reaches it: `https://marvin.axolotl-goblin.ts.net:9070` if you serve it with
 
 ## Public access
 
-`https://triptych.purplehatstands.com` is served straight from marvin: a DNS-only record points at
-marvin's public IP, the router forwards TCP 443 to marvin, and Caddy (`compose/public.yaml`,
-`deploy/Caddyfile`) terminates TLS and proxies to the web app. Caddy gets its certificate from
-Let's Encrypt over TLS-ALPN-01 on that same port, so nothing listens on 80.
+`https://triptych.purplehatstands.com` goes through a Cloudflare Tunnel: `cloudflared` on marvin
+(`compose/public.yaml`) keeps outbound connections open to Cloudflare, whose edge serves the name,
+terminates TLS and sends requests down the tunnel to the web app. Nothing at home is forwarded, so
+the ISP gateway (which drops inbound 443) and the double NAT don't matter, and marvin's address
+isn't published. Cloudflare sees the traffic in the clear, as it already does for mail.
 
 What the internet can reach is the web app: sign-in, invite links, the UI, calendar feeds and
-`/inbound`. It can't reach `/admin` (a Unix socket behind `tailscale serve`; Caddy also answers 404
-there), the Restate UI (loopback, served on the tailnet by `tailscale serve --https=9070`),
+`/inbound`. It can't reach `/admin` (a Unix socket behind `tailscale serve`; the web app has no
+such route), the Restate UI (loopback, served on the tailnet by `tailscale serve --https=9070`),
 Postgres, Ollama or SMTP (`compose/public.yaml` unpublishes them). Sign-in, registration and the
 invite page are rate limited per client address, adding plans and asking questions per user
 (`src/triptych/web/ratelimit.py`). Accounts still only come from invites.
@@ -182,27 +183,24 @@ URLs change too (new host and `SECRET_KEY`), so re-subscribe.
    `compose/public.yaml` refuses to start without it. (The Postgres password can stay: the overlay
    unpublishes its port, so only compose neighbours, which hold `DATABASE_URL` anyway, reach it.)
 
-2. **DNS** (Cloudflare dashboard → purplehatstands.com → DNS): `triptych` as an `A` record to
-   marvin's public IP, or a CNAME to a name that resolves to it, proxy status **DNS only** (grey
-   cloud). No `AAAA` unless marvin is reachable on IPv6 and the router allows inbound 443 to it.
-   A CNAME can't share its name with MX records, so mail at `@triptych.purplehatstands.com`
-   would need an `A` record instead.
+2. **DNS**: delete any existing `triptych` record in the purplehatstands.com zone; the tunnel
+   creates its own (a proxied CNAME to `<tunnel id>.cfargotunnel.com`). Mail at
+   `@triptych.purplehatstands.com` isn't possible alongside it; use the apex for mail.
 
-3. **Router**: give marvin a fixed LAN address (DHCP reservation) and forward **TCP 443** to it.
-   Nothing else: SSH and deploys go over Tailscale.
+3. **Tunnel** (Cloudflare dashboard → Zero Trust → Networks → Tunnels → **Create a tunnel** →
+   Cloudflared): name it `triptych`, and copy the token from the install command it shows
+   (the long string after `--token`). Under **Public hostnames** add subdomain `triptych`,
+   domain `purplehatstands.com`, service **HTTP** `web:8000` (the compose service name). Put the token in `/srv/triptych/.env`
+   as `TUNNEL_TOKEN=...`. It is a credential for running this tunnel and nothing else; if it
+   leaks, rotate it from the tunnel's page.
 
-4. **Check exposure**: the router's single forward is the perimeter, and Docker's published
-   ports skip host firewall rules anyway, which is why `compose/public.yaml` publishes only 443
-   and leaves the rest on loopback or unpublished. After the switch-over,
-   `sudo ss -tlnp | grep -v -e 127.0.0.1 -e '\[::1\]'` should show Caddy's 443, Tailscale and
-   nothing else of ours. If the router passes inbound IPv6 to marvin, anything else listening on
-   all interfaces (sshd, say) is reachable that way; a host firewall would be the fix then.
+4. **Edge settings** (purplehatstands.com → SSL/TLS → Edge Certificates): turn on **Always Use
+   HTTPS** and **HSTS** (max-age 6 months or more, no preload needed).
 
 5. **Switch over**: add to `/srv/triptych/.env` (keep the other lines):
 
    ```bash
    COMPOSE_FILE=compose.yaml:compose/ollama.yaml:compose/gpu-rocm.yaml:compose/public.yaml
-   PUBLIC_HOST=triptych.purplehatstands.com
    PUBLIC_BASE_URL=https://triptych.purplehatstands.com
    WEBAUTHN_RP_ID=purplehatstands.com
    ADMIN_ORIGINS=https://triptych.axolotl-goblin.ts.net
@@ -210,11 +208,11 @@ URLs change too (new host and `SECRET_KEY`), so re-subscribe.
 
    `compose/public.yaml` needs Docker Compose 2.24.4 or later (`docker compose version`). Then
    redeploy (re-run the **Deploy** workflow, or `tailscale ssh deploy@marvin <sha>`). The
-   `--remove-orphans` in the deploy script is fine: Caddy is part of the project now.
+   `--remove-orphans` in the deploy script is fine: `cloudflared` is part of the project now.
+   Remove the home router's 443 forward; nothing uses it.
 
-6. **Check** from outside the house (a phone off Wi-Fi; many routers don't loop the public IP
-   back to the LAN): `https://triptych.purplehatstands.com/healthz`. The first request waits for
-   the certificate; `docker compose logs caddy` shows the ACME exchange.
+6. **Check**: the tunnel shows **Healthy** in the dashboard, `docker compose logs cloudflared`
+   shows registered connections, and `https://triptych.purplehatstands.com/login` loads.
 
 7. **Passkeys**: open `https://triptych.axolotl-goblin.ts.net/admin`, create an invite for
    yourself (the link now points at the public host), and register a passkey from it; it's added

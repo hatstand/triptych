@@ -153,7 +153,7 @@ Limiter = Annotated[ratelimit.Limiter, Depends(limiter)]
 
 
 def per_client(rate: RateLimitItem, scope: str) -> Any:
-    """A route dependency limiting each client address (Caddy's X-Forwarded-For, via uvicorn)."""
+    """A route dependency limiting each client address (X-Forwarded-For, via uvicorn)."""
 
     async def check(request: Request, lim: Limiter) -> None:
         await ratelimit.check(lim, rate, scope, request.client.host if request.client else "unknown")
