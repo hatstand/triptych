@@ -77,10 +77,12 @@ sudo install -m 0755 deploy/triptych-deploy /usr/local/bin/triptych-deploy
 echo /usr/local/bin/triptych-deploy | sudo tee -a /etc/shells
 sudo useradd --system --create-home --shell /usr/local/bin/triptych-deploy --groups docker deploy
 # docker-rollout, as a Docker CLI plugin for every user (pinned; check the release notes to upgrade)
+# (not curl --create-dirs: its 0750 directories hide every CLI plugin, compose too, from non-root)
+sudo install -d -m 0755 /usr/local/lib/docker/cli-plugins
 sudo curl -fsSL https://raw.githubusercontent.com/wowu/docker-rollout/v0.14/docker-rollout \
-  -o /usr/local/lib/docker/cli-plugins/docker-rollout --create-dirs
+  -o /usr/local/lib/docker/cli-plugins/docker-rollout
 sudo chmod 0755 /usr/local/lib/docker/cli-plugins/docker-rollout
-docker rollout --version
+sudo -u deploy docker rollout --version     # docker-rollout version v0.14
 sudo git clone https://github.com/hatstand/triptych /srv/triptych
 sudo cp .env /srv/triptych/.env            # your current .env, with COMPOSE_FILE set
 sudo chown -R deploy: /srv/triptych
