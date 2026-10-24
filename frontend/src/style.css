@@ -99,10 +99,12 @@ main {
     grid-template-columns: 1fr;
   }
 }
-/* Wide screens: the sidebar is pinned to the viewport, so only the inbox scrolls and the calendar feed
-   stays in view. Its height leaves room for the topbar and main's top and bottom padding, which must
-   match here, otherwise the page scrolls even when the main column is short. */
-@media (min-width: 821px) {
+/* Wide, tall screens: the sidebar is pinned to the viewport, so only the inbox scrolls and the calendar
+   feed stays in view. Its height leaves room for the topbar and main's top and bottom padding, which must
+   match here, otherwise the page scrolls even when the main column is short. On shorter screens there
+   isn't room for Add plans, a usable inbox and the calendar feed at once, so the sidebar scrolls with the
+   page instead and the inbox gets a fixed cap. */
+@media (min-width: 821px) and (min-height: 900px) {
   main {
     padding-bottom: 20px;
   }
@@ -127,6 +129,15 @@ main {
     min-height: 6rem;
     display: flex;
     flex-direction: column;
+  }
+}
+@media (min-width: 821px) and (height < 900px) {
+  .inbox-scroll {
+    max-height: 20rem;
+  }
+}
+@media (min-width: 821px) {
+  .sidebar > .inbox {
     padding-bottom: 0;
   }
   /* Fade the list out at the bottom instead of cutting it off; the padding gives the last item room to
