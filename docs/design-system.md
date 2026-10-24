@@ -143,7 +143,10 @@ fixed shapes: the thumbnail is square and the trip photo's two shapes are passed
   Sign out).
 - Danger `button.danger`: `--danger` fill (Delete trip).
 
-**Inputs:** full-width, `--bg` fill inside a card, `--line` border, `8px` radius.
+**Inputs:** full-width, `--bg` fill inside a card, `--line` border, `8px` radius. A file input's
+"Choose files" button (`::file-selector-button`) is a small secondary button inside that field:
+`--card` fill, `--line` border, `6px` radius, border turning `--accent` on hover; the file names
+beside it are `--muted`.
 
 **Badge** `.badge.<state>`: an uppercase pill for an ingest state. `done` green, `failed` red,
 `no_travel` grey, and the in-progress states (`queued`, `parsing`, `extracting`, `filing`) blue
