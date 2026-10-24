@@ -112,20 +112,23 @@ One-time setup:
    to `.env`. There is no sender allowlist to configure: users' addresses live in Postgres.
 3. **Funnel:** `tailscale funnel --bg --set-path /inbound http://127.0.0.1:8000/inbound`
 4. **Create the Worker, deployed from GitHub.** Cloudflare's own CI (Workers Builds) deploys it on
-   every merge to `main` that touches it, so there is no Cloudflare API token anywhere, GitHub
-   included. In the dashboard, go to **Workers & Pages → Create → Import a repository**:
-   - **Repository:** `hatstand/triptych` (approve the Cloudflare GitHub app for it the first time).
+   every merge to `main` that touches it. Its deploy token is created and kept by Cloudflare, so no
+   Cloudflare credential is ever stored in GitHub. In the dashboard, go to **Workers & Pages →
+   Create → Import a repository**, pick `hatstand/triptych` (approve the Cloudflare GitHub app for
+   it the first time), and fill in:
    - **Project name:** `triptych-email`. It must match `name` in `wrangler.jsonc`, or builds fail.
-   - **Root directory:** `cloudflare/email-worker`
    - **Build command:** empty. **Deploy command:** `npm run deploy` (type-checks, then `wrangler deploy`).
+   - **Preview command:** leave the default; **Enable Preview builds:** off, so branches never build.
+   - **Advanced settings → Path:** `cloudflare/email-worker`
+   - **API token:** *Create new token* (the one Cloudflare's builds use).
+   - **Variable name/value:** empty. These are build-time variables, not the Worker's secrets.
 
    Then, on the Worker:
    - **Settings → Variables and secrets → Add:** `INBOUND_TOKEN`, type *Secret*, the same value as
      `.env`. Secrets survive deploys; the plain vars come from `wrangler.jsonc` on each deploy.
    - **Settings → Build → Build watch paths:** include `cloudflare/email-worker/*`, so other
      merges don't redeploy it.
-   - **Settings → Build → Branch control:** production branch `main`, and turn off builds for
-     non-production branches, so pull requests never reach the live Worker.
+   - **Settings → Build → Branch control:** check the production branch is `main`.
 
    Pull requests are still checked by `.github/workflows/email-worker.yml` (lint, types, tests).
    To deploy by hand instead: `npx wrangler login && npm ci && npm run deploy` in that directory.
