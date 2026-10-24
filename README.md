@@ -246,20 +246,60 @@ page, and can remove any passkey except their last.
   response from the same ceremony. Invites are still spent in the database.
 * **WebAuthn user handle** is the 16 bytes of the user's UUID: stable, random, and not an address.
 
-## Logs
+## Logs and traces
 
-Logging is stdlib `logging` (`src/triptych/telemetry.py`, set up in each process's lifespan or
-`main`). Every process writes one JSON object per line to stdout, with OpenTelemetry log data
-model names where there is one, plus the process and the deployed image:
+Logging is stdlib `logging` and tracing is OpenTelemetry (`src/triptych/telemetry.py`, set up in
+each process's lifespan or `main`).
 
-```json
-{"severity_text": "INFO", "logger": "triptych.worker", "message": "registered …", "service": "triptych-worker", "version": "ghcr.io/hatstand/triptych:<sha>", "timestamp": "2026-10-24T17:12:07.367596+00:00"}
-```
+* **Logs** go to stdout as one JSON object per line, with OpenTelemetry log data model names where
+  there is one, the process and the deployed image, and `trace_id` and `span_id` whenever the line
+  was written inside a span, so `docker compose logs worker | jq` lines up with a trace:
 
-Fields passed with `extra={...}` become keys of their own, so `docker compose logs worker | jq`
-can filter on them. uvicorn's and hypercorn's own logs (access log included) come out the same
-way. `LOG_FORMAT=text` prints plain lines instead, which Tilt uses (`compose/dev.yaml`), and
-`LOG_LEVEL` sets the level (default `INFO`).
+  ```json
+  {"severity_text": "INFO", "logger": "triptych.worker", "message": "registered …", "service": "triptych-worker", "version": "ghcr.io/hatstand/triptych:<sha>", "trace_id": "4bf9…", "span_id": "00f0…", "timestamp": "2026-10-24T17:12:07.367596+00:00"}
+  ```
+
+  Fields passed with `extra={...}` become keys of their own. uvicorn's and hypercorn's own logs
+  (access log included) come out the same way. `LOG_FORMAT=text` prints plain lines instead, which
+  Tilt uses (`compose/dev.yaml`), and `LOG_LEVEL` sets the level (default `INFO`).
+* **Traces**: a server span per web/admin request (FastAPI), per Restate handler attempt in the
+  worker and per SMTP message, with child spans for every httpx call (Ollama, the Restate client,
+  Wikimedia) and Postgres query (psycopg). Each model call is a `chat <model>` span with the
+  [GenAI semantic conventions](https://opentelemetry.io/docs/specs/semconv/gen-ai/) (model, token
+  usage, finish reason) plus `triptych.prompt.name` and `triptych.prompt.version` (a hash of the
+  system prompt and output schema, the same as an extraction run's `prompt_version`).
+* **Export** is OTLP over HTTP and **off until an endpoint is set**. Everything uses the standard
+  variables, so any OTLP backend works, hosted or self-hosted:
+
+  ```bash
+  OTEL_EXPORTER_OTLP_ENDPOINT=https://otlp.example.com      # traces → /v1/traces, logs → /v1/logs
+  OTEL_EXPORTER_OTLP_HEADERS=authorization=Bearer%20<token> # if the backend wants one
+  OTEL_RESOURCE_ATTRIBUTES=deployment.environment.name=marvin
+  ```
+
+  Per-signal variables (`OTEL_EXPORTER_OTLP_TRACES_ENDPOINT`, `OTEL_TRACES_EXPORTER=none`, …),
+  sampling (`OTEL_TRACES_SAMPLER`) and `OTEL_SDK_DISABLED=true` work as the OTel spec says. Service
+  names are `triptych-web`, `triptych-worker`, `triptych-smtp` and `triptych-admin`.
+* **Through Restate**: the Restate client sends W3C `traceparent` to the ingress, and Restate hands
+  each handler attempt its trace context, which the worker continues. Restate only continues the
+  caller's trace when it traces too, so for one trace from the browser request through `Ingest`
+  and `Llm.extract` to Ollama, also give the `restate` service `RESTATE_TRACING_ENDPOINT` (OTLP/gRPC
+  like `http://collector:4317`, or `otlp+http://collector:4318/v1/traces`); it then adds its own
+  spans for ingress, each invocation and each attempt. Without it, each invocation starts its own
+  trace in the worker. Compose can't pass it empty (Restate refuses to start), so it is set in
+  `compose/otel.yaml` rather than `compose.yaml`; for another backend, set it the same way in a
+  compose override.
+
+**Email Worker:** Workers Logs and Cloudflare's automatic OpenTelemetry tracing are on in
+`wrangler.jsonc`. Cloudflare can export both over OTLP to the same backend: add it under Workers
+Observability → Destinations and list it in `observability.traces.destinations` /
+`observability.logs.destinations`.
+
+**Self-hosted:** append `:compose/otel.yaml` to `COMPOSE_FILE` (or pass `-f compose/otel.yaml`) to
+run [`grafana/otel-lgtm`](https://github.com/grafana/docker-otel-lgtm), a single container with an
+OTel Collector, Tempo (traces), Loki (logs), Prometheus and Grafana, at <http://localhost:3000>.
+It wires up the app and Restate for you. It's fine for one box; for anything longer-lived, run a
+standalone OpenTelemetry Collector and point it wherever the data should end up.
 
 ## Development
 
@@ -311,7 +351,7 @@ src/triptych/
   models.py        pydantic models for every Restate payload and state value
   parsing.py       .eml / HTML / PDF (text, or rasterised if scanned) / image → LLM input
   llm.py           Ollama client: structured-output extraction + Q&A
-  telemetry.py     logging setup (JSON lines on stdout)
+  telemetry.py     logging (JSON to stdout) + OpenTelemetry tracing and OTLP export
   enrich.py        times, airports → city/tz, tz inheritance
   grouping.py      reservation → trip assignment and trip merging (pure)
   ical.py          .ics export
@@ -326,7 +366,8 @@ src/triptych/
 frontend/          TypeScript and CSS for the browser (Vite → src/triptych/web/static)
 db/                migrations/ (hand-written SQL) + schema.sql (generated, committed)
 compose.yaml       postgres, migrate, restate, worker, web, smtp
-compose/           ollama.yaml + gpu-{rocm,vulkan,nvidia}.yaml | host-llm.yaml, dev.yaml (hot reload)
+compose/           ollama.yaml + gpu-{rocm,vulkan,nvidia}.yaml | host-llm.yaml, dev.yaml (hot reload),
+                   otel.yaml (opt-in Grafana for traces and logs)
 ```
 
 ## Prototype limitations

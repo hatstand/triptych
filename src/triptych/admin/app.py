@@ -22,6 +22,7 @@ import restate
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from pydantic import BaseModel, Field, ValidationError
 
 from triptych import auth, db, llm, telemetry
@@ -43,14 +44,15 @@ class AppState(TypedDict):
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[AppState]:
-    telemetry.setup("triptych-admin")
-    db.init()
-    async with restate.create_client(settings.restate_ingress_url) as client:
-        yield {"restate": client}
-    await db.close()
+    with telemetry.running("triptych-admin"):
+        db.init()
+        async with restate.create_client(settings.restate_ingress_url) as client:
+            yield {"restate": client}
+        await db.close()
 
 
 app = FastAPI(title="Triptych admin", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+FastAPIInstrumentor.instrument_app(app, exclude_spans=["receive", "send"])
 # Admin templates extend the web app's base.html; /static is served by the web app on the same host.
 templates = Jinja2Templates(directory=[HERE / "templates", HERE.parent / "web" / "templates"])
 # Jinja types globals by its own defaults' types; any value is allowed.
