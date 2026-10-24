@@ -238,6 +238,10 @@ def test_check_in_waits_for_the_train_that_gets_you_there() -> None:
     )
     assert html.index("ES9024") < html.index("Check-in from 14:00") < html.index("Check out")
     assert "3 nights" in html
+    # The clock only goes forward: the hotel's 14:00 and 11:00 are on its cards, not in the clock.
+    clocks = re.findall(r'<time datetime="[^"]+">(\d\d:\d\d)</time>', html)
+    assert clocks == ["15:01", "18:20"]
+    assert "By 11:00" in html
 
 
 def test_check_out_comes_before_an_early_departure() -> None:

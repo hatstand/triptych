@@ -33,7 +33,8 @@ dc_resource("restate", labels=["infra"], links=[link("http://localhost:9070", "R
 dc_resource("postgres", labels=["infra"])
 dc_resource("migrate", labels=["infra"], resource_deps=["postgres"])
 dc_resource("worker", labels=["app"], resource_deps=["restate", "migrate"])
-dc_resource("web", labels=["app"], resource_deps=["worker"], links=[link("http://localhost:8000", "Triptych")])
+dc_resource("web", labels=["app"], resource_deps=["worker"])
+dc_resource("proxy", labels=["app"], resource_deps=["web"], links=[link("http://localhost:8000", "Triptych")])
 
 # Saving a new/edited migration applies it and refreshes db/schema.sql (commit both).
 local_resource(

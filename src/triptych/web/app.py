@@ -618,6 +618,12 @@ async def api_trip(trip_id: str, me: User) -> Trip:
     return await load_trip(me.id, trip_id)
 
 
+@app.get("/livez")
+async def livez() -> dict[str, bool]:
+    """The container healthcheck: the app is up and serving. Cheap, unlike /healthz (no LLM call)."""
+    return {"ok": True}
+
+
 @app.get("/healthz")
 async def healthz() -> dict[str, Any]:
     try:

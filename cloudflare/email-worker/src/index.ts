@@ -1,16 +1,19 @@
 // Cloudflare Email Worker for plans@triptych.purplehatstands.com.
 //
-// Hands each message (raw RFC 822, byte-for-byte so DKIM/ARC still verify) to a Triptych
-// instance's POST /inbound over Tailscale Funnel. `plans+<instance>@` picks the instance (needs
-// Email Routing → Settings → Subaddressing on); plain `plans@` goes to DEFAULT_INSTANCE.
-// Triptych decides who may send (users' verified sender addresses, kept in its database) and
-// authenticates the message; its refusals still happen at SMTP time, as rejects, not bounces.
+// Hands each message (raw RFC 822, byte-for-byte so DKIM/ARC still verify) to Triptych's
+// POST /inbound. Triptych decides who may send (users' verified sender addresses, kept in its
+// database) and authenticates the message.
 //
 //   2xx       → done
-//   403 / 413 → permanent: bounce to the sender with Triptych's reason
-//   other / network error → retry briefly, then forward to FALLBACK_ADDRESS if set (a single-user
-//                           instance), else refuse so the sender can try again later
+//   403 / 413 → permanent: refused at SMTP time, so the sender gets Triptych's reason
+//   other / network error (Triptych restarting for a deploy, marvin offline) → accepted anyway:
+//     the raw message is parked in R2 and a queue message retries it with backoff for ~19 hours,
+//     then deleted once delivered. Nothing bounces and nothing goes to anyone else's mailbox.
+//
+// `plans+<instance>@` can pick a test instance when INBOUND_URL_TEMPLATE has `{instance}` in it
+// (see wrangler.jsonc); plain `plans@` goes to DEFAULT_INSTANCE.
 
+import { backoff, deliver, type Envelope, MAX_ATTEMPTS } from "./deliver.ts";
 import { route } from "./routing.ts";
 
 export interface Env {
@@ -18,11 +21,18 @@ export interface Env {
   INBOUND_URL_TEMPLATE: string;
   DEFAULT_INSTANCE: string;
   INBOUND_TOKEN: string;
-  FALLBACK_ADDRESS?: string;
+  /** Raw messages waiting to be retried, keyed by Parked.key. */
+  PARKED: R2Bucket;
+  RETRIES: Queue<Parked>;
+}
+
+/** A queue message: where a parked message goes, and what it was sent with. */
+interface Parked extends Envelope {
+  key: string;
+  url: string;
 }
 
 const MAX_BYTES = 25 * 1024 * 1024;
-const RETRY_DELAYS_MS = [0, 1_000, 4_000];
 
 /** Tailscale only publishes public DNS for Funnel-enabled nodes, so NXDOMAIN = no such instance. */
 async function instanceExists(url: string): Promise<boolean> {
@@ -34,43 +44,7 @@ async function instanceExists(url: string): Promise<boolean> {
     const body = (await resp.json()) as { Status?: number };
     return body.Status !== 3;
   } catch {
-    return true; // DNS check is best-effort; let delivery retries/fallback handle it
-  }
-}
-
-type Outcome = { kind: "ok" } | { kind: "reject"; reason: string } | { kind: "retry"; detail: string };
-
-async function deliver(
-  env: Env,
-  url: string,
-  message: ForwardableEmailMessage,
-  raw: ArrayBuffer,
-): Promise<Outcome> {
-  try {
-    const resp = await fetch(url, {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${env.INBOUND_TOKEN}`,
-        "content-type": "message/rfc822",
-        "x-envelope-from": message.from,
-        "x-envelope-to": message.to,
-      },
-      body: raw,
-    });
-    if (resp.ok) return { kind: "ok" };
-    if (resp.status === 403 || resp.status === 413) {
-      const body = await resp.text();
-      let reason = body;
-      try {
-        reason = (JSON.parse(body) as { detail?: string }).detail ?? body;
-      } catch {
-        // not JSON; use the text as-is
-      }
-      return { kind: "reject", reason: reason.slice(0, 300) };
-    }
-    return { kind: "retry", detail: `HTTP ${resp.status}` };
-  } catch (e) {
-    return { kind: "retry", detail: String(e) };
+    return true; // DNS check is best-effort; delivery retries handle the rest
   }
 }
 
@@ -82,7 +56,7 @@ export default {
       return;
     }
     if (!(await instanceExists(target.url))) {
-      message.setReject(`No Triptych instance "${target.instance}" (is Tailscale Funnel enabled on it?)`);
+      message.setReject(`No Triptych instance "${target.instance}"`);
       return;
     }
     if (message.rawSize > MAX_BYTES) {
@@ -91,28 +65,45 @@ export default {
     }
 
     const raw = await new Response(message.raw).arrayBuffer();
-    let last = "";
-    for (const delay of RETRY_DELAYS_MS) {
-      if (delay) await new Promise((r) => setTimeout(r, delay));
-      const outcome = await deliver(env, target.url, message, raw);
-      if (outcome.kind === "ok") return;
-      if (outcome.kind === "reject") {
-        message.setReject(outcome.reason);
-        return;
-      }
-      last = outcome.detail;
+    const envelope = { from: message.from, to: message.to };
+    const outcome = await deliver(target.url, env.INBOUND_TOKEN, envelope, raw);
+    if (outcome.kind === "ok") return;
+    if (outcome.kind === "reject") {
+      message.setReject(outcome.reason);
+      return;
     }
 
-    console.error(`triptych instance ${target.instance} unreachable (${last}); falling back`, {
-      from: message.from,
-    });
-    if (env.FALLBACK_ADDRESS) {
-      const headers = new Headers({
-        "X-Triptych-Undelivered": `${target.instance}: ${last}`.slice(0, 200),
-      });
-      await message.forward(env.FALLBACK_ADDRESS, headers);
-    } else {
-      message.setReject("Temporarily unable to process this message; please try again later");
+    // If parking fails too, this throws and Cloudflare refuses the message rather than lose it.
+    const key = `${new Date().toISOString()}-${crypto.randomUUID()}`;
+    await env.PARKED.put(key, raw);
+    await env.RETRIES.send({ key, url: target.url, ...envelope }, { delaySeconds: backoff(1) });
+    console.warn(`triptych unreachable (${outcome.detail}); parked ${key} for retry`, { from: message.from });
+  },
+
+  async queue(batch: MessageBatch<Parked>, env: Env): Promise<void> {
+    for (const msg of batch.messages) {
+      const { key, url, from, to } = msg.body;
+      const obj = await env.PARKED.get(key);
+      if (obj === null) {
+        msg.ack(); // already delivered by an earlier attempt
+        continue;
+      }
+      const outcome = await deliver(url, env.INBOUND_TOKEN, { from, to }, await obj.arrayBuffer());
+      if (outcome.kind === "ok") {
+        await env.PARKED.delete(key);
+        msg.ack();
+      } else if (outcome.kind === "reject") {
+        // Too late to bounce; Triptych has refused it for good (e.g. not a verified sender).
+        console.warn(`parked ${key} refused by triptych: ${outcome.reason}`, { from });
+        await env.PARKED.delete(key);
+        msg.ack();
+      } else if (msg.attempts >= MAX_ATTEMPTS) {
+        // Left in R2 so it can be replayed by hand (README.md, "Replaying parked mail").
+        console.error(`giving up on parked ${key} after ${msg.attempts} attempts (${outcome.detail})`, { from });
+        msg.ack();
+      } else {
+        msg.retry({ delaySeconds: backoff(msg.attempts + 1) });
+      }
     }
   },
-} satisfies ExportedHandler<Env>;
+} satisfies ExportedHandler<Env, Parked>;

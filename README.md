@@ -103,10 +103,22 @@ Nothing listens on port 25 here. The Worker
 * **Gmail's "confirm forwarding" email** is recognised, and its code appears as an alert in the
   web UI.
 
-If Triptych can't be reached, the Worker retries for a few seconds and then refuses the message
-with *"Temporarily unable to process this message; please try again later"*, so the sender knows to
-resend. (`FALLBACK_ADDRESS` can instead forward it to a verified mailbox, but that mailbox would get
-every user's mail, so it's only for a single-user instance.)
+If Triptych can't take a message (a deploy is restarting it, marvin is offline: anything but a
+403 or 413), the Worker accepts it anyway, parks the raw message in the R2 bucket
+`triptych-email-parked`, and retries it from the Queue `triptych-email-retries`: 30 s, doubling to
+hourly, for about 19 hours (`cloudflare/email-worker/src/deliver.ts`). Delivered messages are
+deleted from R2. Nothing bounces and nothing is forwarded to anyone's mailbox. Retries are safe:
+`/inbound` dedupes on the message's Message-ID. Both fit Cloudflare's free tiers.
+
+**Replaying parked mail.** If retries run out, the Worker logs `giving up on parked <key>` and
+leaves the message in R2. Once Triptych is back, replay it from `cloudflare/email-worker`:
+
+```bash
+npx wrangler r2 object get triptych-email-parked/<key> --remote --file msg.eml
+curl -sS https://triptych.purplehatstands.com/inbound -H "authorization: Bearer $INBOUND_TOKEN" \
+  -H "x-envelope-from: <sender from the log>" -H "content-type: message/rfc822" --data-binary @msg.eml
+npx wrangler r2 object delete triptych-email-parked/<key> --remote
+```
 
 One-time setup:
 
@@ -115,7 +127,10 @@ One-time setup:
 2. **Shared token:** add `INBOUND_TOKEN` (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
    to `.env`. There is no sender allowlist to configure: users' addresses live in Postgres.
 3. **Public `/inbound`:** marvin's public site must be up (`deploy/README.md`, "Public access").
-4. **Create the Worker, deployed from GitHub.** Cloudflare's own CI (Workers Builds) deploys it on
+4. **Retry storage:** create the R2 bucket and Queue the Worker binds to, once (dashboard → R2 /
+   Queues, or `npx wrangler r2 bucket create triptych-email-parked` and
+   `npx wrangler queues create triptych-email-retries`).
+5. **Create the Worker, deployed from GitHub.** Cloudflare's own CI (Workers Builds) deploys it on
    every merge to `main` that touches it. Its deploy token is created and kept by Cloudflare, so no
    Cloudflare credential is ever stored in GitHub. In the dashboard, go to **Workers & Pages →
    Create → Import a repository**, pick `hatstand/triptych` (approve the Cloudflare GitHub app for
@@ -136,10 +151,10 @@ One-time setup:
 
    Pull requests are still checked by `.github/workflows/email-worker.yml` (lint, types, tests).
    To deploy by hand instead: `npx wrangler login && npm ci && npm run deploy` in that directory.
-5. **Routing:** in Cloudflare, go to Email Routing.
+6. **Routing:** in Cloudflare, go to Email Routing.
    - **Settings:** turn on **Subaddressing**, so the `plans@` rule also matches `plans+<instance>@`.
    - **Routing rules:** set `plans@` to *Send to a Worker* → `triptych-email`.
-6. **Gmail:**
+7. **Gmail:**
    - *Optional, automatic forwarding:* go to Settings → Forwarding, add `plans@triptych.purplehatstands.com`,
      and read the confirmation code from Triptych's alerts. Then add a filter (e.g. `subject:(booking
      OR itinerary OR confirmation)`) that forwards to it.
