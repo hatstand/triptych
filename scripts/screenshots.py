@@ -314,7 +314,8 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
         (user, "02-home", f"{WEB}/"),
         (user, "03-trip", f"{WEB}/trips/{trip_id}"),
         (user, "04-account", f"{WEB}/account"),
-        (admin, "05-admin", f"{ADMIN}/"),
+        (user, "05-account-senders", f"{WEB}/account/senders"),
+        (admin, "06-admin", f"{ADMIN}/"),
     ]
     (out / scheme).mkdir(parents=True, exist_ok=True)
     for ctx, name, url in shots:

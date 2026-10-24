@@ -219,9 +219,14 @@ async def logout(request: Request) -> Response:
     return resp
 
 
+ACCOUNT_TABS = {"passkeys": "Passkeys", "senders": "Sending addresses"}
+"""Account page tabs: each is its own URL, /account/<tab>, and /account shows the first."""
+
+
 async def render_account(
     request: Request,
     me: auth.Me,
+    tab: str = "passkeys",
     error: str | None = None,
     sender_error: str | None = None,
     new_sender: tuple[str, str] | None = None,
@@ -232,6 +237,8 @@ async def render_account(
         "account.html",
         {
             "email": me.email,
+            "tabs": ACCOUNT_TABS,
+            "tab": tab,
             "passkeys": await auth.passkeys(me.id),
             "senders": await senders.addresses(me.id),
             "pending_senders": await senders.pending(me.id),
@@ -249,12 +256,21 @@ async def account_page(request: Request, me: User) -> Response:
     return await render_account(request, me)
 
 
+@app.get("/account/{tab}", response_class=HTMLResponse)
+async def account_tab(request: Request, tab: str, me: User) -> Response:
+    if tab not in ACCOUNT_TABS:
+        raise HTTPException(404)
+    if tab == next(iter(ACCOUNT_TABS)):
+        return RedirectResponse("/account", status_code=308)
+    return await render_account(request, me, tab)
+
+
 @app.post("/account/passkeys/{passkey_id}/delete", response_class=HTMLResponse)
 async def passkey_delete(request: Request, passkey_id: str, me: User) -> Response:
     try:
         await auth.delete_passkey(me.id, passkey_id)
     except auth.AuthError as e:
-        return await render_account(request, me, str(e))
+        return await render_account(request, me, error=str(e))
     return RedirectResponse("/account", status_code=303)
 
 
@@ -263,8 +279,8 @@ async def sender_add(request: Request, me: User, email: Annotated[str, Form()]) 
     try:
         code = await senders.request(me.id, email)
     except senders.SenderError as e:
-        return await render_account(request, me, sender_error=str(e))
-    return await render_account(request, me, new_sender=(db.normalise_email(email), code))
+        return await render_account(request, me, "senders", sender_error=str(e))
+    return await render_account(request, me, "senders", new_sender=(db.normalise_email(email), code))
 
 
 @app.post("/account/senders/delete", response_class=HTMLResponse)
@@ -272,8 +288,8 @@ async def sender_delete(request: Request, me: User, email: Annotated[str, Form()
     try:
         await senders.remove(me.id, email)
     except senders.SenderError as e:
-        return await render_account(request, me, sender_error=str(e))
-    return RedirectResponse("/account", status_code=303)
+        return await render_account(request, me, "senders", sender_error=str(e))
+    return RedirectResponse("/account/senders", status_code=303)
 
 
 # --- passkey ceremonies (driven by static/passkey.js) ----------------------------------------
