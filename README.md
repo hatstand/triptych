@@ -70,22 +70,26 @@ uv run python scripts/send_samples.py --from me@example.com
 ## Real email: plans@triptych.purplehatstands.com
 
 ```
-Gmail ─▶ MX: Cloudflare Email Routing ─▶ Email Worker ─HTTPS + bearer token─▶ Tailscale Funnel
-      ─▶ web :8000 /inbound  (verified sender + DKIM/ARC check) ─▶ Ingest workflow
+Gmail ─▶ MX: Cloudflare Email Routing ─▶ Email Worker ─HTTPS + bearer token─▶ triptych.purplehatstands.com
+      ─▶ Caddy ─▶ web :8000 /inbound  (verified sender + DKIM/ARC check) ─▶ Ingest workflow
 ```
 
-**Several instances, one address.** `plans+<instance>@triptych.purplehatstands.com` is delivered to
-`https://<instance>.axolotl-goblin.ts.net/inbound`. Plain `plans@` goes to the default instance (`zem`).
-To add a test instance, just run the stack on another tailnet machine with the same
-`INBOUND_TOKEN` and turn on Funnel there; no Cloudflare changes are needed.
+The Worker posts every message to `INBOUND_URL_TEMPLATE` (`cloudflare/email-worker/wrangler.jsonc`),
+which is marvin's public `/inbound` (served by Caddy, see `deploy/README.md`).
 
-* **Hostname pinning:** the Worker substitutes only names matching `[a-z0-9-]` into a template
-  pinned to the tailnet's domain, so an address can't send it anywhere else.
-* **Existence check:** before delivering, the Worker looks the hostname up via public DNS.
-  Tailscale publishes public DNS only for Funnel-enabled machines, so a typo or a machine without
-  Funnel bounces with *"No Triptych instance …"* rather than being retried.
+**Test instances over Funnel.** Set the template to
+`https://{instance}.axolotl-goblin.ts.net/inbound` and `plans+<instance>@triptych.purplehatstands.com`
+is delivered to that tailnet machine, with plain `plans@` going to `DEFAULT_INSTANCE`. Run the stack
+there with the same `INBOUND_TOKEN` and `tailscale funnel --bg --set-path /inbound
+http://127.0.0.1:8000/inbound`.
 
-Nothing listens on port 25 here, and Funnel exposes only the `/inbound` path. The Worker
+* **Hostname pinning:** the Worker substitutes only names matching `[a-z0-9-]` into the template,
+  so an address can't send it anywhere else.
+* **Existence check:** before delivering, the Worker looks the hostname up via public DNS, so a
+  typo'd instance (Tailscale publishes public DNS only for Funnel-enabled machines) bounces with
+  *"No Triptych instance …"* rather than being retried.
+
+Nothing listens on port 25 here. The Worker
 (`cloudflare/email-worker/`) passes the raw message through byte-for-byte. `/inbound`
 (`src/triptych/inbound.py`) then authenticates it:
 
@@ -112,7 +116,7 @@ One-time setup:
    record for the same name.
 2. **Shared token:** add `INBOUND_TOKEN` (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
    to `.env`. There is no sender allowlist to configure: users' addresses live in Postgres.
-3. **Funnel:** `tailscale funnel --bg --set-path /inbound http://127.0.0.1:8000/inbound`
+3. **Public `/inbound`:** marvin's public site must be up (`deploy/README.md`, "Public access").
 4. **Create the Worker, deployed from GitHub.** Cloudflare's own CI (Workers Builds) deploys it on
    every merge to `main` that touches it. Its deploy token is created and kept by Cloudflare, so no
    Cloudflare credential is ever stored in GitHub. In the dashboard, go to **Workers & Pages →
