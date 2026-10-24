@@ -93,7 +93,7 @@
 </details>
 {% endmacro %}
 {#- The clock column: when an entry happens, and for a flight or train when it arrives, at the
-    bottom of its card. A hotel's time is a bound, so it says so. -#}
+    bottom of its card. Times only ever go forward down the timeline. -#}
 {% macro at(t, tz, label=none) %}
 <div class="at">
   {% if label %}<span class="bound">{{ label }}</span>{% endif %}
@@ -101,9 +101,9 @@
   {% if tz %}<span class="zone">{{ t | tz_abbr(tz) }}</span>{% endif %}
 </div>
 {% endmacro %}
-{% macro clock(t, tz, bound=none, end=none, end_tz=none) %}
+{% macro clock(t, tz, end=none, end_tz=none) %}
 <div class="clock">
-  {{ at(t, tz, bound) }}
+  {{ at(t, tz) }}
   {% if end %}{{ at(end, end_tz, end.strftime('%a') if end.date() != t.date() else none) }}{% endif %}
 </div>
 {% endmacro %}
@@ -161,7 +161,9 @@
             {{ track(icons[item.kind.value], arrives=true) }}
             {{ journey(item) }}
           {% elif item.hotel is defined %}
-            {{ clock(item.time, item.tz, 'by' if item.checkout else 'from') }}
+            {#- A hotel's times are bounds, not when you arrive or leave, so they would put the clock out of
+                order (check-in from 14:00 after an 18:00 train): they stay on the card. -#}
+            <div class="clock"></div>
             {{ track(icon('checkout') if item.checkout else icons['lodging']) }}
             {{ stay(item) }}
           {% else %}

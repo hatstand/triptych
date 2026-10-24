@@ -163,10 +163,11 @@ and `28px`.
 
 Entries are in the order things happen, compared as instants across zones
 (`journeys.timeline`). A hotel stay is two entries: its check-in on the first day and a compact
-`.segment.lodging.checkout` card on the last. Their clocks show the hotel's own times with a
-"from" / "by" `.bound` above, since check-in is the earliest allowed and check-out the latest: a
-check-in sorts after transport arriving in its city that day and a check-out before transport
-leaving, so their clocks can be out of sequence with the entries around them.
+`.segment.lodging.checkout` card on the last. Check-in is the earliest allowed and check-out the
+latest, so a check-in sorts after transport arriving in its city that day and a check-out before
+transport leaving. The timeline only ever goes forward in time, so a hotel's own times, which
+could be out of sequence with the entries around them, stay on its cards ("Check-in from 15:00",
+"By 11:00") and its clock is empty.
 
 **Timeline item** `.card.segment.<kind>`: the body: title row with a remove link, times (`.when`:
 on the timeline the end, since the start is in the clock, or for a flight or train just its duration, since both times are; with the zone in `.muted.small`
