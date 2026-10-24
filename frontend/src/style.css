@@ -434,44 +434,62 @@ button.danger {
   border-radius: 8px;
   gap: 12px;
 }
+/* The timeline: a clock column, then the rail with a node per entry, then the entry's card. The
+   rail is one line from the first node to the last: each entry draws it from its node down to the
+   next, and each day heading after the first carries it past the heading. */
+.timeline {
+  --clock: 52px;
+  --node: 32px;
+  --gap: 10px;
+  --rail-x: calc(var(--clock) + var(--gap) + var(--node) / 2 - 1px);
+}
 .day {
-  margin: 18px 0 8px;
+  position: relative;
+  margin: 0;
+  padding: 18px 0 8px calc(var(--clock) + var(--gap) + var(--node) + var(--gap));
   font-size: 0.95rem;
   color: var(--muted);
   font-weight: 600;
 }
 .day-group:first-child .day {
-  margin-top: 0;
+  padding-top: 0;
+}
+.day-group + .day-group .day::before,
+.entry::before {
+  content: "";
+  position: absolute;
+  left: var(--rail-x);
+  border-left: 2px solid var(--line);
+}
+.day-group + .day-group .day::before {
+  top: 0;
+  bottom: 0;
 }
 .day-number {
   margin-left: 6px;
   font-weight: normal;
   font-size: 0.85rem;
 }
-/* The timeline: a clock column, then the rail with a node per entry, then the entry's card. */
 .entries {
-  --clock: 52px;
-  --node: 32px;
-  position: relative;
   list-style: none;
   margin: 0;
   padding: 0;
 }
-.entries::before {
-  content: "";
-  position: absolute;
-  top: 16px;
-  bottom: 16px;
-  left: calc(var(--clock) + 10px + var(--node) / 2 - 1px);
-  border-left: 2px solid var(--line);
-}
 .entry {
   --kind: var(--other);
+  position: relative;
   display: grid;
   grid-template-columns: var(--clock) var(--node) minmax(0, 1fr);
-  gap: 0 10px;
+  gap: 0 var(--gap);
   align-items: start;
-  margin-bottom: 12px;
+  padding-bottom: 12px;
+}
+.entry::before {
+  top: calc(10px + var(--node) / 2);
+  bottom: 0;
+}
+.day-group:last-child .entry:last-child::before {
+  display: none;
 }
 .entry.flight {
   --kind: var(--flight);
@@ -528,15 +546,10 @@ button.danger {
   padding-bottom: 10px;
 }
 @media (max-width: 520px) {
-  .entries {
+  .timeline {
     --clock: 44px;
     --node: 28px;
-  }
-  .entry {
-    gap: 0 6px;
-  }
-  .entries::before {
-    left: calc(var(--clock) + 6px + var(--node) / 2 - 1px);
+    --gap: 6px;
   }
 }
 .i {

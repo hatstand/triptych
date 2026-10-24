@@ -158,7 +158,7 @@ with a 1.2s pulse.
 `li.entry.<kind>` is a three-column grid: the `.clock` (`52px`: start time at `1.05rem` 600 with
 tabular figures, its zone abbreviation below in `.75rem` `--muted`), the rail node `.node` (a `32px`
 `--card` circle with a 2px `--kind` ring and the kind's icon at text size), then the entry's card.
-The rail is a 2px `--line` rule behind the nodes. Under `520px` the clock and node shrink to `44px`
+The rail is a 2px `--line` rule behind the nodes, unbroken from the first node to the last: each entry draws it down to the next, and each day heading after the first carries it past the heading, which is indented to the card column. Under `520px` the clock and node shrink to `44px`
 and `28px`.
 
 Entries are in the order things happen, compared as instants across zones
