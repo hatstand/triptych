@@ -11,7 +11,8 @@ if [[ ! $sha =~ ^[0-9a-f]{40}$ ]]; then
 fi
 
 # docker-rollout (https://github.com/wowu/docker-rollout) swaps web without a gap; see deploy/README.md.
-if ! docker rollout --version >/dev/null 2>&1; then
+# Without the plugin, `docker rollout --version` prints Docker's own version and succeeds.
+if ! docker rollout --version 2>/dev/null | grep -q '^docker-rollout '; then
   echo "docker rollout is not installed (deploy/README.md → One-time setup → marvin)" >&2
   exit 1
 fi
