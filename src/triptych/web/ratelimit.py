@@ -3,7 +3,7 @@ the passkey ceremonies (anyone can call them) and the ones that queue LLM work.
 
 Counters live in this process (the `limits` library's memory storage), which is right for a single
 uvicorn process; a restart forgets them. The client is `request.client.host`, which uvicorn's
---proxy-headers fills in from Caddy's X-Forwarded-For (see compose/public.yaml)."""
+--proxy-headers fills in from X-Forwarded-For (see compose/public.yaml)."""
 
 import time
 
