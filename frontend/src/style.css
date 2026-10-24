@@ -100,8 +100,12 @@ main {
   }
 }
 /* Wide screens: the sidebar is pinned to the viewport, so only the inbox scrolls and the calendar feed
-   stays in view. Its height leaves room for the topbar and main's padding at the top of the page. */
+   stays in view. Its height leaves room for the topbar and main's top and bottom padding, which must
+   match here, otherwise the page scrolls even when the main column is short. */
 @media (min-width: 821px) {
+  main {
+    padding-bottom: 20px;
+  }
   .sidebar {
     position: sticky;
     top: 20px;
