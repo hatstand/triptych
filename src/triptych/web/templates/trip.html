@@ -3,43 +3,77 @@
 {% block content %}
 {% from "_icons.html" import icon, kind_icons as icons %}
 {% from "_photo.html" import photo_credit %}
-{% macro segment(r) %}
+{#- Arrival (or end) of r after its start, with its date when that differs and its zone when it changes. -#}
+{% macro until(start, start_tz, end, end_tz) -%}
+{% if end.date() != start.date() %}{{ end.strftime('%a') }} {% endif %}{{ end.strftime('%H:%M') }}{% if end_tz and end_tz != start_tz %} <span class="muted small">{{ end | tz_abbr(end_tz) }}</span>{% endif %}
+{%- endmacro %}
+{#- One reservation. On the timeline its start time is in the clock column; inside a journey it is
+    on the card, with the icon. -#}
+{% macro segment(r, on_rail=false) %}
 <article class="card segment {{ r.kind.value }}">
-  <div class="icon">{{ icons[r.kind.value] }}</div>
+  {% if not on_rail %}<div class="icon">{{ icons[r.kind.value] }}</div>{% endif %}
   <div class="body">
     <div class="row">
       <b>{{ r.title }}</b>
       <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/delete"
             onsubmit="return confirm('Remove this item?')"><button class="link small">remove</button></form>
     </div>
+    {% if not on_rail or r.end_local %}
     <div class="when">
-      {{ r.start_local.strftime('%H:%M') }}{% if r.start_tz %} <span class="muted small">{{ r.start_tz }}</span>{% endif %}
-      {% if r.end_local %} → {% if r.end_local.date() != r.start_local.date() %}{{ r.end_local.strftime('%a %d %b') }} {% endif %}{{ r.end_local.strftime('%H:%M') }}{% if r.end_tz and r.end_tz != r.start_tz %} <span class="muted small">{{ r.end_tz }}</span>{% endif %}{% endif %}
+      {% if not on_rail %}{{ r.start_local.strftime('%H:%M') }}{% if r.start_tz %} <span class="muted small">{{ r.start_local | tz_abbr(r.start_tz) }}</span>{% endif %}{% endif %}
+      {% if r.end_local %}{{ '→' if r.kind.value in ('flight', 'rail', 'car') else 'until' }} {{ until(r.start_local, r.start_tz, r.end_local, r.end_tz) }}
+        {%- if r.kind.value in ('flight', 'rail') %} <span class="muted small">· {{ elapsed(r.start_local, r.start_tz, r.end_local, r.end_tz) | duration }}</span>{% endif %}{% endif %}
     </div>
+    {% endif %}
     {% if (r.start_location or r.end_location) and r.start_location != r.address %}<div>{{ r.start_location or '' }}{% if r.end_location %} → {{ r.end_location }}{% endif %}</div>{% endif %}
     {% if r.address %}<div class="muted small">{{ r.address }}</div>{% endif %}
-    <dl class="facts">
-      {% if r.provider %}<dt>Provider</dt><dd>{{ r.provider }}</dd>{% endif %}
-      {% if r.confirmation_code %}<dt>Confirmation</dt><dd class="mono">{{ r.confirmation_code }}</dd>{% endif %}
-      {% if r.flight_number %}<dt>Flight</dt><dd>{{ r.flight_number }}</dd>{% endif %}
-      {% if r.seat %}<dt>Seat</dt><dd>{{ r.seat }}</dd>{% endif %}
-      {% if r.travelers %}<dt>Travelers</dt><dd>{{ r.travelers | join(', ') }}</dd>{% endif %}
-    </dl>
-    {% if r.notes %}<div class="muted small">{{ r.notes }}</div>{% endif %}
+    {{ facts(r) }}
   </div>
 </article>
+{% endmacro %}
+{% macro facts(r) %}
+<dl class="facts">
+  {% if r.provider and r.provider != r.title %}<dt>Provider</dt><dd>{{ r.provider }}</dd>{% endif %}
+  {% if r.confirmation_code %}<dt>Confirmation</dt><dd class="mono">{{ r.confirmation_code }}</dd>{% endif %}
+  {% if r.flight_number %}<dt>Flight</dt><dd>{{ r.flight_number }}</dd>{% endif %}
+  {% if r.seat %}<dt>Seat</dt><dd>{{ r.seat }}</dd>{% endif %}
+  {% if r.travelers %}<dt>Travelers</dt><dd>{{ r.travelers | join(', ') }}</dd>{% endif %}
+</dl>
+{% if r.notes %}<div class="muted small">{{ r.notes }}</div>{% endif %}
+{% endmacro %}
+{#- A hotel's check-in, or its check-out on a later day. -#}
+{% macro stay(s) %}
+{% set h = s.hotel %}
+{% if s.checkout %}
+<article class="card segment lodging checkout">
+  <div class="body">
+    <div><b>Check out</b> · {{ h.title }}</div>
+    <div class="muted small">By {{ h.end_local.strftime('%H:%M') }} · {{ s.nights }} night{{ 's' if s.nights != 1 }}</div>
+  </div>
+</article>
+{% else %}
+<article class="card segment lodging">
+  <div class="body">
+    <div class="row">
+      <b>{{ h.title }}</b>
+      <form method="post" action="/trips/{{ trip.id }}/reservations/{{ h.id }}/delete"
+            onsubmit="return confirm('Remove this item?')"><button class="link small">remove</button></form>
+    </div>
+    <div class="when">Check-in from {{ h.start_local.strftime('%H:%M') }}
+      {%- if s.nights %} <span class="muted small">· {{ s.nights }} night{{ 's' if s.nights != 1 }}, check out {{ h.end_local.strftime('%a %H:%M') }}</span>{% endif %}</div>
+    {% if h.address %}<div class="muted small">{{ h.address }}</div>{% endif %}
+    {{ facts(h) }}
+  </div>
+</article>
+{% endif %}
 {% endmacro %}
 {% macro journey(j) %}
 {% set first, last = j.legs[0], j.legs[-1] %}
 <details class="card segment journey {{ j.kind.value }}">
   <summary>
-    <div class="icon">{{ icons[j.kind.value] }}</div>
     <div class="body">
       <b class="route">{{ j.stops | join(' → ') }}</b>
-      <div class="when">
-        {{ first.start_local.strftime('%H:%M') }}{% if first.start_tz %} <span class="muted small">{{ first.start_tz }}</span>{% endif %}
-        → {% if last.end_local.date() != first.start_local.date() %}{{ last.end_local.strftime('%a %d %b') }} {% endif %}{{ last.end_local.strftime('%H:%M') }}{% if last.end_tz and last.end_tz != first.start_tz %} <span class="muted small">{{ last.end_tz }}</span>{% endif %}
-      </div>
+      <div class="when">→ {{ until(first.start_local, first.start_tz, last.end_local, last.end_tz) }}</div>
       <div class="muted small">
         {{ j.summary }} · {{ j.duration | duration }} total
         {% for c in j.connections if not c.changes %}· {{ c.wait | duration }} {{ c.where }} {% endfor %}
@@ -54,6 +88,14 @@
     {% endfor %}
   </div>
 </details>
+{% endmacro %}
+{#- The clock column: when an entry happens. A hotel's time is a bound, so it says so. -#}
+{% macro clock(t, tz, bound=none) %}
+<div class="clock">
+  {% if bound %}<span class="bound">{{ bound }}</span>{% endif %}
+  <time datetime="{{ t.isoformat() }}">{{ t.strftime('%H:%M') }}</time>
+  {% if tz %}<span class="zone">{{ t | tz_abbr(tz) }}</span>{% endif %}
+</div>
 {% endmacro %}
 <a href="/" class="small">← All trips</a>
 {% if trip.photo %}
@@ -84,10 +126,28 @@
 <div class="grid">
   <section class="timeline">
     {% for day, items in days %}
-      <h3 class="day">{{ day.strftime('%A, %d %B %Y') }}</h3>
-      {% for item in items %}
-        {% if item.legs is defined %}{{ journey(item) }}{% else %}{{ segment(item) }}{% endif %}
-      {% endfor %}
+    <section class="day-group">
+      <h3 class="day">{{ day.strftime('%A %-d %B') }} <span class="day-number">Day {{ (day - summary.start_date).days + 1 }}</span></h3>
+      <ol class="entries">
+        {% for item in items %}
+        <li class="entry {{ item.kind.value }}">
+          {% if item.legs is defined %}
+            {{ clock(item.legs[0].start_local, item.legs[0].start_tz) }}
+            <div class="node">{{ icons[item.kind.value] }}</div>
+            {{ journey(item) }}
+          {% elif item.hotel is defined %}
+            {{ clock(item.time, item.tz, 'by' if item.checkout else 'from') }}
+            <div class="node">{{ icon('checkout') if item.checkout else icons['lodging'] }}</div>
+            {{ stay(item) }}
+          {% else %}
+            {{ clock(item.start_local, item.start_tz) }}
+            <div class="node">{{ icons[item.kind.value] }}</div>
+            {{ segment(item, on_rail=true) }}
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ol>
+    </section>
     {% endfor %}
   </section>
 

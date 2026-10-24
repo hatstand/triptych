@@ -440,6 +440,105 @@ button.danger {
   color: var(--muted);
   font-weight: 600;
 }
+.day-group:first-child .day {
+  margin-top: 0;
+}
+.day-number {
+  margin-left: 6px;
+  font-weight: normal;
+  font-size: 0.85rem;
+}
+/* The timeline: a clock column, then the rail with a node per entry, then the entry's card. */
+.entries {
+  --clock: 52px;
+  --node: 32px;
+  position: relative;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.entries::before {
+  content: "";
+  position: absolute;
+  top: 16px;
+  bottom: 16px;
+  left: calc(var(--clock) + 10px + var(--node) / 2 - 1px);
+  border-left: 2px solid var(--line);
+}
+.entry {
+  --kind: var(--other);
+  display: grid;
+  grid-template-columns: var(--clock) var(--node) minmax(0, 1fr);
+  gap: 0 10px;
+  align-items: start;
+  margin-bottom: 12px;
+}
+.entry.flight {
+  --kind: var(--flight);
+}
+.entry.lodging {
+  --kind: var(--lodging);
+}
+.entry.car {
+  --kind: var(--car);
+}
+.entry.rail {
+  --kind: var(--rail);
+}
+.entry.restaurant {
+  --kind: var(--restaurant);
+}
+.entry.activity {
+  --kind: var(--activity);
+}
+.entry > .card {
+  margin: 0;
+}
+.clock {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding-top: 12px;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.clock time {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.clock .bound,
+.clock .zone {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+.node {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: var(--node);
+  height: var(--node);
+  margin-top: 10px;
+  border: 2px solid var(--kind);
+  border-radius: 50%;
+  background: var(--card);
+  color: var(--kind);
+}
+.segment.checkout {
+  padding-top: 10px;
+  padding-bottom: 10px;
+}
+@media (max-width: 520px) {
+  .entries {
+    --clock: 44px;
+    --node: 28px;
+  }
+  .entry {
+    gap: 0 6px;
+  }
+  .entries::before {
+    left: calc(var(--clock) + 6px + var(--node) / 2 - 1px);
+  }
+}
 .i {
   width: 1.25em;
   height: 1.25em;
@@ -652,7 +751,7 @@ button.danger {
   letter-spacing: 0.02em;
 }
 .journey .legs {
-  padding: 0 16px 4px 58px;
+  padding: 0 16px 4px;
 }
 .journey .legs .segment {
   margin-bottom: 0;

@@ -17,5 +17,6 @@
   "place": "map-pin",
   "calendar": "calendar",
   "copy": "copy",
-  "check": "check"
+  "check": "check",
+  "checkout": "log-out"
 }
