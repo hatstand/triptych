@@ -3,25 +3,23 @@
 // Hands each message (raw RFC 822, byte-for-byte so DKIM/ARC still verify) to a Triptych
 // instance's POST /inbound over Tailscale Funnel. `plans+<instance>@` picks the instance (needs
 // Email Routing → Settings → Subaddressing on); plain `plans@` goes to DEFAULT_INSTANCE.
-// Triptych does the real authentication; this Worker only pre-filters on the allowlist so junk
-// is refused cheaply at SMTP time.
+// Triptych decides who may send (users' verified sender addresses, kept in its database) and
+// authenticates the message; its refusals still happen at SMTP time, as rejects, not bounces.
 //
 //   2xx       → done
 //   403 / 413 → permanent: bounce to the sender with Triptych's reason
 //   other / network error → retry briefly, then forward to FALLBACK_ADDRESS so nothing is lost
 
-import { canonicalSender, route } from "./routing.ts";
+import { route } from "./routing.ts";
 
 export interface Env {
   /** e.g. https://{instance}.example.ts.net/inbound */
   INBOUND_URL_TEMPLATE: string;
   DEFAULT_INSTANCE: string;
   INBOUND_TOKEN: string;
-  ALLOWED_SENDERS: string;
   FALLBACK_ADDRESS?: string;
 }
 
-const GMAIL_FORWARDING_VERIFIER = "forwarding-noreply@google.com";
 const MAX_BYTES = 25 * 1024 * 1024;
 const RETRY_DELAYS_MS = [0, 1_000, 4_000];
 
@@ -37,14 +35,6 @@ async function instanceExists(url: string): Promise<boolean> {
   } catch {
     return true; // DNS check is best-effort; let delivery retries/fallback handle it
   }
-}
-
-function allowed(env: Env): Set<string> {
-  return new Set(
-    env.ALLOWED_SENDERS.split(",")
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  );
 }
 
 type Outcome = { kind: "ok" } | { kind: "reject"; reason: string } | { kind: "retry"; detail: string };
@@ -85,11 +75,6 @@ async function deliver(
 
 export default {
   async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
-    const sender = canonicalSender(message.from);
-    if (sender !== GMAIL_FORWARDING_VERIFIER && !allowed(env).has(sender)) {
-      message.setReject(`${sender} is not allowed to send to this address`);
-      return;
-    }
     const target = route(message.to, env.INBOUND_URL_TEMPLATE, env.DEFAULT_INSTANCE);
     if ("error" in target) {
       message.setReject(target.error);

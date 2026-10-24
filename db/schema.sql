@@ -147,6 +147,19 @@ CREATE TABLE public.schema_migrations (
 
 
 --
+-- Name: sender_verification; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.sender_verification (
+    code_hash bytea NOT NULL,
+    user_id uuid NOT NULL,
+    email text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL
+);
+
+
+--
 -- Name: trip; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -257,6 +270,14 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: sender_verification sender_verification_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sender_verification
+    ADD CONSTRAINT sender_verification_pkey PRIMARY KEY (code_hash);
+
+
+--
 -- Name: trip trip_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -306,6 +327,13 @@ CREATE INDEX passkey_user_idx ON public.passkey USING btree (user_id);
 --
 
 CREATE INDEX reservation_trip_start_idx ON public.reservation USING btree (trip_id, start_local);
+
+
+--
+-- Name: sender_verification_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX sender_verification_user_idx ON public.sender_verification USING btree (user_id);
 
 
 --
@@ -370,6 +398,14 @@ ALTER TABLE ONLY public.reservation
 
 
 --
+-- Name: sender_verification sender_verification_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sender_verification
+    ADD CONSTRAINT sender_verification_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
 -- Name: trip trip_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -411,4 +447,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261023150000'),
     ('20261023170000'),
     ('20261023180000'),
-    ('20261023190000');
+    ('20261023190000'),
+    ('20261024120000');

@@ -26,6 +26,57 @@
   <input name="passkey-name" placeholder="Name, e.g. MacBook" maxlength="60">
   <button type="button" data-passkey="register">Add a passkey</button>
   <p class="error" data-passkey-error hidden></p>
+
+  <h2 id="senders">Sending addresses</h2>
+  <p class="muted small">Bookings forwarded to <code>{{ inbound_address }}</code> from these addresses are
+    filed in your account. Mail from any other address is refused.</p>
+  {% if sender_error %}<p class="error">{{ sender_error }}</p>{% endif %}
+  {% for s in senders %}
+  <div class="row sender">
+    <div>
+      <div>{{ s.email }}</div>
+      <div class="muted small">Added {{ s.created_at.strftime('%d %b %Y') }}</div>
+    </div>
+    {% if senders|length > 1 %}
+    <form method="post" action="/account/senders/delete"
+          onsubmit="return confirm('Stop filing mail from this address?')">
+      <input type="hidden" name="email" value="{{ s.email }}">
+      <button class="link">Remove</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endfor %}
+  {% for p in pending_senders %}
+  <div class="row sender">
+    <div>
+      <div>{{ p.email }} <span class="badge">unverified</span></div>
+      {% if new_sender and new_sender[0] == p.email %}
+      <div class="small">To verify it, send an email from {{ p.email }} to <code>{{ inbound_address }}</code>
+        with <code>{{ new_sender[1] }}</code> in the subject.
+        <a href="mailto:{{ inbound_address }}?subject={{ ('Verify ' ~ new_sender[1])|urlencode }}">Write it now</a>.
+        The code works for a day.</div>
+      {% else %}
+      <div class="muted small">Waiting for an email with its code, until {{ p.expires_at.strftime('%d %b %H:%M') }}</div>
+      {% endif %}
+    </div>
+    <div class="row">
+      {% if not (new_sender and new_sender[0] == p.email) %}
+      <form method="post" action="/account/senders">
+        <input type="hidden" name="email" value="{{ p.email }}">
+        <button class="link">New code</button>
+      </form>
+      {% endif %}
+      <form method="post" action="/account/senders/delete">
+        <input type="hidden" name="email" value="{{ p.email }}">
+        <button class="link">Cancel</button>
+      </form>
+    </div>
+  </div>
+  {% endfor %}
+  <form method="post" action="/account/senders" class="row">
+    <input name="email" type="email" placeholder="another@example.com" required>
+    <button>Add address</button>
+  </form>
 </section>
 <script type="module" src="{{ static('js/passkey.js') }}"></script>
 {% endblock %}

@@ -1,7 +1,7 @@
 """Passkeys (WebAuthn), sign-in sessions and invites. Passkeys are the only way to sign in.
 
-Users are app_user ids, with email addresses pointing at them (see db.py). Mail can be filed for
-an address before anyone has signed in as its user. Nothing here proves control of an address,
+Users are app_user ids, with email addresses pointing at them (see db.py); those addresses are
+also the only ones mail is accepted from (senders.py). Nothing here proves control of an address,
 so the first passkey for a user needs an invite naming one of their addresses
 (`python -m triptych.invite`), which is also the recovery path for someone who has lost every
 passkey. Further passkeys are added while signed in.

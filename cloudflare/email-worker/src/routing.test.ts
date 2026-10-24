@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import { canonicalSender, route } from "./routing.ts";
+import { route } from "./routing.ts";
 
 const T = "https://{instance}.axolotl-goblin.ts.net/inbound";
 
@@ -23,8 +23,4 @@ test("tags that could escape the tailnet hostname are refused", () => {
   for (const bad of ["evil.com/x", "a.b", "-x", "x-", "", "a_b", "x".repeat(64)]) {
     assert.ok("error" in route(`plans+${bad}@purplehatstands.com`, T, "zem"), bad);
   }
-});
-
-test("gmail auto-forward envelope is canonicalised", () => {
-  assert.equal(canonicalSender("Me+caf_=plans+zem=purplehatstands.com@Gmail.com"), "me@gmail.com");
 });

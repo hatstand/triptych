@@ -441,7 +441,8 @@ button.danger {
   color: var(--danger);
   margin: 0;
 }
-.passkey {
+.passkey,
+.sender {
   padding: 8px 0;
   border-top: 1px solid var(--line);
 }

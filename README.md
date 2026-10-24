@@ -71,7 +71,7 @@ uv run python scripts/send_samples.py --from me@example.com
 
 ```
 Gmail ─▶ MX: Cloudflare Email Routing ─▶ Email Worker ─HTTPS + bearer token─▶ Tailscale Funnel
-      ─▶ web :8000 /inbound  (allowlist + DKIM/ARC check) ─▶ Ingest workflow
+      ─▶ web :8000 /inbound  (verified sender + DKIM/ARC check) ─▶ Ingest workflow
 ```
 
 **Several instances, one address.** `plans+<instance>@purplehatstands.com` is delivered to
@@ -89,7 +89,10 @@ Nothing listens on port 25 here, and Funnel exposes only the `/inbound` path. Th
 (`cloudflare/email-worker/`) passes the raw message through byte-for-byte. `/inbound`
 (`src/triptych/inbound.py`) then authenticates it:
 
-* **Allowlist:** the canonical envelope sender must be in `INBOUND_ALLOWED_SENDERS`.
+* **Verified senders:** the canonical envelope sender must be one of a user's verified sending
+  addresses, and the message is filed in that user's account. Anything else is refused before any
+  DNS lookups. A user's first address is the one their invite named; they add more on the account
+  page, which gives them a code to send from the new address to `plans@` (`src/triptych/senders.py`).
 * **Manual forwards** must carry a DKIM signature from the sender's own domain.
 * **Gmail auto-forwards**, whose envelope sender is rewritten to `you+caf_=…@gmail.com`, must
   carry a valid ARC chain sealed by `google.com`.
@@ -103,7 +106,7 @@ One-time setup:
 
 1. **DNS on Cloudflare**, with Email Routing enabled and catch-all off.
 2. **Shared token:** add `INBOUND_TOKEN` (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
-   and `INBOUND_ALLOWED_SENDERS` to `.env`.
+   to `.env`. There is no sender allowlist to configure: users' addresses live in Postgres.
 3. **Funnel:** `tailscale funnel --bg --set-path /inbound http://127.0.0.1:8000/inbound`
 4. **Deploy the Worker:**
    ```bash

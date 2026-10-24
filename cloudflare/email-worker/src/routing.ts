@@ -1,11 +1,5 @@
 // Pure helpers (no Workers APIs) so they can run under `node --test`.
 
-/** Lower-case and undo Gmail's auto-forward envelope rewrite (`you+caf_=…@gmail.com`). */
-export function canonicalSender(addr: string): string {
-  const [local = "", domain = ""] = addr.trim().toLowerCase().split(/@(?=[^@]*$)/);
-  return `${local.replace(/\+caf_=.*$/, "")}@${domain}`;
-}
-
 const INSTANCE = /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/;
 
 export type Route = { instance: string; url: string } | { error: string };

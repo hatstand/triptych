@@ -9,8 +9,6 @@
     // Pinned to our tailnet's domain so the recipient address can't point the Worker elsewhere.
     "INBOUND_URL_TEMPLATE": "https://{instance}.axolotl-goblin.ts.net/inbound",
     "DEFAULT_INSTANCE": "zem",
-    // Comma-separated envelope senders allowed to file trips (checked again, with DKIM/ARC, on zem).
-    "ALLOWED_SENDERS": "john.maguire@gmail.com",
     // Verified Email Routing destination used when zem can't be reached, so mail is never lost.
     // A plus-address lets a Gmail filter skip it and avoid forwarding loops.
     "FALLBACK_ADDRESS": "john.maguire+triptych-undelivered@gmail.com"
