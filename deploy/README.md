@@ -295,3 +295,7 @@ so the ts.net `/admin` page's `/static` and Funnel's `/inbound` keep working.
 
 Run the **Deploy** workflow from the Actions tab, or from a tailnet device that can SSH as
 `deploy`: `tailscale ssh deploy@marvin <sha>`. Any commit on `main` that has an image works.
+
+Each deploy also tags the image it deployed as `triptych-app`, the image compose falls back to when
+`TRIPTYCH_IMAGE` isn't set. So a `docker compose up` run by hand in /srv/triptych (after editing
+`.env`, say) recreates containers on the deployed code, not on an old local build.

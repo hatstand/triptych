@@ -3,7 +3,7 @@
 name: triptych
 
 x-app: &app
-  image: ${TRIPTYCH_IMAGE:-triptych-app}  # CI deploys set ghcr.io/hatstand/triptych:<sha>
+  image: ${TRIPTYCH_IMAGE:-triptych-app}  # CI deploys set ghcr.io/hatstand/triptych:<sha> and tag it triptych-app
   build: .
   restart: unless-stopped
   environment: &app-env

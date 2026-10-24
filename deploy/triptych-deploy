@@ -27,6 +27,10 @@ git checkout --quiet --detach "$sha"
 
 export TRIPTYCH_IMAGE=ghcr.io/hatstand/triptych:$sha
 docker compose pull --quiet
+# A `docker compose` run by hand here has no TRIPTYCH_IMAGE, so it falls back to the local
+# `triptych-app` image, which would otherwise be whatever was last built on marvin. Make that the
+# deployed image too, so a hand-run `up` recreates containers on the same code.
+docker tag "$TRIPTYCH_IMAGE" triptych-app
 
 # Everything but web is simply recreated: migrations run first (the app services wait on them),
 # and the worker force-re-registers with Restate on start, which retries invocations while it's
