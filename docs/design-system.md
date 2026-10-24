@@ -103,6 +103,9 @@ Layout:
   viewport height, so the inbox scrolls inside its card and the calendar feed stays on screen.
   If the viewport is too short even for a minimum-height inbox, the sidebar itself scrolls.
 - `.narrow` is a single `420px` column for sign-in and registration.
+- `.account` is the settings layout: a `760px` grid with the page header across the top, a
+  `180px` column of `.tabs` on the left and the current tab's `.card.tab-panel` beside it. Under
+  `640px` it is one column and the tabs run across the top instead.
 - Utilities: `.row` (space-between flex row), `.stack` (vertical flex, 8px gap), `.actions`
   (button group), `.muted`, `.small`, `.mono`.
 
@@ -159,6 +162,12 @@ animations are supported.
 
 **Inbox item** `.inbox-item`: badge, label, optional message and "view trip →" links, divided
 by `--line` rules.
+
+**Tabs** `nav.tabs`: plain links, one URL per tab (`/account`, `/account/senders`), so they
+work without JS and can be linked to. The server renders only the current tab's panel and marks
+its link `aria-current="page"`: `--card` fill, `3px` `--accent` left edge and `--ink` bold text;
+the others are `--muted` until hovered. In the one-column layout the accent edge moves to the
+bottom of the link.
 
 **Menu** `details.menu`: a `<summary>` styled as a button opening an absolutely positioned
 `.menu-panel` card (260px). No JS.

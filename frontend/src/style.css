@@ -446,6 +446,67 @@ button.danger {
   padding: 8px 0;
   border-top: 1px solid var(--line);
 }
+.account {
+  max-width: 760px;
+  margin: 40px auto;
+  display: grid;
+  grid-template-columns: 180px minmax(0, 1fr);
+  gap: 12px 20px;
+  align-items: start;
+}
+.account-header {
+  grid-column: 1 / -1;
+}
+.account-header p {
+  margin: 0;
+}
+.tabs {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.tabs a {
+  padding: 8px 12px;
+  border-radius: 8px;
+  border-left: 3px solid transparent;
+  color: var(--muted);
+}
+.tabs a:hover {
+  color: var(--ink);
+}
+.tabs a[aria-current="page"] {
+  background: var(--card);
+  border-left-color: var(--accent);
+  color: var(--ink);
+  font-weight: 600;
+}
+.tab-panel {
+  margin: 0;
+}
+.tab-panel h2 {
+  margin: 0;
+}
+@media (max-width: 640px) {
+  .account {
+    grid-template-columns: minmax(0, 1fr);
+    margin-top: 0;
+  }
+  .tabs {
+    flex-direction: row;
+    overflow-x: auto;
+    border-bottom: 1px solid var(--line);
+  }
+  .tabs a {
+    border-left: 0;
+    border-bottom: 3px solid transparent;
+    border-radius: 0;
+    white-space: nowrap;
+  }
+  .tabs a[aria-current="page"] {
+    background: none;
+    border-bottom-color: var(--accent);
+  }
+}
 .dropzone {
   position: fixed;
   inset: 0;

@@ -300,12 +300,27 @@ async def test_account_page_adds_and_removes_sending_addresses(browser: httpx.As
     [code] = set(re.findall(r"TRIPTYCH-[A-Z0-9]{10}", page.text))
     assert "me@work.example" in page.text and "mailto:" in page.text
     # Codes are stored hashed: a later visit says it's pending but can't show the code again.
-    page = await browser.get("/account")
+    page = await browser.get("/account/senders")
     assert "me@work.example" in page.text and code not in page.text and "New code" in page.text
 
     resp = await browser.post("/account/senders/delete", data={"email": "me@work.example"})
-    assert resp.status_code == 303
-    assert "me@work.example" not in (await browser.get("/account")).text
+    assert resp.status_code == 303 and resp.headers["location"] == "/account/senders"
+    assert "me@work.example" not in (await browser.get("/account/senders")).text
 
     refused = await browser.post("/account/senders/delete", data={"email": ME})
     assert refused.status_code == 400 and "only address" in refused.text
+
+
+async def test_account_page_has_a_tab_per_setting(browser: httpx.AsyncClient) -> None:
+    await sign_up(browser, Authenticator())
+    passkeys = await browser.get("/account")
+    assert 'href="/account" aria-current="page"' in passkeys.text and "Add a passkey" in passkeys.text
+    assert "Add address" not in passkeys.text
+
+    addresses = await browser.get("/account/senders")
+    assert 'href="/account/senders" aria-current="page"' in addresses.text and "Add address" in addresses.text
+    assert "Add a passkey" not in addresses.text and not re.search(r'src="[^"]*passkey', addresses.text)
+
+    resp = await browser.get("/account/passkeys")
+    assert resp.status_code == 308 and resp.headers["location"] == "/account"
+    assert (await browser.get("/account/nope")).status_code == 404
