@@ -67,18 +67,18 @@ Forward mail with any client: SMTP to `localhost:2525`, any recipient. It's file
 uv run python scripts/send_samples.py --from me@example.com
 ```
 
-## Real email: plans@triptych.purplehatstands.com
+## Real email: plans@purplehatstands.com
 
 ```
 Gmail ─▶ MX: Cloudflare Email Routing ─▶ Email Worker ─HTTPS + bearer token─▶ triptych.purplehatstands.com
-      ─▶ Caddy ─▶ web :8000 /inbound  (verified sender + DKIM/ARC check) ─▶ Ingest workflow
+      ─▶ web :8000 /inbound  (verified sender + DKIM/ARC check) ─▶ Ingest workflow
 ```
 
 The Worker posts every message to `INBOUND_URL_TEMPLATE` (`cloudflare/email-worker/wrangler.jsonc`),
-which is marvin's public `/inbound` (served by Caddy, see `deploy/README.md`).
+which is marvin's public `/inbound` (see `deploy/README.md`, "Public access").
 
 **Test instances over Funnel.** Set the template to
-`https://{instance}.axolotl-goblin.ts.net/inbound` and `plans+<instance>@triptych.purplehatstands.com`
+`https://{instance}.axolotl-goblin.ts.net/inbound` and `plans+<instance>@purplehatstands.com`
 is delivered to that tailnet machine, with plain `plans@` going to `DEFAULT_INSTANCE`. Run the stack
 there with the same `INBOUND_TOKEN` and `tailscale funnel --bg --set-path /inbound
 http://127.0.0.1:8000/inbound`.
@@ -110,10 +110,9 @@ every user's mail, so it's only for a single-user instance.)
 
 One-time setup:
 
-1. **DNS on Cloudflare**, with Email Routing enabled and catch-all off. The address lives on the
-   `triptych.purplehatstands.com` subdomain: in Email Routing → **Settings → Subdomains**, add
-   `triptych` and let Cloudflare create its MX and SPF records. They sit alongside the web UI's A
-   record for the same name.
+1. **DNS on Cloudflare**, with Email Routing enabled on `purplehatstands.com` and catch-all off.
+   The address stays on the apex: `triptych.purplehatstands.com` is the web UI's (tunnel) CNAME,
+   and a name with a CNAME can't also have the MX records mail needs.
 2. **Shared token:** add `INBOUND_TOKEN` (`python3 -c 'import secrets; print(secrets.token_urlsafe(32))'`)
    to `.env`. There is no sender allowlist to configure: users' addresses live in Postgres.
 3. **Public `/inbound`:** marvin's public site must be up (`deploy/README.md`, "Public access").
@@ -142,10 +141,10 @@ One-time setup:
    - **Settings:** turn on **Subaddressing**, so the `plans@` rule also matches `plans+<instance>@`.
    - **Routing rules:** set `plans@` to *Send to a Worker* → `triptych-email`.
 6. **Gmail:**
-   - *Optional, automatic forwarding:* go to Settings → Forwarding, add `plans@triptych.purplehatstands.com`,
+   - *Optional, automatic forwarding:* go to Settings → Forwarding, add `plans@purplehatstands.com`,
      and read the confirmation code from Triptych's alerts. Then add a filter (e.g. `subject:(booking
      OR itinerary OR confirmation)`) that forwards to it.
-   - *Manual:* forward any confirmation to `plans@triptych.purplehatstands.com`.
+   - *Manual:* forward any confirmation to `plans@purplehatstands.com`.
 
 ## Running on a Ryzen AI MAX 385 (Radeon 8050S, 32 GB)
 
