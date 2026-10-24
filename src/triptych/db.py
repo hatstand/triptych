@@ -13,7 +13,7 @@ commit, so a rolled-back or retried step announces nothing it didn't do.
 import uuid
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from datetime import datetime
+from datetime import date, datetime
 from typing import Any
 
 import restate
@@ -347,16 +347,58 @@ class Filed(BaseModel):
     the timezone of an earlier segment (hotel first, flight later), making its reminder possible."""
 
 
+class Dismissal(BaseModel):
+    """A reservation the user deleted, as the ingest it came from described it."""
+
+    dedupe_key: str
+    kind: str
+    confirmation_code: str | None
+    start_date: date
+    city: str | None
+
+
+def dismissed(r: Reservation, d: Dismissal) -> bool:
+    """Whether `r`, from the same ingest as `d`, is the reservation the user deleted. A re-extraction
+    can word a segment differently, so after the exact key, the same booking code on the same day,
+    then the same kind of thing on the same day in the same city, count as the same."""
+    if dedupe_key(r) == d.dedupe_key:
+        return True
+    if r.kind.value != d.kind or r.start_date != d.start_date:
+        return False
+    if r.confirmation_code and r.confirmation_code == d.confirmation_code:
+        return True
+    return bool(r.city) and r.city == d.city
+
+
+# Records what's about to be deleted (the reservations matching the WHERE clause that follows).
+DISMISS = """
+    INSERT INTO dismissed_reservation (owner, ingest_id, dedupe_key, kind, confirmation_code,
+        start_date, city)
+    SELECT t.owner, r.source_ingest_id, r.dedupe_key, r.kind, r.confirmation_code, r.start_local::date,
+           r.city
+    FROM reservation r JOIN trip t ON t.id = r.trip_id
+    WHERE r.source_ingest_id IS NOT NULL AND t.owner = %s
+"""
+
+
 async def file_reservations(owner: str, ingest_id: str, reservations: list[Reservation]) -> Filed:
-    ids = [r.id for r in reservations]
     async with connection() as conn, conn.transaction():
         await conn.execute("SELECT 1 FROM trip WHERE owner = %s FOR UPDATE", (owner,))
+        async with conn.cursor(row_factory=class_row(Dismissal)) as cur:
+            await cur.execute(
+                """SELECT dedupe_key, kind, confirmation_code, start_date, city
+                   FROM dismissed_reservation WHERE owner = %s AND ingest_id = %s""",
+                (owner, ingest_id),
+            )
+            gone = await cur.fetchall()
+        reservations = [r for r in reservations if not any(dismissed(r, d) for d in gone)]
+        ids = [r.id for r in reservations]
 
         cur = await conn.execute(
             "SELECT DISTINCT trip_id::text FROM reservation WHERE id = ANY(%s::uuid[])", (ids,)
         )
         already = [row[0] for row in await cur.fetchall()]
-        if not already:
+        if not already and reservations:
             counter = iter(range(len(reservations) + 1))
             buckets = grouping.assign(
                 reservations, await _summaries(conn, owner), lambda: new_trip_id(ingest_id, next(counter))
@@ -395,6 +437,10 @@ async def remove_reservation(owner: str, trip_id: str, reservation_id: str) -> b
     async with connection() as conn, conn.transaction():
         await _owned(conn, owner, trip_id)
         await conn.execute(
+            DISMISS + " AND r.id = %s AND r.trip_id = %s ON CONFLICT DO NOTHING",
+            (owner, reservation_id, trip_id),
+        )
+        await conn.execute(
             "DELETE FROM reservation WHERE id = %s AND trip_id = %s", (reservation_id, trip_id)
         )
         await _changed(conn, owner)
@@ -418,6 +464,7 @@ async def rename_trip(owner: str, trip_id: str, name: str) -> None:
 
 async def delete_trip(owner: str, trip_id: str) -> None:
     async with connection() as conn, conn.transaction():
+        await conn.execute(DISMISS + " AND r.trip_id = %s ON CONFLICT DO NOTHING", (owner, trip_id))
         await conn.execute("DELETE FROM trip WHERE id = %s AND owner = %s", (trip_id, owner))
         await _changed(conn, owner)
 
