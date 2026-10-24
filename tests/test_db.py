@@ -8,7 +8,15 @@ import pytest
 import restate
 
 from triptych import db
-from triptych.models import InboxItem, IngestState, Kind, Notification, PhotoChoice, Reservation
+from triptych.models import (
+    InboxItem,
+    IngestState,
+    Kind,
+    Notification,
+    PhotoChoice,
+    ReprocessRequest,
+    Reservation,
+)
 
 pytestmark = [
     pytest.mark.anyio,
@@ -302,3 +310,110 @@ async def test_older_reservations_get_their_timezone_refilled(me: str) -> None:
     assert (stored.start_tz, stored.end_tz) == ("Europe/Lisbon", "Europe/Lisbon")
     lodging = next(r for r in trip.reservations if r.kind is Kind.LODGING)
     assert (lodging.start_tz, lodging.end_tz) == ("Europe/Lisbon", "Europe/Lisbon")
+
+
+def test_reconcile_matches_one_to_one_and_reports_what_changed() -> None:
+    lisbon, porto_, flight = (from_ingest(r, "mail-1") for r in (hotel(), porto(), outbound()))
+    # The new run: the hotel retitled (same code and day), the flight a minute later (same code and
+    # day), Porto gone, a dinner new, and the hotel twice.
+    retitled = lisbon.model_copy(update={"id": "n1", "title": "Hotel Avenida"})
+    later = flight.model_copy(update={"id": "n2", "start_local": flight.start_local + timedelta(minutes=1)})
+    dinner = from_ingest(res(Kind.RESTAURANT, "2026-11-14T20:00", city="Lisbon"), "mail-1")
+    again = retitled.model_copy(update={"id": "n3"})
+    rec = db.reconcile([lisbon, porto_, flight], [retitled, later, dinner, again], [], set())
+
+    assert [u.id for u in rec.updated] == [lisbon.id, flight.id]  # the existing ids are kept
+    assert [(c.id, [f.field for f in c.fields]) for c in rec.changes] == [
+        (lisbon.id, ["title"]),
+        (flight.id, ["start_local"]),
+    ]
+    assert rec.changes[0].fields[0].new == "Hotel Avenida"
+    assert rec.added == [dinner]
+    assert rec.missing == [porto_]
+    assert [(s.reservation.id, s.reason) for s in rec.skipped] == [("n3", "duplicate")]
+
+
+def test_reconcile_skips_what_the_user_deleted() -> None:
+    gone = db.Dismissal(
+        dedupe_key="x", kind="lodging", confirmation_code="H3", start_date=hotel().start_date, city=None
+    )
+    rec = db.reconcile([], [hotel(), porto()], [gone], {db.dedupe_key(porto())})
+    assert [(s.reservation.city, s.reason) for s in rec.skipped] == [
+        ("Lisbon", "dismissed"),
+        ("Porto", "duplicate"),
+    ]
+    assert rec.added == []
+
+
+async def test_applying_a_reprocess_updates_in_place_and_never_resurrects(me: str) -> None:
+    item = InboxItem(
+        ingest_id="mail-1", source="email", label="x", received_at=datetime.now(UTC), state="done"
+    )
+    await db.upsert_inbox(me, item)
+    filed = await db.file_reservations(
+        me, "mail-1", [from_ingest(r, "mail-1") for r in (outbound(), hotel(), home())]
+    )
+    [trip_id] = filed.trip_ids
+    stored = {f.reservation.kind: f.reservation for f in filed.reservations}
+    flight_back = next(f.reservation for f in filed.reservations if f.reservation.confirmation_code == "B2")
+    assert await db.remove_reservation(me, trip_id, flight_back.id)
+
+    # A better model: the hotel has an address, the return flight is back, and there's a dinner.
+    run = [
+        from_ingest(r, "mail-1").model_copy(update={"source_run_id": "00000000-0000-0000-0000-000000000001"})
+        for r in (outbound(), hotel().model_copy(update={"address": "Av. da Liberdade 1"}), home(),
+                  res(Kind.RESTAURANT, "2026-11-14T20:00", city="Lisbon"))
+    ]  # fmt: skip
+    run_id = str(uuid.uuid4())
+    preview = await db.preview_reprocess(me, "mail-1", run)
+    done = await db.apply_reprocess(me, "mail-1", run_id, run)
+    for rec in (preview, done.reconciliation):
+        assert [c.id for c in rec.changes] == [stored[Kind.LODGING].id]
+        assert [s.reason for s in rec.skipped] == ["dismissed"]
+        assert [r.kind for r in rec.added] == [Kind.RESTAURANT]
+
+    trip = await db.get_trip(me, trip_id)
+    assert trip is not None
+    by_kind = {r.kind: r for r in trip.reservations}
+    assert by_kind[Kind.LODGING].id == stored[Kind.LODGING].id  # reminders stay keyed to it
+    assert by_kind[Kind.LODGING].address == "Av. da Liberdade 1"
+    assert by_kind[Kind.LODGING].source_run_id == run_id
+    assert Kind.RESTAURANT in by_kind
+    assert "B2" not in [r.confirmation_code for r in trip.reservations]  # still deleted
+
+    # Applying again changes nothing.
+    again = await db.apply_reprocess(me, "mail-1", run_id, run)
+    assert again.reconciliation.changes == [] and again.reconciliation.added == []
+    assert len((await db.get_trip(me, trip_id) or trip).reservations) == len(trip.reservations)
+
+
+async def test_reprocessing_a_failed_ingest_files_it(me: str) -> None:
+    item = InboxItem(
+        ingest_id="mail-9", source="email", label="x", received_at=datetime.now(UTC), state="failed"
+    )
+    await db.upsert_inbox(me, item)
+    run_id = str(uuid.uuid4())
+    done = await db.apply_reprocess(me, "mail-9", run_id, [from_ingest(hotel(), "mail-9")])
+    [inbox] = await db.inbox(me)
+    assert inbox.state == "done" and inbox.trip_ids == done.filed.trip_ids
+
+
+async def test_reprocess_batches_summarise_their_diffs(me: str) -> None:
+    item = InboxItem(
+        ingest_id="mail-1", source="email", label="Lisbon", received_at=datetime.now(UTC), state="done"
+    )
+    await db.upsert_inbox(me, item)
+    req = ReprocessRequest(batch_id="b1", ingest_id="mail-1", mode="dry_run", model="gemma4:31b")
+    await db.add_reprocess(req, me)
+    await db.add_reprocess(req, me)  # the workflow records it again; still one row
+    [queued] = await db.reprocess_batches()
+    assert (queued.total, queued.queued, queued.model) == (1, 1, "gemma4:31b")
+
+    run_id = str(uuid.uuid4())
+    await db.finish_reprocess(req.key, run_id, db.reconcile([], [hotel(), porto()], [], set()), None)
+    [batch] = await db.reprocess_batches()
+    assert (batch.queued, batch.added, batch.changed) == (0, 2, 0)
+    [row] = await db.reprocess_batch("b1")
+    assert (row.label, row.owner, row.state, row.run_id) == ("Lisbon", "me@example.com", "done", run_id)
+    assert row.diff is not None and [r.city for r in row.diff.added] == ["Lisbon", "Porto"]
+    assert await db.reprocess_runs("b1") == [("mail-1", me, run_id)]

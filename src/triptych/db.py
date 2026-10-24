@@ -11,10 +11,10 @@ commit, so a rolled-back or retried step announces nothing it didn't do.
 """
 
 import uuid
-from collections.abc import AsyncGenerator
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 import restate
 from psycopg import AsyncConnection
@@ -22,17 +22,19 @@ from psycopg.errors import UniqueViolation
 from psycopg.rows import class_row, dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from triptych import enrich, grouping
 from triptych.config import settings
 from triptych.models import (
+    Extraction,
     ExtractionRun,
     InboxItem,
     Notification,
     Photo,
     PhotoChoice,
     RawInput,
+    ReprocessRequest,
     Reservation,
     Trip,
     TripSummary,
@@ -381,16 +383,54 @@ DISMISS = """
 """
 
 
+async def _file(
+    conn: AsyncConnection, owner: str, trip_key: str, reservations: list[Reservation]
+) -> list[str]:
+    """Put new reservations into trips (existing ones, or new ones named by `trip_key`)."""
+    counter = iter(range(len(reservations) + 1))
+    buckets = grouping.assign(
+        reservations, await _summaries(conn, owner), lambda: new_trip_id(trip_key, next(counter))
+    )
+    for b in buckets:
+        for absorbed in b.absorbed:
+            await _merge_trip(conn, absorbed, b.trip_id)
+        if b.is_new:
+            await conn.execute(
+                "INSERT INTO trip (id, owner, name, destination) VALUES (%s, %s, %s, %s)",
+                (b.trip_id, owner, grouping.trip_title(b.reservations), b.destination),
+            )
+        for r in b.reservations:
+            await _upsert_reservation(conn, b.trip_id, r)
+        await _fill_timezones(conn, b.trip_id)
+        await _retitle(conn, b.trip_id)
+    return [b.trip_id for b in buckets]
+
+
+async def _dismissals(conn: AsyncConnection, owner: str, ingest_id: str) -> list[Dismissal]:
+    async with conn.cursor(row_factory=class_row(Dismissal)) as cur:
+        await cur.execute(
+            """SELECT dedupe_key, kind, confirmation_code, start_date, city
+               FROM dismissed_reservation WHERE owner = %s AND ingest_id = %s""",
+            (owner, ingest_id),
+        )
+        return await cur.fetchall()
+
+
+async def _stored(conn: AsyncConnection, trip_ids: list[str]) -> Filed:
+    return Filed(
+        trip_ids=trip_ids,
+        reservations=[
+            FiledReservation(trip_id=tid, reservation=r)
+            for tid in trip_ids
+            for r in await _reservations(conn, [tid])
+        ],
+    )
+
+
 async def file_reservations(owner: str, ingest_id: str, reservations: list[Reservation]) -> Filed:
     async with connection() as conn, conn.transaction():
         await conn.execute("SELECT 1 FROM trip WHERE owner = %s FOR UPDATE", (owner,))
-        async with conn.cursor(row_factory=class_row(Dismissal)) as cur:
-            await cur.execute(
-                """SELECT dedupe_key, kind, confirmation_code, start_date, city
-                   FROM dismissed_reservation WHERE owner = %s AND ingest_id = %s""",
-                (owner, ingest_id),
-            )
-            gone = await cur.fetchall()
+        gone = await _dismissals(conn, owner, ingest_id)
         reservations = [r for r in reservations if not any(dismissed(r, d) for d in gone)]
         ids = [r.id for r in reservations]
 
@@ -399,31 +439,253 @@ async def file_reservations(owner: str, ingest_id: str, reservations: list[Reser
         )
         already = [row[0] for row in await cur.fetchall()]
         if not already and reservations:
-            counter = iter(range(len(reservations) + 1))
-            buckets = grouping.assign(
-                reservations, await _summaries(conn, owner), lambda: new_trip_id(ingest_id, next(counter))
-            )
-            for b in buckets:
-                for absorbed in b.absorbed:
-                    await _merge_trip(conn, absorbed, b.trip_id)
-                if b.is_new:
-                    await conn.execute(
-                        "INSERT INTO trip (id, owner, name, destination) VALUES (%s, %s, %s, %s)",
-                        (b.trip_id, owner, grouping.trip_title(b.reservations), b.destination),
-                    )
-                for r in b.reservations:
-                    await _upsert_reservation(conn, b.trip_id, r)
-                await _fill_timezones(conn, b.trip_id)
-                await _retitle(conn, b.trip_id)
-            already = [b.trip_id for b in buckets]
+            already = await _file(conn, owner, ingest_id, reservations)
             await _changed(conn, owner)
+        return await _stored(conn, already)
 
-        stored = [
-            FiledReservation(trip_id=tid, reservation=r)
-            for tid in already
-            for r in await _reservations(conn, [tid])
-        ]
-        return Filed(trip_ids=already, reservations=stored)
+
+# --- reprocessing (services/reprocess.py) ----------------------------------------------------
+# A new extraction of an ingest proposes; what the user did wins. Its reservations are matched to
+# the ones the ingest already produced, matches are updated in place (keeping their ids, which key
+# their reminders), new ones are filed, and nothing is ever deleted: a reservation the new run
+# doesn't mention is only reported. Deleted ones (dismissed_reservation) stay deleted.
+
+# Fields a reprocess may change, in the order a diff shows them.
+FIELDS = (
+    "title", "provider", "confirmation_code", "start_local", "start_tz", "end_local", "end_tz",
+    "start_location", "end_location", "address", "city", "flight_number", "seat", "travelers", "notes",
+)  # fmt: skip
+
+
+def _shown(value: object) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, datetime):
+        return value.isoformat(sep=" ", timespec="minutes")
+    if isinstance(value, list):
+        return ", ".join(map(str, value))
+    return str(value)
+
+
+class FieldChange(BaseModel):
+    field: str
+    old: str | None
+    new: str | None
+
+
+class Change(BaseModel):
+    id: str
+    title: str
+    fields: list[FieldChange]
+
+
+class Skipped(BaseModel):
+    reservation: Reservation
+    reason: Literal["dismissed", "duplicate"]
+    """dismissed: the user deleted it. duplicate: the same segment is already filed (from another
+    ingest, or twice in this run)."""
+
+
+class Reconciliation(BaseModel):
+    """What a run would do to an ingest's reservations."""
+
+    updated: list[Reservation] = Field(default_factory=list)
+    """Every matched reservation as the run has it, under the id of the one it matches."""
+    changes: list[Change] = Field(default_factory=list)
+    unchanged: int = 0
+    added: list[Reservation] = Field(default_factory=list)
+    skipped: list[Skipped] = Field(default_factory=list)
+    missing: list[Reservation] = Field(default_factory=list)
+    """The ingest's reservations the run didn't produce. Kept."""
+
+
+def _as_dismissal(r: Reservation) -> Dismissal:
+    return Dismissal(
+        dedupe_key=dedupe_key(r), kind=r.kind.value, confirmation_code=r.confirmation_code,
+        start_date=r.start_date, city=r.city,
+    )  # fmt: skip
+
+
+def reconcile(
+    current: list[Reservation], candidates: list[Reservation], gone: list[Dismissal], taken: set[str]
+) -> Reconciliation:
+    """Match a run's reservations (`candidates`) to the ingest's `current` ones, one to one: the
+    exact key first, then the looser rules `dismissed` uses. `taken` is the dedupe key of every
+    reservation the user has."""
+    free = list(current)
+    match: dict[int, Reservation] = {}
+
+    def pair(same: Callable[[Reservation, Reservation], bool]) -> None:
+        for i, c in enumerate(candidates):
+            if i in match:
+                continue
+            if (e := next((e for e in free if same(c, e)), None)) is not None:
+                match[i] = e
+                free.remove(e)
+
+    pair(lambda c, e: dedupe_key(c) == dedupe_key(e))
+    pair(lambda c, e: dismissed(c, _as_dismissal(e)))
+
+    out = Reconciliation(missing=free)
+    taken = taken | {dedupe_key(candidates[i]) for i in match}
+    for i, c in enumerate(candidates):
+        if (e := match.get(i)) is not None:
+            # Timezones are often inferred after extraction (from the trip's other segments), so a
+            # run that doesn't name one leaves the known one.
+            u = c.model_copy(
+                update={"id": e.id, "start_tz": c.start_tz or e.start_tz, "end_tz": c.end_tz or e.end_tz}
+            )
+            out.updated.append(u)
+            fields = [
+                FieldChange(field=f, old=_shown(getattr(e, f)), new=_shown(getattr(u, f)))
+                for f in FIELDS
+                if getattr(e, f) != getattr(u, f)
+            ]
+            if fields:
+                out.changes.append(Change(id=e.id, title=e.title, fields=fields))
+            else:
+                out.unchanged += 1
+        elif any(dismissed(c, d) for d in gone):
+            out.skipped.append(Skipped(reservation=c, reason="dismissed"))
+        elif dedupe_key(c) in taken:
+            out.skipped.append(Skipped(reservation=c, reason="duplicate"))
+        else:
+            out.added.append(c)
+            taken.add(dedupe_key(c))
+    return out
+
+
+async def _reconciliation(
+    conn: AsyncConnection, owner: str, ingest_id: str, candidates: list[Reservation]
+) -> Reconciliation:
+    async with conn.cursor(row_factory=class_row(Reservation)) as cur:
+        await cur.execute(
+            f"""SELECT {RESERVATION_COLUMNS} FROM reservation
+                WHERE trip_id IN (SELECT id FROM trip WHERE owner = %s) AND source_ingest_id = %s
+                ORDER BY start_local""",
+            (owner, ingest_id),
+        )
+        current = await cur.fetchall()
+    cur = await conn.execute(
+        "SELECT dedupe_key FROM reservation WHERE trip_id IN (SELECT id FROM trip WHERE owner = %s)",
+        (owner,),
+    )
+    taken = {row[0] for row in await cur.fetchall()}
+    return reconcile(current, candidates, await _dismissals(conn, owner, ingest_id), taken)
+
+
+async def preview_reprocess(owner: str, ingest_id: str, candidates: list[Reservation]) -> Reconciliation:
+    async with connection() as conn:
+        return await _reconciliation(conn, owner, ingest_id, candidates)
+
+
+class Reprocessed(BaseModel):
+    reconciliation: Reconciliation
+    filed: Filed
+    """The touched trips, for reminders and photos."""
+
+
+async def apply_reprocess(
+    owner: str, ingest_id: str, run_id: str, candidates: list[Reservation]
+) -> Reprocessed:
+    """Make `run_id` the ingest's current run. Safe to re-run: a second pass matches everything the
+    first one filed."""
+    async with connection() as conn, conn.transaction():
+        await conn.execute("SELECT 1 FROM trip WHERE owner = %s FOR UPDATE", (owner,))
+        rec = await _reconciliation(conn, owner, ingest_id, candidates)
+        touched: list[str] = []
+        for u in rec.updated:
+            # Skipped if the new key would clash with another segment of the same trip.
+            cur = await conn.execute(
+                """
+                UPDATE reservation a SET title = %s, provider = %s, confirmation_code = %s,
+                    start_local = %s, start_tz = %s, end_local = %s, end_tz = %s,
+                    start_location = %s, end_location = %s, address = %s, city = %s,
+                    flight_number = %s, seat = %s, travelers = %s, notes = %s, source_run_id = %s,
+                    dedupe_key = %s
+                WHERE a.id = %s AND NOT EXISTS (SELECT 1 FROM reservation b
+                    WHERE b.trip_id = a.trip_id AND b.dedupe_key = %s AND b.id <> a.id)
+                RETURNING trip_id::text
+                """,
+                (u.title, u.provider, u.confirmation_code, u.start_local, u.start_tz, u.end_local,
+                 u.end_tz, u.start_location, u.end_location, u.address, u.city, u.flight_number,
+                 u.seat, u.travelers, u.notes, run_id, dedupe_key(u), u.id, dedupe_key(u)),
+            )  # fmt: skip
+            if (row := await cur.fetchone()) is not None and row[0] not in touched:
+                touched.append(row[0])
+        for tid in touched:
+            await _fill_timezones(conn, tid)
+            await _retitle(conn, tid)
+        if rec.added:
+            for tid in await _file(conn, owner, f"{ingest_id}@{run_id}", rec.added):
+                if tid not in touched:
+                    touched.append(tid)
+        await conn.execute(
+            """
+            WITH mine AS (
+                SELECT DISTINCT r.trip_id FROM reservation r JOIN trip t ON t.id = r.trip_id
+                WHERE t.owner = %(owner)s AND r.source_ingest_id = %(ingest)s
+            )
+            UPDATE inbox_item SET current_run_id = %(run)s,
+                trip_ids = ARRAY(SELECT trip_id FROM mine),
+                message = CASE WHEN state <> 'done' AND EXISTS (SELECT 1 FROM mine)
+                               THEN 'Filed when reprocessed.' ELSE message END,
+                state = CASE WHEN EXISTS (SELECT 1 FROM mine) THEN 'done' ELSE state END
+            WHERE ingest_id = %(ingest)s AND owner = %(owner)s
+            """,
+            {"owner": owner, "ingest": ingest_id, "run": run_id},
+        )
+        await _changed(conn, owner)
+        return Reprocessed(reconciliation=rec, filed=await _stored(conn, touched))
+
+
+class ReprocessTarget(BaseModel):
+    owner: str
+    input_id: str | None
+    received_at: datetime
+
+
+async def reprocess_target(ingest_id: str) -> ReprocessTarget:
+    async with connection() as conn, conn.cursor(row_factory=class_row(ReprocessTarget)) as cur:
+        await cur.execute(
+            "SELECT owner::text, input_id::text, received_at FROM inbox_item WHERE ingest_id = %s",
+            (ingest_id,),
+        )
+        target = await cur.fetchone()
+    if target is None:
+        raise restate.TerminalError(f"no ingest {ingest_id}", status_code=404)
+    return target
+
+
+async def run_output(run_id: str) -> Extraction:
+    async with connection() as conn:
+        cur = await conn.execute("SELECT output FROM extraction_run WHERE id = %s", (run_id,))
+        row = await cur.fetchone()
+    if row is None or row[0] is None:
+        raise restate.TerminalError(f"run {run_id} has no output to re-derive from", status_code=404)
+    return Extraction.model_validate(row[0])
+
+
+async def add_reprocess(req: ReprocessRequest, owner: str) -> None:
+    async with connection() as conn:
+        await conn.execute(
+            """INSERT INTO reprocess (id, batch_id, ingest_id, owner, mode, model, from_run_id)
+               VALUES (%s, %s, %s, %s, %s, %s, %s) ON CONFLICT (id) DO NOTHING""",
+            (req.key, req.batch_id, req.ingest_id, owner, req.mode, req.model, req.from_run_id),
+        )
+
+
+async def finish_reprocess(
+    key: str, run_id: str | None, rec: Reconciliation | None, error: str | None
+) -> None:
+    diff = Jsonb(rec.model_dump(mode="json", exclude={"updated"})) if rec is not None else None
+    async with connection() as conn:
+        await conn.execute(
+            """UPDATE reprocess SET run_id = %s, diff = %s, error = %s, finished_at = now(),
+                   state = CASE WHEN %s::text IS NULL THEN 'done' ELSE 'failed' END
+               WHERE id = %s""",
+            (run_id, diff, error, error, key),
+        )
 
 
 async def _owned(conn: AsyncConnection, owner: str, trip_id: str) -> None:
@@ -746,3 +1008,101 @@ async def recent_ingests(state: str | None = None, limit: int = 100) -> list[Adm
             {"state": state, "limit": limit},
         )
         return await cur.fetchall()
+
+
+class ReprocessCandidate(BaseModel):
+    ingest_id: str
+    owner: str
+    input_id: str | None
+    current_run_id: str | None
+
+
+async def reprocess_candidates(
+    *, state: str | None = None, email: str | None = None, since: date | None = None, limit: int = 50
+) -> list[ReprocessCandidate]:
+    """Finished ingests matching the admin's filter, newest first."""
+    async with connection() as conn, conn.cursor(row_factory=class_row(ReprocessCandidate)) as cur:
+        await cur.execute(
+            """SELECT ingest_id, owner::text, input_id::text, current_run_id::text FROM inbox_item
+               WHERE state IN ('done', 'no_travel', 'failed')
+                 AND (%(state)s::text IS NULL OR state = %(state)s)
+                 AND (%(email)s::text IS NULL
+                      OR owner IN (SELECT user_id FROM user_email WHERE email = %(email)s))
+                 AND (%(since)s::date IS NULL OR received_at >= %(since)s)
+               ORDER BY received_at DESC LIMIT %(limit)s""",
+            {"state": state, "email": email and normalise_email(email), "since": since, "limit": limit},
+        )
+        return await cur.fetchall()
+
+
+class ReprocessBatch(BaseModel):
+    batch_id: str
+    mode: str
+    model: str | None
+    started: datetime
+    total: int
+    queued: int
+    failed: int
+    changed: int
+    added: int
+    missing: int
+    skipped: int
+
+
+async def reprocess_batches(limit: int = 20) -> list[ReprocessBatch]:
+    async with connection() as conn, conn.cursor(row_factory=class_row(ReprocessBatch)) as cur:
+        await cur.execute(
+            """SELECT batch_id, min(mode) AS mode, min(model) AS model, min(created_at) AS started,
+                      count(*)::int AS total,
+                      count(*) FILTER (WHERE state = 'queued')::int AS queued,
+                      count(*) FILTER (WHERE state = 'failed')::int AS failed,
+                      coalesce(sum(jsonb_array_length(diff -> 'changes')), 0)::int AS changed,
+                      coalesce(sum(jsonb_array_length(diff -> 'added')), 0)::int AS added,
+                      coalesce(sum(jsonb_array_length(diff -> 'missing')), 0)::int AS missing,
+                      coalesce(sum(jsonb_array_length(diff -> 'skipped')), 0)::int AS skipped
+               FROM reprocess GROUP BY batch_id ORDER BY max(created_at) DESC LIMIT %s""",
+            (limit,),
+        )
+        return await cur.fetchall()
+
+
+class ReprocessItem(BaseModel):
+    id: str
+    ingest_id: str
+    owner: str
+    """The owner's primary address (their user id if they have none)."""
+    label: str | None
+    mode: str
+    state: str
+    model: str | None
+    """The model whose output was used."""
+    run_id: str | None
+    diff: Reconciliation | None
+    error: str | None
+
+
+async def reprocess_batch(batch_id: str, limit: int = 200) -> list[ReprocessItem]:
+    async with connection() as conn, conn.cursor(row_factory=class_row(ReprocessItem)) as cur:
+        await cur.execute(
+            """SELECT p.id, p.ingest_id, i.label, p.mode, p.state,
+                      coalesce((SELECT email FROM user_email e WHERE e.user_id = p.owner
+                                ORDER BY created_at, email LIMIT 1), p.owner::text) AS owner,
+                      coalesce(r.model, p.model) AS model, p.run_id::text, p.diff, p.error
+               FROM reprocess p
+               LEFT JOIN inbox_item i ON i.ingest_id = p.ingest_id
+               LEFT JOIN extraction_run r ON r.id = p.run_id
+               WHERE p.batch_id = %s ORDER BY p.created_at DESC LIMIT %s""",
+            (batch_id, limit),
+        )
+        return await cur.fetchall()
+
+
+async def reprocess_runs(batch_id: str) -> list[tuple[str, str, str]]:
+    """(ingest id, owner, run id) of each finished dry or shadow run in a batch, to apply them."""
+    async with connection() as conn:
+        cur = await conn.execute(
+            """SELECT ingest_id, owner::text, run_id::text FROM reprocess
+               WHERE batch_id = %s AND state = 'done' AND run_id IS NOT NULL AND mode <> 'apply'""",
+            (batch_id,),
+        )
+        return [(i, o, r) for i, o, r in await cur.fetchall()]

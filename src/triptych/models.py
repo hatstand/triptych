@@ -293,6 +293,31 @@ class FileRequest(BaseModel):
     reservations: list[Reservation]
 
 
+class ReconcileRequest(BaseModel):
+    ingest_id: str
+    run_id: str
+    reservations: list[Reservation]
+
+
+ReprocessMode = Literal["dry_run", "apply", "shadow"]
+
+
+class ReprocessRequest(BaseModel):
+    """Extract an ingest again (`model`) or re-derive it from a stored run (`from_run_id`), then
+    work out what changes; `apply` also makes them. `shadow` is a dry run recorded as a shadow run."""
+
+    batch_id: str
+    ingest_id: str
+    mode: ReprocessMode
+    model: str | None = None
+    from_run_id: str | None = None
+
+    @property
+    def key(self) -> str:
+        """The Reprocess workflow's key, and its db reprocess row's id."""
+        return f"{self.batch_id}:{self.ingest_id}"
+
+
 class FileResult(BaseModel):
     trip_ids: list[str]
 
@@ -360,6 +385,8 @@ class Overview(BaseModel):
 class LlmExtractRequest(BaseModel):
     document: ParsedDocument
     received_at: datetime
+    model: str | None = None
+    """An Ollama model other than LLM_MODEL (reprocessing, shadow runs)."""
 
 
 class LlmSubjectRequest(BaseModel):

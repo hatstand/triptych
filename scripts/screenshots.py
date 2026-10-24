@@ -30,7 +30,7 @@ from playwright.async_api import Browser, BrowserContext, Route, ViewportSize, a
 
 from triptych import auth, db, photos
 from triptych.config import settings
-from triptych.models import InboxItem, IngestState, Kind, Notification, Reservation
+from triptych.models import InboxItem, IngestState, Kind, Notification, ReprocessRequest, Reservation
 from triptych.services import place_photo
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -39,6 +39,7 @@ WEB = "http://127.0.0.1:8100"
 ADMIN = "http://127.0.0.1:8101"
 EMAIL = "sam@example.com"
 ADMIN_LOGIN = "admin@example.com"
+BATCH = "dry-run-1"  # the reprocess batch the admin page opens
 VIEWPORT: ViewportSize = {"width": 1280, "height": 800}
 
 
@@ -246,6 +247,15 @@ async def seed() -> str:
             id=str(uuid.uuid4()), at=now, trip_id=trips[0], text="Check in for BA 286 opens tomorrow"
         ),
     )
+    # A dry run of a better model over the hotel's email: one field changed, a dinner it found too.
+    casa = lisbon[2]
+    dry = ReprocessRequest(batch_id=BATCH, ingest_id="screenshot-1", mode="dry_run", model="gemma4:31b")
+    await db.add_reprocess(dry, me)
+    found = casa.model_copy(update={"address": "Rua da Bica de Duarte Belo 47, Lisboa"})
+    dinner = lisbon[3].model_copy(update={"id": str(uuid.uuid4())})
+    await db.finish_reprocess(
+        dry.key, str(uuid.uuid4()), db.reconcile([casa], [found, dinner], [], set()), None
+    )
     await seed_photos(skip={"Kyoto"})
     return await auth.create_session(me)
 
@@ -316,7 +326,7 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
         (user, "03-trip", f"{WEB}/trips/{trip_id}"),
         (user, "04-account", f"{WEB}/account"),
         (user, "05-account-senders", f"{WEB}/account/senders"),
-        (admin, "06-admin", f"{ADMIN}/"),
+        (admin, "06-admin", f"{ADMIN}/?batch={BATCH}"),
     ]
     (out / scheme).mkdir(parents=True, exist_ok=True)
     for ctx, name, url in shots:

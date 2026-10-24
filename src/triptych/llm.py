@@ -78,19 +78,21 @@ def prompt_version() -> str:
     return hashlib.sha256(f"{EXTRACT_SYSTEM}\n{schema}".encode()).hexdigest()[:12]
 
 
-async def model_digest() -> str | None:
-    """Ollama's digest of the configured model, which tells apart two pulls of the same tag."""
+async def model_digest(model: str) -> str | None:
+    """Ollama's digest of `model`, which tells apart two pulls of the same tag."""
     async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=5) as client:
         tags = (await client.get("/api/tags")).json()
     for m in tags.get("models", []):
-        if m.get("name") == settings.llm_model or m.get("model") == settings.llm_model:
+        if model in (m.get("name"), m.get("model")):
             return m.get("digest")
     return None
 
 
-async def _chat(messages: list[dict[str, Any]], *, fmt: dict[str, Any] | None = None) -> str:
+async def _chat(
+    messages: list[dict[str, Any]], *, fmt: dict[str, Any] | None = None, model: str | None = None
+) -> str:
     body: dict[str, Any] = {
-        "model": settings.llm_model,
+        "model": model or settings.llm_model,
         "messages": messages,
         "stream": False,
         **chat_params(),
@@ -125,6 +127,7 @@ async def extract(req: LlmExtractRequest) -> Extraction:
     raw = await _chat(
         [{"role": "system", "content": EXTRACT_SYSTEM}, user_msg],
         fmt=Extraction.model_json_schema(),
+        model=req.model,
     )
     try:
         return Extraction.model_validate_json(raw)
