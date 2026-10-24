@@ -225,6 +225,25 @@ the admin pages load their CSS and scripts from it.
 To go back to tailnet-only, remove `:compose/public.yaml` and the lines above from `.env` and
 redeploy. Passkeys registered on the public name then stop working on the ts.net name instead.
 
+## Keeping originals (R2)
+
+Every email, upload and paste is kept, encrypted with per-user keys, in a private R2 bucket so it
+can be reprocessed later (src/triptych/inputs.py). Until `INPUTS_BUCKET` is set, nothing is kept.
+
+1. Cloudflare dashboard → R2 → create bucket `triptych-inputs` (no public access).
+2. R2 → Manage API tokens → create a token with **Object Read & Write** on that bucket only.
+3. Make a master keyset: `uv run python -m triptych.inputs new-master-keyset`. Put a copy in your
+   password manager first: losing it loses every original.
+4. Add to `/srv/triptych/.env` and redeploy:
+
+   ```
+   INPUTS_BUCKET=triptych-inputs
+   INPUTS_ENDPOINT_URL=https://<account id>.r2.cloudflarestorage.com
+   INPUTS_ACCESS_KEY_ID=<token's access key id>
+   INPUTS_SECRET_ACCESS_KEY=<token's secret access key>
+   INPUTS_MASTER_KEYSET='<the JSON from step 3>'
+   ```
+
 ## Manual deploy / rollback
 
 Run the **Deploy** workflow from the Actions tab, or from a tailnet device that can SSH as

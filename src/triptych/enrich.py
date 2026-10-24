@@ -37,7 +37,9 @@ def to_utc(local: datetime | None, tz: str | None) -> datetime | None:
     return local.replace(tzinfo=ZoneInfo(tz)).astimezone(ZoneInfo("UTC"))
 
 
-def normalise(x: ExtractedReservation, *, reservation_id: str, ingest_id: str) -> Reservation | None:
+def normalise(
+    x: ExtractedReservation, *, reservation_id: str, ingest_id: str, run_id: str | None = None
+) -> Reservation | None:
     start = parse_local(x.start_local)
     if start is None:
         return None
@@ -85,6 +87,7 @@ def normalise(x: ExtractedReservation, *, reservation_id: str, ingest_id: str) -
         travelers=x.travelers,
         notes=x.notes,
         source_ingest_id=ingest_id,
+        source_run_id=run_id,
     )
 
 

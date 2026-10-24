@@ -20,12 +20,23 @@ import restate
 from psycopg import AsyncConnection
 from psycopg.errors import UniqueViolation
 from psycopg.rows import class_row, dict_row
+from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 from pydantic import BaseModel
 
 from triptych import enrich, grouping
 from triptych.config import settings
-from triptych.models import InboxItem, Notification, Photo, PhotoChoice, Reservation, Trip, TripSummary
+from triptych.models import (
+    ExtractionRun,
+    InboxItem,
+    Notification,
+    Photo,
+    PhotoChoice,
+    RawInput,
+    Reservation,
+    Trip,
+    TripSummary,
+)
 
 _pool: AsyncConnectionPool | None = None
 
@@ -76,7 +87,7 @@ async def changes(url: str) -> AsyncGenerator[str | None]:
 RESERVATION_COLUMNS = """
     id::text, kind, title, provider, confirmation_code, start_local, start_tz, end_local, end_tz,
     start_location, end_location, address, city, flight_number, seat, travelers, notes,
-    source_ingest_id
+    source_ingest_id, source_run_id::text
 """
 
 # A trip's photo credit (columns named photo_*), from the place_photo row for its place if that has an
@@ -141,8 +152,8 @@ async def _upsert_reservation(conn: AsyncConnection, trip_id: str, r: Reservatio
         """
         INSERT INTO reservation (id, trip_id, kind, title, provider, confirmation_code, start_local,
             start_tz, end_local, end_tz, start_location, end_location, address, city, flight_number,
-            seat, travelers, notes, source_ingest_id, dedupe_key)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            seat, travelers, notes, source_ingest_id, source_run_id, dedupe_key)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (trip_id, dedupe_key) DO UPDATE SET
             -- keep the existing id: it keys this segment's scheduled reminders (see reminders.py)
             title = EXCLUDED.title, provider = EXCLUDED.provider,
@@ -151,12 +162,13 @@ async def _upsert_reservation(conn: AsyncConnection, trip_id: str, r: Reservatio
             start_location = EXCLUDED.start_location, end_location = EXCLUDED.end_location,
             address = EXCLUDED.address, city = EXCLUDED.city, flight_number = EXCLUDED.flight_number,
             seat = EXCLUDED.seat, travelers = EXCLUDED.travelers, notes = EXCLUDED.notes,
-            source_ingest_id = EXCLUDED.source_ingest_id
+            source_ingest_id = EXCLUDED.source_ingest_id, source_run_id = EXCLUDED.source_run_id
         """,
         (
             r.id, trip_id, r.kind.value, r.title, r.provider, r.confirmation_code, r.start_local,
             r.start_tz, r.end_local, r.end_tz, r.start_location, r.end_location, r.address, r.city,
-            r.flight_number, r.seat, r.travelers, r.notes, r.source_ingest_id, dedupe_key(r),
+            r.flight_number, r.seat, r.travelers, r.notes, r.source_ingest_id, r.source_run_id,
+            dedupe_key(r),
         ),
     )  # fmt: skip
 
@@ -242,6 +254,82 @@ async def primary_email(user_id: str) -> str | None:
         )
         row = await cur.fetchone()
     return row[0] if row else None
+
+
+# --- originals (inputs.py) --------------------------------------------------------------------
+
+
+async def user_keysets(user_id: str) -> tuple[bytes, bytes] | None:
+    """A user's encrypted (AEAD, PRF) keysets, if they have any yet."""
+    async with connection() as conn:
+        cur = await conn.execute(
+            "SELECT aead_keyset, prf_keyset FROM user_key WHERE user_id = %s", (user_id,)
+        )
+        row = await cur.fetchone()
+    return (bytes(row[0]), bytes(row[1])) if row else None
+
+
+async def add_user_keysets(user_id: str, aead_keyset: bytes, prf_keyset: bytes) -> tuple[bytes, bytes]:
+    """Store a new user's keysets, unless someone else got there first: returns the ones that stuck."""
+    async with connection() as conn, conn.transaction():
+        await conn.execute(
+            """INSERT INTO user_key (user_id, aead_keyset, prf_keyset) VALUES (%s, %s, %s)
+               ON CONFLICT (user_id) DO NOTHING""",
+            (user_id, aead_keyset, prf_keyset),
+        )
+        cur = await conn.execute(
+            "SELECT aead_keyset, prf_keyset FROM user_key WHERE user_id = %s", (user_id,)
+        )
+        row = await cur.fetchone()
+    assert row is not None
+    return bytes(row[0]), bytes(row[1])
+
+
+async def add_raw_input(i: RawInput, ingest_id: str) -> None:
+    """Record a kept original (the same bytes again are already there) and link the ingest to it."""
+    async with connection() as conn, conn.transaction():
+        await conn.execute(
+            """
+            INSERT INTO raw_input (id, owner, sha256, object_key, size, source, content_type, filename,
+                received_at)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (owner, sha256) DO NOTHING
+            """,
+            (i.id, i.owner, i.sha256, i.object_key, i.size, i.source, i.content_type, i.filename,
+             i.received_at),
+        )  # fmt: skip
+        await conn.execute("UPDATE inbox_item SET input_id = %s WHERE ingest_id = %s", (i.id, ingest_id))
+
+
+async def raw_input(input_id: str) -> RawInput | None:
+    async with connection() as conn, conn.cursor(row_factory=class_row(RawInput)) as cur:
+        await cur.execute(
+            """SELECT id::text, owner::text, sha256, object_key, size, source, content_type, filename,
+                      received_at
+               FROM raw_input WHERE id = %s""",
+            (input_id,),
+        )
+        return await cur.fetchone()
+
+
+async def add_extraction_run(run: ExtractionRun) -> None:
+    """Record a run, and make it the ingest's current one."""
+    output = Jsonb(run.output.model_dump(mode="json")) if run.output is not None else None
+    async with connection() as conn, conn.transaction():
+        await conn.execute(
+            """
+            INSERT INTO extraction_run (id, ingest_id, owner, input_id, model, model_digest,
+                prompt_version, code_version, params, purpose, output, error)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (id) DO NOTHING
+            """,
+            (run.id, run.ingest_id, run.owner, run.input_id, run.model, run.model_digest,
+             run.prompt_version, run.code_version, Jsonb(run.params), run.purpose, output, run.error),
+        )  # fmt: skip
+        if run.purpose == "ingest":
+            await conn.execute(
+                "UPDATE inbox_item SET current_run_id = %s WHERE ingest_id = %s", (run.id, run.ingest_id)
+            )
 
 
 # --- writes (called from Restate handlers inside ctx.run) -------------------------------------

@@ -25,6 +25,8 @@ dependencies = [
     "webauthn>=3.0.1",
     "pillow>=13.0.0",
     "limits>=5",
+    "tink>=1.16.1",
+    "boto3>=1.43.118",
 ]
 
 [dependency-groups]
@@ -34,6 +36,7 @@ dev = [
     "ty==0.0.85",
     "squawk-cli==2.68.0",
     "playwright==1.64.1",
+    "moto[s3]>=5.2.4",
 ]
 
 [build-system]
