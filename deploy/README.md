@@ -255,8 +255,11 @@ locking and breaking changes.
 
 ### Switching an existing marvin over (once)
 
-1. Install docker-rollout as in [marvin](#marvin) above. The deploy script refuses to run
-   without it, before touching anything.
+1. Install docker-rollout as in [marvin](#marvin) above, and reinstall the deploy script, since
+   the `deploy` login shell is a copy, not the checkout:
+   `sudo install -m 0755 /srv/triptych/deploy/triptych-deploy /usr/local/bin/triptych-deploy`.
+   The new script refuses to run without docker-rollout, before touching anything. Repeat the
+   `install` whenever `deploy/triptych-deploy` changes.
 2. Merge. That deploy can't avoid one short gap: the old `web` holds `:8000` until it's replaced,
    so `proxy` starts a second or so after it. Every deploy after that has none.
 3. Cloudflare dashboard → Zero Trust → Networks → Tunnels → `triptych` → **Public hostnames** →
