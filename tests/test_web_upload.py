@@ -150,3 +150,10 @@ def test_hashed_static_files_are_immutable(tmp_path: Path) -> None:
     assert resp.status_code == 200
     assert resp.headers["cache-control"] == assets.IMMUTABLE
     assert "cache-control" not in client.get("/robots.txt").headers
+
+
+def test_livez_answers_without_signing_in() -> None:
+    # The container healthcheck that `docker rollout web` waits on before retiring the old copy.
+    resp = TestClient(web.app).get("/livez")
+    assert resp.status_code == 200
+    assert resp.json() == {"ok": True}

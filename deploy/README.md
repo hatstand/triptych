@@ -8,7 +8,8 @@ Every push to `main` runs `.github/workflows/deploy.yml`:
    identity federation** (GitHub's OIDC token is exchanged for a short-lived Tailscale credential,
    so nothing secret is stored in GitHub), then runs `tailscale ssh deploy@marvin <sha>`.
    On marvin, the `deploy` user's login shell is [`triptych-deploy`](triptych-deploy). It checks
-   out that commit, pulls the image and runs `docker compose up -d`.
+   out that commit, pulls the image, recreates everything but `web`, then rolls `web` over to
+   the new image without a gap ([below](#zero-downtime-web)).
 
 No long-lived credential exists anywhere. The repo and the GHCR package are public, so marvin
 needs no registry login. The Tailscale client ID and audience aren't secrets either.
@@ -75,6 +76,11 @@ sudo tailscale set --ssh
 sudo install -m 0755 deploy/triptych-deploy /usr/local/bin/triptych-deploy
 echo /usr/local/bin/triptych-deploy | sudo tee -a /etc/shells
 sudo useradd --system --create-home --shell /usr/local/bin/triptych-deploy --groups docker deploy
+# docker-rollout, as a Docker CLI plugin for every user (pinned; check the release notes to upgrade)
+sudo curl -fsSL https://raw.githubusercontent.com/wowu/docker-rollout/v0.14/docker-rollout \
+  -o /usr/local/lib/docker/cli-plugins/docker-rollout --create-dirs
+sudo chmod 0755 /usr/local/lib/docker/cli-plugins/docker-rollout
+docker rollout --version
 sudo git clone https://github.com/hatstand/triptych /srv/triptych
 sudo cp .env /srv/triptych/.env            # your current .env, with COMPOSE_FILE set
 sudo chown -R deploy: /srv/triptych
@@ -190,7 +196,7 @@ URLs change too (new host and `SECRET_KEY`), so re-subscribe.
 3. **Tunnel** (Cloudflare dashboard → Zero Trust → Networks → Tunnels → **Create a tunnel** →
    Cloudflared): name it `triptych`, and copy the token from the install command it shows
    (the long string after `--token`). Under **Public hostnames** add subdomain `triptych`,
-   domain `purplehatstands.com`, service **HTTP** `web:8000` (the compose service name). Put the token in `/srv/triptych/.env`
+   domain `purplehatstands.com`, service **HTTP** `proxy:8000` (the compose service name). Put the token in `/srv/triptych/.env`
    as `TUNNEL_TOKEN=...`. It is a credential for running this tunnel and nothing else; if it
    leaks, rotate it from the tunnel's page.
 
@@ -224,6 +230,42 @@ the admin pages load their CSS and scripts from it.
 
 To go back to tailnet-only, remove `:compose/public.yaml` and the lines above from `.env` and
 redeploy. Passkeys registered on the public name then stop working on the ts.net name instead.
+
+<a id="zero-downtime-web"></a>
+## Zero-downtime deploys
+
+`web` has no host port. `proxy` (Caddy, in `compose.yaml`) owns loopback `:8000` and the
+`proxy:8000` name on the compose network, and passes every request to `web:8000`, which resolves
+to every running `web` container. The deploy script runs
+[docker-rollout](https://github.com/wowu/docker-rollout): it starts a second `web` on the new
+image, waits for its healthcheck (`GET /livez`), then stops the old one. For those seconds both
+serve. Uvicorn stops accepting before it exits (and cuts live-update streams after 2s, which
+browsers reopen), so Caddy's next dial reaches the new container. If no `web` answers at all,
+Caddy holds the request and retries for up to 30s instead of returning 502. If the new container
+never gets healthy, the rollout removes it and fails the deploy, and the old one keeps serving.
+
+The rest is recreated as before. The worker is down for a few seconds, but Restate keeps
+accepting invocations and retries them until it's back. `admin` (the ts.net `/admin`) and `smtp`
+blink too.
+
+**Migrations must be backward-compatible**, because the old `web` runs against the new schema
+until the new one is healthy: add columns and tables freely, but rename or drop only in a later
+deploy, once no running code uses them. `scripts/lint_migrations.py` (squawk) catches the usual
+locking and breaking changes.
+
+### Switching an existing marvin over (once)
+
+1. Install docker-rollout as in [marvin](#marvin) above. The deploy script refuses to run
+   without it, before touching anything.
+2. Merge. That deploy can't avoid one short gap: the old `web` holds `:8000` until it's replaced,
+   so `proxy` starts a second or so after it. Every deploy after that has none.
+3. Cloudflare dashboard → Zero Trust → Networks → Tunnels → `triptych` → **Public hostnames** →
+   edit `triptych.purplehatstands.com` → service **HTTP** `proxy:8000` (was `web:8000`).
+   Until then the tunnel still reaches `web` directly, which works but can drop a request
+   mid-deploy.
+
+`tailscale serve` needs no change: `svc:triptych` still points at `127.0.0.1:8000`, now `proxy`,
+so the ts.net `/admin` page's `/static` and Funnel's `/inbound` keep working.
 
 ## Manual deploy / rollback
 

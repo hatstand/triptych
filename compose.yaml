@@ -88,8 +88,34 @@ services:
     # doesn't wait out Docker's stop timeout. Browsers reconnect to the new process.
     command: ["uvicorn", "triptych.web.app:app", "--host", "0.0.0.0", "--port", "8000", "--proxy-headers",
               "--timeout-graceful-shutdown", "2"]
-    ports: ["${BIND_ADDR:-127.0.0.1}:8000:8000"]
+    environment:
+      <<: *app-env
+      # Who the client is, for rate limits (triptych/web/ratelimit.py): uvicorn walks
+      # X-Forwarded-For from the right, skipping these hops, and takes the first address left.
+      # Only compose neighbours (proxy) can reach this port, all from private addresses.
+      FORWARDED_ALLOW_IPS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    # No host port and no container_name: a deploy runs a second copy beside the old one
+    # (`docker rollout web`, see deploy/triptych-deploy), and proxy sends traffic to both.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=2)"]
+      interval: 10s
+      timeout: 3s
+      start_period: 60s
+      start_interval: 1s
     depends_on: *after-migrations
+
+  # The stable front door for web, whose containers come and go on deploys. Resolving `web` on
+  # the compose network returns every running copy; Caddy dials them per request and keeps
+  # retrying for a while when none answers, so a request arriving mid-swap waits instead of
+  # failing. `tailscale serve` reaches it on loopback :8000, cloudflared as proxy:8000.
+  proxy:
+    image: docker.io/library/caddy:2.11.7-alpine
+    restart: unless-stopped
+    ports: ["${BIND_ADDR:-127.0.0.1}:8000:8000"]
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+    # Deliberately no depends_on: web. `docker compose up proxy` would then recreate web too.
 
   # Tailscale-authorised admin pages. Unix socket only, so the identity headers can come from
   # nowhere but `tailscale serve` (see triptych/admin/app.py and deploy/README.md). Opt in with
@@ -107,6 +133,23 @@ services:
     command: ["python", "-m", "triptych.smtp"]
     ports: ["${BIND_ADDR:-127.0.0.1}:2525:2525"]
     depends_on: *after-migrations  # maps the sender's address to a user in Postgres
+
+configs:
+  caddyfile:
+    # Requests come from Docker's loopback proxy (`tailscale serve`) or cloudflared, both private
+    # addresses, so keep the X-Forwarded-* they set and append the hop, rather than replacing them.
+    content: |
+      {
+        admin off
+        servers {
+          trusted_proxies static private_ranges
+        }
+      }
+      :8000 {
+        reverse_proxy web:8000 {
+          lb_try_duration 30s
+        }
+      }
 
 volumes:
   restate-data:
