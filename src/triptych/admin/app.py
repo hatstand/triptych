@@ -20,6 +20,7 @@ from typing import Annotated, Any, cast, get_args
 from fastapi import Depends, FastAPI, Form, HTTPException, Request
 from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
+from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 
 from triptych import auth, db, llm, telemetry
 from triptych.config import settings
@@ -33,13 +34,14 @@ STATES: tuple[str, ...] = get_args(IngestState)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None]:
-    telemetry.setup("triptych-admin")
-    db.init()
-    yield
-    await db.close()
+    with telemetry.running("triptych-admin"):
+        db.init()
+        yield
+        await db.close()
 
 
 app = FastAPI(title="Triptych admin", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+FastAPIInstrumentor.instrument_app(app, exclude_spans=["receive", "send"])
 # Admin templates extend the web app's base.html; /static is served by the web app on the same host.
 templates = Jinja2Templates(directory=[HERE / "templates", HERE.parent / "web" / "templates"])
 # Jinja types globals by its own defaults' types; any value is allowed.

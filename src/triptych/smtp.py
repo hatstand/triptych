@@ -17,6 +17,8 @@ from email.utils import parseaddr
 import restate
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import SMTP, Envelope, Session
+from opentelemetry import trace
+from opentelemetry.trace import SpanKind
 
 from triptych import db, telemetry
 from triptych.config import settings
@@ -29,6 +31,11 @@ log = logging.getLogger("triptych.smtp")
 
 class Handler:
     async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope) -> str:
+        # One trace per message, so the hand-off to Restate (and the ingest it starts) joins it.
+        with trace.get_tracer("triptych.smtp").start_as_current_span("smtp DATA", kind=SpanKind.SERVER):
+            return await self.accept(envelope)
+
+    async def accept(self, envelope: Envelope) -> str:
         raw = envelope.original_content or envelope.content
         if not isinstance(raw, bytes):
             return "554 empty message"
@@ -56,7 +63,11 @@ class Handler:
 
 
 async def main() -> None:
-    telemetry.setup("triptych-smtp")
+    with telemetry.running("triptych-smtp"):
+        await serve()
+
+
+async def serve() -> None:
     controller = Controller(Handler(), hostname="0.0.0.0", port=2525, data_size_limit=25 * 1024 * 1024)
     controller.start()
     log.info("SMTP gateway listening on :2525")
