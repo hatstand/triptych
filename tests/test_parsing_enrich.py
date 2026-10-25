@@ -52,7 +52,7 @@ def test_normalise_flight_uses_airport_timezones() -> None:
         end_local="2026-11-13T11:25",
         start_iata="SFO",
         end_iata="lis",
-        flight_number="AQ 236",
+        service_number="AQ 236",
     )
     r = enrich.normalise(x, reservation_id="r1", ingest_id="i1")
     assert r is not None
@@ -115,7 +115,7 @@ def _shanghai_trip() -> list[Reservation]:
         end_local="2026-10-13T11:50",
         start_iata="PVG",
         end_iata="CTU",
-        flight_number="MU5401",
+        service_number="MU5401",
     )
     train = ExtractedReservation(
         kind=Kind.RAIL,
@@ -126,7 +126,7 @@ def _shanghai_trip() -> list[Reservation]:
         end_local="2026-10-15T22:32",
         start_location="Chengdudong(Chengdu East)",
         end_location="Beijingxi(Beijing West)",
-        flight_number="G324",
+        service_number="G324",
     )
     rs = [enrich.normalise(x, reservation_id=x.title, ingest_id="i") for x in (flight, train)]
     assert all(rs)
@@ -251,3 +251,22 @@ def test_cross_border_train_with_countries() -> None:
     assert r is not None
     enrich.fill_timezones([r])
     assert (r.start_tz, r.end_tz) == ("Europe/London", "Europe/Paris")
+
+
+def test_service_number_reads_the_old_flight_number_key() -> None:
+    """Stored extraction runs and Restate journals from before the rename say flight_number."""
+    x = ExtractedReservation.model_validate(
+        {"kind": "rail", "title": "G324", "start_local": "2026-10-07T08:00", "flight_number": "G324"}
+    )
+    assert x.service_number == "G324"
+    r = Reservation.model_validate(
+        {
+            "id": "r",
+            "kind": "rail",
+            "title": "G324",
+            "start_local": "2026-10-07T08:00",
+            "flight_number": "G324",
+        }
+    )
+    assert r.service_number == "G324" and r.service_label == "Train"
+    assert "service_number" in r.model_dump() and "flight_number" not in r.model_dump()

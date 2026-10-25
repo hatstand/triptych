@@ -39,7 +39,7 @@
 <dl class="facts">
   {% if r.provider and r.provider != r.title %}<dt>Provider</dt><dd>{{ r.provider }}</dd>{% endif %}
   {% if r.confirmation_code %}<dt>Confirmation</dt><dd class="mono">{{ r.confirmation_code }}</dd>{% endif %}
-  {% if r.flight_number %}<dt>Flight</dt><dd>{{ r.flight_number }}</dd>{% endif %}
+  {% if r.service_number %}<dt>{{ r.service_label }}</dt><dd>{{ r.service_number }}</dd>{% endif %}
   {% if r.seat %}<dt>Seat</dt><dd>{{ r.seat }}</dd>{% endif %}
   {% if r.travelers %}<dt>Travelers</dt><dd>{{ r.travelers | join(', ') }}</dd>{% endif %}
 </dl>
