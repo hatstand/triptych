@@ -64,7 +64,7 @@ class ExpectedReservation(BaseModel):
     service_number: str | None = Field(
         None,
         validation_alias=AliasChoices("service_number", "flight_number"),
-        description="Flight or train number",
+        description="Flight, train or sailing number",
     )
     # Shown in reports for eyeballing; not scored.
     title: str | None = None

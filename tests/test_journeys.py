@@ -297,3 +297,28 @@ def test_a_hotel_at_the_destination_does_not_break_the_journey() -> None:
     b = leg("BA500", "2026-11-06T16:10", "2026-11-06T18:50", "London (LHR)", "Lisbon (LIS)", city="Lisbon")
     stay = hotel("2026-11-06T15:00", "2026-11-09T11:00", city="Lisbon")
     assert items([a, b, stay])[:2] == [Journey([a, b]), Stay(stay)]
+
+
+def test_ferries_connect_and_arrive_on_the_timeline() -> None:
+    a = leg("Calais", "2027-06-01T09:00", "2027-06-01T10:30", "Dover", "Calais", kind=Kind.FERRY)
+    b = leg("Bastia", "2027-06-01T20:00", "2027-06-02T08:00", "Calais", "Bastia", kind=Kind.FERRY)
+    [j] = items([a, b])
+    assert isinstance(j, Journey)
+    assert j.summary == "2 ferries"
+    single = leg(
+        "Hydra",
+        "2027-06-05T09:00",
+        "2027-06-05T11:00",
+        "Piraeus",
+        "Hydra",
+        ("Europe/Athens", "Europe/Athens"),
+        Kind.FERRY,
+    )
+    trip = Trip(id="t", owner="u", name="Hydra", reservations=[single])
+    html = web.templates.get_template("trip.html").render(
+        email=None, trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
+    )
+    assert '<li class="entry ferry">' in html
+    assert re.search(r'icons(-[\w-]+)?\.svg#ferry"', html)
+    assert '<div class="stop"></div>' in html  # it arrives, like a flight or train
+    assert "2h 00m" in html

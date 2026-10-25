@@ -8,7 +8,15 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, WithJsonSchema
+from pydantic import (
+    AfterValidator,
+    AliasChoices,
+    BaseModel,
+    ConfigDict,
+    Field,
+    WithJsonSchema,
+    model_validator,
+)
 
 from triptych import places
 
@@ -18,6 +26,7 @@ class Kind(StrEnum):
     LODGING = "lodging"
     CAR = "car"
     RAIL = "rail"
+    FERRY = "ferry"
     RESTAURANT = "restaurant"
     ACTIVITY = "activity"
     OTHER = "other"
@@ -87,15 +96,18 @@ class ExtractedReservation(BaseModel):
         "name for lodging ('Casa do Miradouro'), the venue name otherwise"
     )
     provider: str | None = Field(
-        None, description="Company: airline, hotel/property name, rental company, rail operator, restaurant"
+        None,
+        description="Company: airline, hotel/property name, rental company, rail/ferry operator, restaurant",
     )
     confirmation_code: str | None = Field(
         None, description="Booking reference / confirmation number / PNR / booking ID, exactly as written"
     )
     start_local: str = Field(description="Local start time at the start location, YYYY-MM-DDTHH:MM")
     end_local: str | None = Field(None, description="Local end time at the end location, YYYY-MM-DDTHH:MM")
-    start_location: str | None = Field(None, description="Departure airport/station, pickup point or venue")
-    end_location: str | None = Field(None, description="Arrival airport/station or drop-off point")
+    start_location: str | None = Field(
+        None, description="Departure airport/station/port, pickup point or venue"
+    )
+    end_location: str | None = Field(None, description="Arrival airport/station/port or drop-off point")
     start_iata: StartIata = None
     end_iata: EndIata = None
     address: str | None = Field(None, description="Street address of the hotel/venue/pickup, if given")
@@ -118,11 +130,18 @@ class ExtractedReservation(BaseModel):
         None,
         # Extraction runs stored before the rename (extraction_run.output) still say flight_number.
         validation_alias=AliasChoices("service_number", "flight_number"),
-        description="Flight or train number, e.g. 'BA 286', 'G324', 'Alfa Pendular 121'",
+        description="Flight, train or sailing number, e.g. 'BA 286', 'G324', 'Alfa Pendular 121'",
     )
     seat: str | None = None
     travelers: list[str] = Field(default_factory=list)
     notes: str | None = Field(None, description="Other useful facts: cabin, room type, party size…")
+
+    @model_validator(mode="after")
+    def _no_port_codes(self) -> "ExtractedReservation":
+        # Ports have no IATA codes: one the model gives a ferry is the nearest airport's, or a guess.
+        if self.kind is Kind.FERRY:
+            self.start_iata = self.end_iata = None
+        return self
 
 
 class Extraction(BaseModel):
@@ -154,7 +173,7 @@ class Reservation(BaseModel):
         # Restate journals from before the rename still say flight_number.
         validation_alias=AliasChoices("service_number", "flight_number"),
     )
-    """A flight or train number."""
+    """A flight, train or sailing number."""
     seat: str | None = None
     travelers: list[str] = Field(default_factory=list)
     notes: str | None = None
@@ -169,7 +188,7 @@ class Reservation(BaseModel):
     @property
     def service_label(self) -> str:
         """What to call `service_number`."""
-        return {Kind.FLIGHT: "Flight", Kind.RAIL: "Train"}.get(self.kind, "Number")
+        return {Kind.FLIGHT: "Flight", Kind.RAIL: "Train", Kind.FERRY: "Sailing"}.get(self.kind, "Number")
 
     @property
     def end_date(self) -> date:

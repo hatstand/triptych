@@ -26,6 +26,8 @@ Rules:
 - Output one reservation per bookable segment. A round-trip flight is TWO flight reservations; a \
 connection (SFO→JFK→LIS) is one reservation per leg.
 - Hotels, apartments and other stays are kind "lodging": start_local is check-in, end_local is check-out.
+- Ferries are kind "ferry": start_location and end_location are the ports, start_iata and end_iata \
+are null (ports have no IATA codes), and service_number is the sailing number if one is given.
 - Car rentals: start = pickup, end = drop-off. Restaurants, tours, tickets, events: "restaurant"/"activity".
 - Times are LOCAL to where they happen, formatted YYYY-MM-DDTHH:MM. If only a date is given use \
 15:00 for hotel check-in, 11:00 for check-out, 09:00 otherwise.
