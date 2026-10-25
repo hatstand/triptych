@@ -18,9 +18,10 @@ reservations:
   country_code: PT
   start_city: San Francisco
   start_country_code: US
-  timezone: Europe/Lisbon
+  start_timezone: America/Los_Angeles
+  end_timezone: Europe/Lisbon
   confirmation_code: QZ7K2M
-  flight_number: AQ 236
+  service_number: AQ 236
   title: AQ 236 SFO→LIS
   provider: Atlantica Air
   seat: 23A
@@ -40,9 +41,10 @@ reservations:
   country_code: US
   start_city: Lisbon
   start_country_code: PT
-  timezone: America/Los_Angeles
+  start_timezone: Europe/Lisbon
+  end_timezone: America/Los_Angeles
   confirmation_code: QZ7K2M
-  flight_number: AQ 237
+  service_number: AQ 237
   title: AQ 237 LIS→SFO
   provider: Atlantica Air
   seat: 21C

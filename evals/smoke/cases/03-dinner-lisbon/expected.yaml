@@ -13,7 +13,8 @@ reservations:
   start_local: 2026-11-14T20:30
   city: Lisbon
   country_code: PT
-  timezone: Europe/Lisbon
+  start_timezone: Europe/Lisbon
+  end_timezone: Europe/Lisbon
   confirmation_code: TN-448190
   title: Taberna da Rua
   provider: Taberna da Rua

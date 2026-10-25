@@ -11,7 +11,7 @@ import pytest
 from moto import mock_aws
 
 from evals import score
-from evals.cases import Expected, load_cases, read_expected, write_expected
+from evals.cases import Expected, ExpectedReservation, load_cases, read_expected, write_expected
 from evals.score import Outcome, compare
 from evals.sync import sync
 from triptych.models import ExtractedReservation, Extraction, Kind
@@ -55,21 +55,32 @@ def test_expected_round_trips_through_yaml(tmp_path: Path) -> None:
     assert read_expected(path) == expected
 
 
+def test_drafts_from_before_the_schema_change_still_load() -> None:
+    old = {
+        "kind": "flight",
+        "start_local": "2026-11-12T15:40",
+        "flight_number": "AQ 236",
+        "timezone": "Europe/Lisbon",
+    }
+    r = ExpectedReservation.model_validate(old)
+    assert (r.service_number, r.end_timezone) == ("AQ 236", "Europe/Lisbon")
+
+
 @pytest.mark.parametrize(
     ("field", "expected", "predicted", "outcome"),
     [
         ("city", "São Paulo", "sao  paulo", Outcome.CORRECT),
         ("city", "Lisbon", "Porto", Outcome.WRONG),
         ("confirmation_code", "QZ7K2M", "qz7k 2m", Outcome.CORRECT),
-        ("flight_number", "AQ 236", "AQ236", Outcome.CORRECT),
+        ("service_number", "AQ 236", "AQ236", Outcome.CORRECT),
         ("confirmation_code", "QZ7K2M", None, Outcome.MISSED),
         ("confirmation_code", None, "QZ7K2M", Outcome.HALLUCINATED),
         ("seat", None, "", Outcome.NA),
         ("start_iata", "LHR", "LGW", Outcome.NEAR),
         ("start_iata", "LHR", "LIS", Outcome.WRONG),
-        ("timezone", "Europe/Paris", "Europe/Berlin", Outcome.CORRECT),
-        ("timezone", "Europe/Lisbon", "Europe/Madrid", Outcome.WRONG),
-        ("timezone", "Europe/Lisbon", "Lisbon", Outcome.WRONG),
+        ("end_timezone", "Europe/Paris", "Europe/Berlin", Outcome.CORRECT),
+        ("end_timezone", "Europe/Lisbon", "Europe/Madrid", Outcome.WRONG),
+        ("end_timezone", "Europe/Lisbon", "Lisbon", Outcome.WRONG),
         ("start_local", "2026-11-12T15:40", "2026-11-12 15:40", Outcome.CORRECT),
         ("start_local", "2026-11-12T15:40", "2026-11-12T03:40", Outcome.NEAR),
         ("start_local", "2026-11-13T11:25", "2026-11-12T11:25", Outcome.NEAR),
@@ -85,8 +96,8 @@ def test_compare(field: str, expected: str | None, predicted: str | None, outcom
 def test_accept_lists_other_right_answers_and_null() -> None:
     assert compare("city", "Lisbon", "Lisboa", ["Lisboa"]).outcome is Outcome.CORRECT
     assert compare("start_city", "Lisbon", None, [None]).outcome is Outcome.CORRECT
-    assert compare("flight_number", None, "9024", ["9024"]).outcome is Outcome.CORRECT
-    assert compare("flight_number", None, "9025", ["9024"]).outcome is Outcome.WRONG
+    assert compare("service_number", None, "9024", ["9024"]).outcome is Outcome.CORRECT
+    assert compare("service_number", None, "9025", ["9024"]).outcome is Outcome.WRONG
 
 
 def test_reservations_pair_regardless_of_order() -> None:
@@ -126,14 +137,15 @@ def test_enriched_timezones_score_what_the_app_stores() -> None:
     # The model's own zone is wrong, but places.py knows Lisbon's: the calendar still comes out right.
     expected = smoke("02-hotel-lisbon")
     answer = as_extraction(expected)
-    answer.reservations[0].timezone = "Europe/Madrid"
+    answer.reservations[0].start_timezone = answer.reservations[0].end_timezone = "Europe/Madrid"
     fields = {f.field: f for f in score.score_case(expected, answer).pairs[0].fields}
-    assert fields["timezone"].outcome is Outcome.WRONG
+    assert fields["end_timezone"].outcome is Outcome.WRONG
     assert fields["start_tz"].outcome is Outcome.CORRECT
-    # A train with no departure city leaves from where it arrives (fill_timezones): wrong for London.
+    # A train with no departure city or zone leaves from where it arrives (fill_timezones): wrong here.
     expected = smoke("04-rail-paris")
     answer = as_extraction(expected)
-    answer.reservations[0].start_city = answer.reservations[0].start_country_code = None
+    train = answer.reservations[0]
+    train.start_city = train.start_country_code = train.start_timezone = None
     fields = {f.field: f for f in score.score_case(expected, answer).pairs[0].fields}
     assert fields["start_tz"].outcome is Outcome.WRONG
 

@@ -62,6 +62,11 @@ A draft is what production's model answered when the mail arrived. Open it next 
 language server (VS Code's YAML extension) validate and autocomplete against
 `expected.schema.json`.
 
+After the prompt or the extraction schema changes, `uv run python -m evals redraft` drafts every
+unverified case again with your local model, so you correct the current answer rather than an old
+one. It only touches `status: draft` files, so verify the cases you've finished before running
+it. Drafts written in the old field names (`flight_number`, `timezone`) still load.
+
 - Leave a field out when the document doesn't say it. The harness counts a value there as a
   hallucination.
 - `accept:` lists other right answers per field, with `null` if leaving it out is fine as well:
@@ -99,7 +104,7 @@ This shows how each rate and each field moved, and which cases were fixed or bro
 ### What's scored
 
 - **fully correct**: the right travel/not-travel call, every reservation found, nothing extra, and
-  every key field right: kind, start and end times, airports, city, confirmation code, flight
+  every key field right: kind, start and end times, airports, city, confirmation code, flight or train
   number, and the timezones the app ends up storing.
 - **classification**, and reservation **recall** and **precision**. Reservations are paired with
   the expected ones by an optimal assignment, so their order doesn't matter.

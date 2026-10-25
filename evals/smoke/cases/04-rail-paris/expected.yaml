@@ -15,16 +15,16 @@ reservations:
   country_code: FR
   start_city: London
   start_country_code: GB
-  timezone: Europe/Paris
+  start_timezone: Europe/London
+  end_timezone: Europe/Paris
   confirmation_code: ELR9PX
+  service_number: '9024'
   title: Train 9024 London→Paris
   provider: EuroLink Rail
   start_location: London St Pancras International
   end_location: Paris Gare du Nord
   seat: Coach 7, Seat 61
   accept:
-    flight_number:
-    - '9024'
     start_iata:
     - QQS
     end_iata:

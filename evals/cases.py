@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 from triptych.models import Extraction, IngestSource, Kind
 
@@ -53,9 +53,19 @@ class ExpectedReservation(BaseModel):
     country_code: str | None = Field(None, description="ISO 3166 alpha-2 of city")
     start_city: str | None = Field(None, description="Transport only: the city it departs from")
     start_country_code: str | None = None
-    timezone: str | None = Field(None, description="IANA timezone of city")
+    start_timezone: str | None = Field(None, description="IANA timezone where it starts (start_city's)")
+    end_timezone: str | None = Field(
+        None,
+        # Drafts written before there were two only have the city's.
+        validation_alias=AliasChoices("end_timezone", "timezone"),
+        description="IANA timezone where it ends (city's)",
+    )
     confirmation_code: str | None = None
-    flight_number: str | None = None
+    service_number: str | None = Field(
+        None,
+        validation_alias=AliasChoices("service_number", "flight_number"),
+        description="Flight or train number",
+    )
     # Shown in reports for eyeballing; not scored.
     title: str | None = None
     provider: str | None = None
@@ -118,10 +128,9 @@ def read_expected(path: Path) -> Expected:
 
 def write_expected(path: Path, expected: Expected) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    data = expected.model_dump(mode="json", exclude_defaults=True)
-    # Keep the answer explicit even where it's the default.
+    # Status first, and the answer explicit even where it's the default.
+    data = {"status": expected.status, **expected.model_dump(mode="json", exclude_defaults=True)}
     data["is_travel_document"] = expected.is_travel_document
-    data.setdefault("status", expected.status)
     data["reservations"] = [
         {**r.model_dump(mode="json", exclude_none=True, exclude_defaults=True), "kind": r.kind.value}
         for r in expected.reservations

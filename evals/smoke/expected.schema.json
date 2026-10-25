@@ -100,7 +100,7 @@
           "default": null,
           "title": "Start Country Code"
         },
-        "timezone": {
+        "start_timezone": {
           "anyOf": [
             {
               "type": "string"
@@ -110,8 +110,21 @@
             }
           ],
           "default": null,
-          "description": "IANA timezone of city",
-          "title": "Timezone"
+          "description": "IANA timezone where it starts (start_city's)",
+          "title": "Start Timezone"
+        },
+        "end_timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "IANA timezone where it ends (city's)",
+          "title": "End Timezone"
         },
         "confirmation_code": {
           "anyOf": [
@@ -125,7 +138,7 @@
           "default": null,
           "title": "Confirmation Code"
         },
-        "flight_number": {
+        "service_number": {
           "anyOf": [
             {
               "type": "string"
@@ -135,7 +148,8 @@
             }
           ],
           "default": null,
-          "title": "Flight Number"
+          "description": "Flight or train number",
+          "title": "Service Number"
         },
         "title": {
           "anyOf": [

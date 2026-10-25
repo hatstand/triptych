@@ -21,10 +21,10 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from evals import cases as golden
-from evals.cases import Expected, eval_dir, read_expected, write_expected
+from evals.cases import eval_dir, read_expected, write_expected
 from triptych import llm, parsing
 from triptych.config import settings
-from triptych.models import IngestRequest, LlmExtractRequest
+from triptych.models import Extraction, IngestRequest, IngestSource, LlmExtractRequest
 
 
 def think(value: str) -> llm.Think:
@@ -101,25 +101,21 @@ def received(path: Path, data: bytes) -> datetime:
     return datetime.fromtimestamp(path.stat().st_mtime, UTC)
 
 
-async def model_draft(
-    path: Path, data: bytes, at: datetime, source: str, tags: list[str], model: str
-) -> Expected:
+async def model_answer(
+    path: Path, data: bytes, at: datetime, source: IngestSource, model: str
+) -> Extraction | None:
+    """What `model` makes of a file with production's prompt, or None (and why, printed) if nothing."""
     doc = parsing.parse(
         IngestRequest(
-            user="eval", source="email" if source == "email" else "upload", filename=path.name,
-            content_type=golden.content_type(path), data_b64=base64.b64encode(data).decode(), received_at=at,
+            user="eval", source=source, filename=path.name, content_type=golden.content_type(path),
+            data_b64=base64.b64encode(data).decode(), received_at=at,
         )
     )  # fmt: skip
     try:
-        extraction = await llm.extract(LlmExtractRequest(document=doc, received_at=at, model=model))
+        return await llm.extract(LlmExtractRequest(document=doc, received_at=at, model=model))
     except Exception as e:  # no model is no draft, not no case
         print(f"  {path.name}: no draft from {model} ({e}); fill it in by hand")
-        extraction = None
-    expected = golden.draft(extraction, at, "email" if source == "email" else "upload", tags)
-    expected.notes = f"Added from {path.name}." + (
-        f" Draft from what {model} answered." if extraction else ""
-    )
-    return expected
+        return None
 
 
 def cmd_add(args: argparse.Namespace) -> None:
@@ -136,12 +132,49 @@ def cmd_add(args: argparse.Namespace) -> None:
         folder = root / "inputs" / case_id
         folder.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(path, folder / f"original{path.suffix.lower()}")
-        source = "email" if path.suffix.lower() == ".eml" else "upload"
+        source: IngestSource = "email" if path.suffix.lower() == ".eml" else "upload"
         tags = [source, path.suffix.lower().lstrip("."), *args.tag]
-        expected = asyncio.run(model_draft(path, data, received(path, data), source, tags, args.model))
+        at = received(path, data)
+        extraction = asyncio.run(model_answer(path, data, at, source, args.model))
+        expected = golden.draft(extraction, at, source, tags)
+        expected.notes = f"Added from {path.name}." + (
+            f" Draft from what {args.model} answered." if extraction else ""
+        )
         write_expected(target, expected)
         print(f"{path.name}: draft at cases/{case_id}/expected.yaml")
     print("Local inputs aren't in the bucket: keep them, or commit them beside expected.yaml with `input:`.")
+
+
+def cmd_redraft(args: argparse.Namespace) -> None:
+    """Draft unverified cases again with today's prompt and schema. Verified ones are never touched."""
+    from evals.run import pulled_models
+
+    if args.model not in pulled_models():
+        raise SystemExit(f"not pulled on {settings.ollama_url}: ollama pull {args.model}")
+    root = root_of(args)
+    note = f"Redrafted from what {args.model} (prompt {llm.prompt_version()}) answered."
+
+    async def go() -> None:
+        for path in sorted((root / "cases").glob("*/expected.yaml")):
+            case_id, expected = path.parent.name, read_expected(path)
+            if expected.status != "draft" or (args.case and case_id not in args.case):
+                continue
+            found = golden.find_input(root, case_id, expected, path)
+            if found is None:
+                print(f"{case_id}: no input (run sync?)")
+                continue
+            extraction = await model_answer(
+                found, found.read_bytes(), expected.received_at, expected.source, args.model
+            )
+            if extraction is None:
+                continue
+            new = golden.draft(extraction, expected.received_at, expected.source, expected.tags)
+            new.input = expected.input
+            new.notes = "\n".join(n for n in ((expected.notes or "").split("\n")[0], note) if n)
+            write_expected(path, new)
+            print(f"{case_id}: redrafted")
+
+    asyncio.run(go())
 
 
 def cmd_compare(args: argparse.Namespace) -> None:
@@ -189,6 +222,13 @@ def main(argv: list[str] | None = None) -> None:
     p.add_argument("--tag", action="append", default=[])
     p.add_argument("--model", default=settings.llm_model, help="model to draft the answer with")
     p.set_defaults(func=cmd_add)
+
+    p = sub.add_parser("redraft", help="draft unverified cases again with the current prompt and schema")
+    p.add_argument(
+        "--model", default=settings.llm_model, help=f"model to draft with (default {settings.llm_model})"
+    )
+    p.add_argument("--case", action="append", help="only this case id")
+    p.set_defaults(func=cmd_redraft)
 
     p = sub.add_parser("compare", help="two runs side by side")
     p.add_argument("before", help="a runs/<run> folder or its results.json")

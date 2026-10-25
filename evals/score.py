@@ -42,15 +42,16 @@ class Outcome(StrEnum):
 
 
 TEXT = ("city", "start_city")
-CODES = ("confirmation_code", "flight_number", "country_code", "start_country_code")
+CODES = ("confirmation_code", "service_number", "country_code", "start_country_code")
 TIMES = ("start_local", "end_local")
 AIRPORTS = ("start_iata", "end_iata")
 ENRICHED = ("start_tz", "end_tz")
-FIELDS = ("kind", *TIMES, *AIRPORTS, *TEXT, *CODES, "timezone", *ENRICHED)
+ZONES = ("start_timezone", "end_timezone")
+FIELDS = ("kind", *TIMES, *AIRPORTS, *TEXT, *CODES, *ZONES, *ENRICHED)
 """Every scored field, in report order."""
-KEY = ("kind", *TIMES, *AIRPORTS, "city", "confirmation_code", "flight_number", *ENRICHED)
+KEY = ("kind", *TIMES, *AIRPORTS, "city", "confirmation_code", "service_number", *ENRICHED)
 """The fields a reservation needs right to land on the calendar correctly: all of them for a case to
-count as fully correct. Country codes and the model's own timezone feed the enriched zones."""
+count as fully correct. Country codes and the model's own zones feed the enriched ones."""
 
 
 class FieldScore(BaseModel):
@@ -168,7 +169,7 @@ def compare(name: str, expected: Any, predicted: Any, accept: list[str | None] |
         ok = fold(p) in {fold(a) for a in right}
     elif name in CODES or name == "kind":
         ok = code(p) in {code(a) for a in right}
-    elif name in ("timezone", *ENRICHED):
+    elif name in (*ZONES, *ENRICHED):
         ok = any(same_zone(a, p) for a in right)
     elif name in AIRPORTS:
         ok = code(p) in {code(a) for a in right}
@@ -202,7 +203,7 @@ def similarity(e: ExpectedReservation, p: ExtractedReservation) -> float:
         s += 1 if start_e == start_p else 0
     s += sum(
         _same(getattr(e, f), getattr(p, f))
-        for f in ("confirmation_code", "flight_number", "start_iata", "end_iata")
+        for f in ("confirmation_code", "service_number", "start_iata", "end_iata")
     )
     s += 1 if e.city and p.city and fold(e.city) == fold(p.city) else 0
     return s
