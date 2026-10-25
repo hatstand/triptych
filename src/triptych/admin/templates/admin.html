@@ -24,6 +24,8 @@
   .diff del { color: var(--muted); }
   .diff ins { text-decoration: none; font-weight: 600; }
   .ingests form { margin: 0; }
+  .ingests .actions form { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ingests .actions button { padding: 4px 10px; font-size: .85rem; white-space: nowrap; }
 </style>
 {% endblock %}
 {% block content %}
@@ -186,7 +188,7 @@
   <h2>{{ 'Latest ' ~ state | replace('_', ' ') if state else 'Latest' }} ingests</h2>
   {% if ingests %}
   <table class="ingests">
-    <tr><th>Received</th><th>User</th><th>Source</th><th>Item</th><th>State</th></tr>
+    <tr><th>Received</th><th>User</th><th>Source</th><th>Item</th><th>State</th><th>Reprocess</th></tr>
     {% for i in ingests %}
     <tr>
       <td class="mono">{{ i.received_at.strftime('%Y-%m-%d %H:%M') }}</td>
@@ -195,6 +197,15 @@
       <td>{{ i.label }}<div class="muted small mono">{{ i.ingest_id }}</div></td>
       <td><span class="badge {{ i.state }}">{{ i.state | replace('_', ' ') }}</span>
         {% if i.message %}<div class="muted small">{{ i.message }}</div>{% endif %}</td>
+      <td class="actions">{% if i.state in ('done', 'no_travel', 'failed') and (i.has_original or i.has_run) %}
+        {# A dry run of just this ingest; its batch then shows the diff, with Apply. #}
+        <form method="post" action="#reprocess">
+          <input type="hidden" name="action" value="reprocess">
+          <input type="hidden" name="ingest" value="{{ i.ingest_id }}">
+          <input type="hidden" name="model" value="{{ llm_model }}">
+          {% if i.has_original %}<button class="secondary" name="source" value="extract" title="Extract the original again with {{ llm_model }} (dry run)">Extract again</button>{% endif %}
+          {% if i.has_run %}<button class="secondary" name="source" value="stored" title="Re-derive from the stored output, no GPU (dry run)">Re-derive</button>{% endif %}
+        </form>{% endif %}</td>
     </tr>
     {% endfor %}
   </table>

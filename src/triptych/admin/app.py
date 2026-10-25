@@ -139,6 +139,8 @@ class ReprocessForm(BaseModel):
     """Extract the original again with `model`, or re-derive from each ingest's current run."""
     model: str = ""
     mode: Literal["dry_run", "apply"] = "dry_run"
+    ingest: str = ""
+    """Just this one ingest (its row's buttons in the ingest list), instead of the filter below."""
     state: Literal["", "done", "no_travel", "failed"] = ""
     email: str = ""
     since: date | None = None
@@ -161,7 +163,11 @@ async def start(client: restate.RestateClient, req: ReprocessRequest, owner: str
 async def start_batch(client: restate.RestateClient, f: ReprocessForm) -> tuple[str, int]:
     batch = new_batch()
     found = await db.reprocess_candidates(
-        state=f.state or None, email=f.email.strip() or None, since=f.since, limit=f.limit
+        ingest_id=f.ingest.strip() or None,
+        state=f.state or None,
+        email=f.email.strip() or None,
+        since=f.since,
+        limit=f.limit,
     )
     n = 0
     for c in found:
