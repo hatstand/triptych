@@ -52,13 +52,81 @@ def test_normalise_flight_uses_airport_timezones() -> None:
         end_local="2026-11-13T11:25",
         start_iata="SFO",
         end_iata="lis",
-        flight_number="AQ 236",
+        service_number="AQ 236",
     )
     r = enrich.normalise(x, reservation_id="r1", ingest_id="i1")
     assert r is not None
     assert (r.start_tz, r.end_tz) == ("America/Los_Angeles", "Europe/Lisbon")
     assert r.city == "Lisbon"
     assert enrich.to_utc(r.start_local, r.start_tz) == datetime(2026, 11, 12, 23, 40, tzinfo=UTC)
+
+
+def test_flight_without_airport_codes_takes_the_models_departure_zone() -> None:
+    x = ExtractedReservation(
+        kind=Kind.FLIGHT,
+        title="CA 938",
+        start_local="2026-11-12T21:00",
+        end_local="2026-11-13T14:30",
+        city="Somewhere",
+        start_timezone="Europe/London",
+        timezone="Asia/Shanghai",
+    )
+    r = enrich.normalise(x, reservation_id="r1", ingest_id="i1")
+    assert r is not None
+    assert (r.start_tz, r.end_tz) == ("Europe/London", "Asia/Shanghai")
+    enrich.fill_timezones([r])
+    assert (r.start_tz, r.end_tz) == ("Europe/London", "Asia/Shanghai")
+
+
+def test_flight_reads_airport_codes_from_its_locations() -> None:
+    x = ExtractedReservation(
+        kind=Kind.FLIGHT,
+        title="BA 286",
+        start_local="2027-01-20T16:30",
+        end_local="2027-01-21T10:40",
+        start_location="San Francisco International (SFO)",
+        end_location="London Heathrow (LHR)",
+    )
+    r = enrich.normalise(x, reservation_id="r1", ingest_id="i1")
+    assert r is not None
+    assert (r.start_tz, r.end_tz) == ("America/Los_Angeles", "Europe/London")
+    assert (r.start_location, r.end_location) == ("San Francisco (SFO)", "London (LHR)")
+
+
+def test_fill_timezones_corrects_a_flight_from_its_airports() -> None:
+    """A flight stored with its arrival zone at both ends gets its departure airport's zone."""
+    r = Reservation(
+        id="r",
+        kind=Kind.FLIGHT,
+        title="BA 286",
+        start_local=datetime(2027, 1, 20, 16, 30),
+        start_tz="Europe/London",
+        end_local=datetime(2027, 1, 21, 10, 40),
+        end_tz="Europe/London",
+        start_location="San Francisco (SFO)",
+        end_location="London (LHR)",
+    )
+    enrich.fill_timezones([r])
+    assert (r.start_tz, r.end_tz) == ("America/Los_Angeles", "Europe/London")
+
+
+def test_service_number_reads_the_old_flight_number_key() -> None:
+    """Stored extraction runs and Restate journals from before the rename say flight_number."""
+    x = ExtractedReservation.model_validate(
+        {"kind": "rail", "title": "G324", "start_local": "2026-10-07T08:00", "flight_number": "G324"}
+    )
+    assert x.service_number == "G324"
+    r = Reservation.model_validate(
+        {
+            "id": "r",
+            "kind": "rail",
+            "title": "G324",
+            "start_local": "2026-10-07T08:00",
+            "flight_number": "G324",
+        }
+    )
+    assert r.service_number == "G324" and r.service_label == "Train"
+    assert "service_number" in r.model_dump() and "flight_number" not in r.model_dump()
 
 
 def test_normalise_rejects_unparseable_time_and_bad_tz() -> None:
@@ -115,7 +183,7 @@ def _shanghai_trip() -> list[Reservation]:
         end_local="2026-10-13T11:50",
         start_iata="PVG",
         end_iata="CTU",
-        flight_number="MU5401",
+        service_number="MU5401",
     )
     train = ExtractedReservation(
         kind=Kind.RAIL,
@@ -126,7 +194,7 @@ def _shanghai_trip() -> list[Reservation]:
         end_local="2026-10-15T22:32",
         start_location="Chengdudong(Chengdu East)",
         end_location="Beijingxi(Beijing West)",
-        flight_number="G324",
+        service_number="G324",
     )
     rs = [enrich.normalise(x, reservation_id=x.title, ingest_id="i") for x in (flight, train)]
     assert all(rs)

@@ -88,7 +88,7 @@ async def changes(url: str) -> AsyncGenerator[str | None]:
 
 RESERVATION_COLUMNS = """
     id::text, kind, title, provider, confirmation_code, start_local, start_tz, end_local, end_tz,
-    start_location, end_location, address, city, flight_number, seat, travelers, notes,
+    start_location, end_location, address, city, service_number, seat, travelers, notes,
     source_ingest_id, source_run_id::text
 """
 
@@ -122,7 +122,7 @@ def _photo(row: dict[str, Any]) -> Photo | None:
 def dedupe_key(r: Reservation) -> str:
     """Same segment re-sent (or updated) → same key, so it replaces rather than duplicates."""
     return "|".join(
-        (r.kind.value, r.confirmation_code or "", r.flight_number or r.title, r.start_date.isoformat())
+        (r.kind.value, r.confirmation_code or "", r.service_number or r.title, r.start_date.isoformat())
     )
 
 
@@ -153,7 +153,7 @@ async def _upsert_reservation(conn: AsyncConnection, trip_id: str, r: Reservatio
     await conn.execute(
         """
         INSERT INTO reservation (id, trip_id, kind, title, provider, confirmation_code, start_local,
-            start_tz, end_local, end_tz, start_location, end_location, address, city, flight_number,
+            start_tz, end_local, end_tz, start_location, end_location, address, city, service_number,
             seat, travelers, notes, source_ingest_id, source_run_id, dedupe_key)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (trip_id, dedupe_key) DO UPDATE SET
@@ -162,14 +162,14 @@ async def _upsert_reservation(conn: AsyncConnection, trip_id: str, r: Reservatio
             confirmation_code = EXCLUDED.confirmation_code, start_local = EXCLUDED.start_local,
             start_tz = EXCLUDED.start_tz, end_local = EXCLUDED.end_local, end_tz = EXCLUDED.end_tz,
             start_location = EXCLUDED.start_location, end_location = EXCLUDED.end_location,
-            address = EXCLUDED.address, city = EXCLUDED.city, flight_number = EXCLUDED.flight_number,
+            address = EXCLUDED.address, city = EXCLUDED.city, service_number = EXCLUDED.service_number,
             seat = EXCLUDED.seat, travelers = EXCLUDED.travelers, notes = EXCLUDED.notes,
             source_ingest_id = EXCLUDED.source_ingest_id, source_run_id = EXCLUDED.source_run_id
         """,
         (
             r.id, trip_id, r.kind.value, r.title, r.provider, r.confirmation_code, r.start_local,
             r.start_tz, r.end_local, r.end_tz, r.start_location, r.end_location, r.address, r.city,
-            r.flight_number, r.seat, r.travelers, r.notes, r.source_ingest_id, r.source_run_id,
+            r.service_number, r.seat, r.travelers, r.notes, r.source_ingest_id, r.source_run_id,
             dedupe_key(r),
         ),
     )  # fmt: skip
@@ -572,7 +572,7 @@ async def file_reservations(owner: str, ingest_id: str, reservations: list[Reser
 # Fields a reprocess may change, in the order a diff shows them.
 FIELDS = (
     "title", "provider", "confirmation_code", "start_local", "start_tz", "end_local", "end_tz",
-    "start_location", "end_location", "address", "city", "flight_number", "seat", "travelers", "notes",
+    "start_location", "end_location", "address", "city", "service_number", "seat", "travelers", "notes",
 )  # fmt: skip
 
 
@@ -720,14 +720,14 @@ async def apply_reprocess(
                 UPDATE reservation a SET title = %s, provider = %s, confirmation_code = %s,
                     start_local = %s, start_tz = %s, end_local = %s, end_tz = %s,
                     start_location = %s, end_location = %s, address = %s, city = %s,
-                    flight_number = %s, seat = %s, travelers = %s, notes = %s, source_run_id = %s,
+                    service_number = %s, seat = %s, travelers = %s, notes = %s, source_run_id = %s,
                     dedupe_key = %s
                 WHERE a.id = %s AND NOT EXISTS (SELECT 1 FROM reservation b
                     WHERE b.trip_id = a.trip_id AND b.dedupe_key = %s AND b.id <> a.id)
                 RETURNING trip_id::text
                 """,
                 (u.title, u.provider, u.confirmation_code, u.start_local, u.start_tz, u.end_local,
-                 u.end_tz, u.start_location, u.end_location, u.address, u.city, u.flight_number,
+                 u.end_tz, u.start_location, u.end_location, u.address, u.city, u.service_number,
                  u.seat, u.travelers, u.notes, run_id, dedupe_key(u), u.id, dedupe_key(u)),
             )  # fmt: skip
             if (row := await cur.fetchone()) is not None and row[0] not in touched:
