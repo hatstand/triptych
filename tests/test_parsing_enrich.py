@@ -300,6 +300,16 @@ def test_country_codes_are_an_enum_in_the_schema() -> None:
     assert x.country_code is None
 
 
+def test_airport_codes_are_three_letters_and_known() -> None:
+    """A rail ticket's start_iata once came back as "na"."""
+    props = Extraction.model_json_schema()["$defs"]["ExtractedReservation"]["properties"]
+    for key in ("start_iata", "end_iata"):
+        assert props[key]["anyOf"][0]["pattern"] == "^[A-Z]{3}$"
+    for given, read in (("na", None), ("N/A", None), ("ZZZ", None), ("lhr", "LHR"), ("QQS", "QQS")):
+        x = ExtractedReservation(kind=Kind.RAIL, title="t", start_local="2026-10-15T15:02", start_iata=given)
+        assert x.start_iata == read, given
+
+
 def test_train_departs_from_its_start_city() -> None:
     """Even after landing in Hong Kong the day before, a train that says it leaves Chengdu does."""
     flight = ExtractedReservation(

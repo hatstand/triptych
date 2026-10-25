@@ -47,6 +47,27 @@ def _country_code(description: str) -> Any:
     ]  # fmt: skip
 
 
+def _known_iata(code: str | None) -> str | None:
+    code = (code or "").strip().upper()
+    return code if places.lookup(code) else None
+
+
+def _iata_code(description: str) -> Any:
+    """A 3-letter IATA code of an airport or station we know, or null. There are too many to list
+    in the schema, but its pattern stops the grammar writing placeholders ("na", "N/A", "-"), and
+    any other code we don't know is read back as null."""
+    return Annotated[
+        str | None,
+        AfterValidator(_known_iata),
+        WithJsonSchema(
+            {"anyOf": [{"type": "string", "pattern": "^[A-Z]{3}$"}, {"type": "null"}],
+             "description": description}
+        ),
+    ]  # fmt: skip
+
+
+StartIata = _iata_code("3-letter IATA code of departure airport (flights), else null")
+EndIata = _iata_code("3-letter IATA code of arrival airport (flights), else null")
 CityCountry = _country_code("ISO 3166-1 alpha-2 code of the country `city` is in, e.g. CN")
 StartCountry = _country_code("ISO 3166-1 alpha-2 code of the country `start_city` is in, e.g. GB")
 
@@ -75,8 +96,8 @@ class ExtractedReservation(BaseModel):
     end_local: str | None = Field(None, description="Local end time at the end location, YYYY-MM-DDTHH:MM")
     start_location: str | None = Field(None, description="Departure airport/station, pickup point or venue")
     end_location: str | None = Field(None, description="Arrival airport/station or drop-off point")
-    start_iata: str | None = Field(None, description="3-letter IATA code of departure airport (flights)")
-    end_iata: str | None = Field(None, description="3-letter IATA code of arrival airport (flights)")
+    start_iata: StartIata = None
+    end_iata: EndIata = None
     address: str | None = Field(None, description="Street address of the hotel/venue/pickup, if given")
     city: str | None = Field(
         None, description="City in English where this takes place (arrival city for transport)"
