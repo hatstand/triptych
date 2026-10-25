@@ -579,10 +579,6 @@ async def file_reservations(owner: str, ingest_id: str, reservations: list[Reser
 # their reminders), new ones are filed, and nothing is ever deleted: a reservation the new run
 # doesn't mention is only reported. Deleted ones (dismissed_reservation) stay deleted.
 
-# Fields a reprocess may change, in the order a diff shows them: all but those the owner
-# corrected, and kind (a run that calls it something else has found something else).
-FIELDS = tuple(f for f in EDITABLE if f != "kind")
-
 
 def _shown(value: object) -> str | None:
     if value is None:
@@ -633,6 +629,15 @@ def _as_dismissal(r: Reservation) -> Dismissal:
     )  # fmt: skip
 
 
+def reclassified(c: Reservation, e: Reservation) -> bool:
+    """Whether `c` is `e` called something else: the same departure to the minute, with no booking
+    code that says otherwise. A newer run can know a kind the old one didn't (a ferry that was
+    filed as `other`), and should change it rather than file the segment twice."""
+    if c.kind == e.kind or c.start_local != e.start_local:
+        return False
+    return not (c.confirmation_code and e.confirmation_code) or c.confirmation_code == e.confirmation_code
+
+
 def reconcile(
     current: list[Reservation],
     candidates: list[Reservation],
@@ -641,7 +646,8 @@ def reconcile(
     keys: dict[str, str] | None = None,
 ) -> Reconciliation:
     """Match a run's reservations (`candidates`) to the ingest's `current` ones, one to one: the
-    exact key first, then the looser rules `dismissed` uses. `taken` is the dedupe key of every
+    exact key first, then the looser rules `dismissed` uses, then the same departure under another
+    kind (`reclassified`). `taken` is the dedupe key of every
     reservation the user has. `keys` are the current ones' stored dedupe keys, which are what their
     extraction said even where the owner has corrected them since. A match keeps every field its
     owner corrected."""
@@ -659,6 +665,7 @@ def reconcile(
 
     pair(lambda c, e: dedupe_key(c) in (keys.get(e.id), dedupe_key(e)))
     pair(lambda c, e: dismissed(c, _as_dismissal(e)))
+    pair(reclassified)
 
     out = Reconciliation(missing=free)
     taken = taken | {dedupe_key(candidates[i]) for i in match}
@@ -678,7 +685,7 @@ def reconcile(
             out.updated.append(u)
             fields = [
                 FieldChange(field=f, old=_shown(getattr(e, f)), new=_shown(getattr(u, f)))
-                for f in FIELDS
+                for f in EDITABLE  # all but what the owner corrected, which `u` keeps
                 if getattr(e, f) != getattr(u, f)
             ]
             if fields:
@@ -741,7 +748,7 @@ async def apply_reprocess(
             # Skipped if the new key would clash with another segment of the same trip.
             cur = await conn.execute(
                 """
-                UPDATE reservation a SET title = %s, provider = %s, confirmation_code = %s,
+                UPDATE reservation a SET kind = %s, title = %s, provider = %s, confirmation_code = %s,
                     start_local = %s, start_tz = %s, end_local = %s, end_tz = %s,
                     start_location = %s, end_location = %s, address = %s, city = %s,
                     service_number = %s, seat = %s, travelers = %s, notes = %s, source_run_id = %s,
@@ -751,8 +758,8 @@ async def apply_reprocess(
                     WHERE b.trip_id = a.trip_id AND b.dedupe_key = %s AND b.id <> a.id))
                 RETURNING trip_id::text
                 """,
-                (u.title, u.provider, u.confirmation_code, u.start_local, u.start_tz, u.end_local,
-                 u.end_tz, u.start_location, u.end_location, u.address, u.city, u.service_number,
+                (u.kind.value, u.title, u.provider, u.confirmation_code, u.start_local, u.start_tz,
+                 u.end_local, u.end_tz, u.start_location, u.end_location, u.address, u.city, u.service_number,
                  u.seat, u.travelers, u.notes, run_id, dedupe_key(u), u.id, dedupe_key(u)),
             )  # fmt: skip
             if (row := await cur.fetchone()) is not None and row[0] not in touched:
