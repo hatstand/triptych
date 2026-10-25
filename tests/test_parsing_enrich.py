@@ -61,23 +61,6 @@ def test_normalise_flight_uses_airport_timezones() -> None:
     assert enrich.to_utc(r.start_local, r.start_tz) == datetime(2026, 11, 12, 23, 40, tzinfo=UTC)
 
 
-def test_flight_without_airport_codes_takes_the_models_departure_zone() -> None:
-    x = ExtractedReservation(
-        kind=Kind.FLIGHT,
-        title="CA 938",
-        start_local="2026-11-12T21:00",
-        end_local="2026-11-13T14:30",
-        city="Somewhere",
-        start_timezone="Europe/London",
-        end_timezone="Asia/Shanghai",
-    )
-    r = enrich.normalise(x, reservation_id="r1", ingest_id="i1")
-    assert r is not None
-    assert (r.start_tz, r.end_tz) == ("Europe/London", "Asia/Shanghai")
-    enrich.fill_timezones([r])
-    assert (r.start_tz, r.end_tz) == ("Europe/London", "Asia/Shanghai")
-
-
 def test_flight_reads_airport_codes_from_its_locations() -> None:
     x = ExtractedReservation(
         kind=Kind.FLIGHT,
@@ -110,33 +93,6 @@ def test_fill_timezones_corrects_a_flight_from_its_airports() -> None:
     assert (r.start_tz, r.end_tz) == ("America/Los_Angeles", "Europe/London")
 
 
-def test_every_kind_keeps_two_zones() -> None:
-    """A one-way car rental can end in another zone; a hotel the model gave one zone has it at both ends."""
-    car = ExtractedReservation(
-        kind=Kind.CAR,
-        title="Hertz",
-        start_local="2026-11-01T09:00",
-        end_local="2026-11-03T18:00",
-        start_timezone="America/Denver",
-        end_timezone="America/Los_Angeles",
-    )
-    hotel = ExtractedReservation(
-        kind=Kind.LODGING, title="Inn", start_local="2026-11-01T15:00", start_timezone="America/Denver"
-    )
-    rs = [enrich.normalise(x, reservation_id=x.title, ingest_id="i") for x in (car, hotel)]
-    assert [(r.start_tz, r.end_tz) for r in rs if r] == [
-        ("America/Denver", "America/Los_Angeles"),
-        ("America/Denver", "America/Denver"),
-    ]
-
-
-def test_end_timezone_reads_the_old_timezone_key() -> None:
-    x = ExtractedReservation.model_validate(
-        {"kind": "lodging", "title": "Casa", "start_local": "2026-11-13T15:00", "timezone": "Europe/Lisbon"}
-    )
-    assert x.end_timezone == "Europe/Lisbon"
-
-
 def test_service_number_reads_the_old_flight_number_key() -> None:
     """Stored extraction runs and Restate journals from before the rename say flight_number."""
     x = ExtractedReservation.model_validate(
@@ -160,7 +116,7 @@ def test_normalise_rejects_unparseable_time_and_bad_tz() -> None:
     bad = ExtractedReservation(kind=Kind.OTHER, title="?", start_local="sometime next week")
     assert enrich.normalise(bad, reservation_id="r", ingest_id="i") is None
     x = ExtractedReservation(
-        kind=Kind.ACTIVITY, title="Tour", start_local="2026-11-14 10:00", end_timezone="Mars/Olympus"
+        kind=Kind.ACTIVITY, title="Tour", start_local="2026-11-14 10:00", timezone="Mars/Olympus"
     )
     r = enrich.normalise(x, reservation_id="r", ingest_id="i")
     assert r is not None and r.start_tz is None
@@ -172,7 +128,7 @@ def test_ical_export() -> None:
         title="Casa",
         start_local="2026-11-13T15:00",
         end_local="2026-11-17T11:00",
-        end_timezone="Europe/Lisbon",
+        timezone="Europe/Lisbon",
     )
     r = enrich.normalise(x, reservation_id="r1", ingest_id="i1")
     assert r is not None
@@ -259,10 +215,10 @@ def test_cross_border_train_departs_from_previous_arrival() -> None:
         kind=Kind.FLIGHT, title="BA 286", start_local="2027-01-20T16:30", end_local="2027-01-21T10:40",
         start_iata="SFO", end_iata="LHR",
     )  # fmt: skip
-    # The model's end_timezone is the city's, which for transport is where it arrives.
+    # The model's timezone is the city's, which for transport is where it arrives.
     eurostar = ExtractedReservation(
         kind=Kind.RAIL, title="Eurostar 9014", start_local="2027-01-22T08:31", end_local="2027-01-22T11:47",
-        city="Paris", end_timezone="Europe/Paris",
+        city="Paris", timezone="Europe/Paris",
     )  # fmt: skip
     rs = [enrich.normalise(x, reservation_id=x.title, ingest_id="i") for x in (flight, eurostar)]
     assert all(rs)
@@ -281,7 +237,7 @@ def test_hotel_takes_its_citys_timezone_over_the_models_guess() -> None:
         end_local="2026-10-21T12:00",
         address="No. 839 Yan an Middle Road, Jing'an, Shanghai, 200040, China",
         city="Shanghai",
-        end_timezone="Asia/Hong_Kong",
+        timezone="Asia/Hong_Kong",
     )
     r = enrich.normalise(hotel, reservation_id="r", ingest_id="i")
     assert r is not None
@@ -328,7 +284,7 @@ def test_train_departs_from_its_start_city() -> None:
     train = ExtractedReservation(
         kind=Kind.RAIL, title="G324", start_local="2026-10-15T15:02", end_local="2026-10-15T22:32",
         start_city="Chengdu", start_country_code="CN", city="Beijing", country_code="CN",
-        end_timezone="Asia/Hong_Kong",
+        timezone="Asia/Hong_Kong",
     )  # fmt: skip
     rs = [enrich.normalise(x, reservation_id=x.title, ingest_id="i") for x in (flight, train)]
     assert all(rs)

@@ -84,15 +84,7 @@ class ExtractedReservation(BaseModel):
     country_code: CityCountry = None
     start_city: str | None = Field(None, description="City in English the transport departs from")
     start_country_code: StartCountry = None
-    start_timezone: str | None = Field(
-        None, description="IANA timezone where it starts (start_city for transport), e.g. Europe/London"
-    )
-    end_timezone: str | None = Field(
-        None,
-        # Extraction runs stored before there were two only have the city's, as timezone.
-        validation_alias=AliasChoices("end_timezone", "timezone"),
-        description="IANA timezone where it ends (city), e.g. Asia/Shanghai",
-    )
+    timezone: str | None = Field(None, description="IANA timezone of the city, e.g. Europe/Lisbon")
     service_number: str | None = Field(
         None,
         # Extraction runs stored before the rename (extraction_run.output) still say flight_number.

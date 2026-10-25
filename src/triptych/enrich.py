@@ -47,16 +47,15 @@ def normalise(
     end = parse_local(x.end_local)
 
     # Our places data names a city's zone more reliably than the model does (it once put a Shanghai
-    # hotel in Asia/Hong_Kong); the model's own guesses are the fallback.
-    city_tz = places.city_timezone(x.city, x.country_code)
-    start_tz, end_tz = valid_tz(x.start_timezone), city_tz or valid_tz(x.end_timezone)
+    # hotel in Asia/Hong_Kong); the model's own guess is the fallback.
+    start_tz = end_tz = places.city_timezone(x.city, x.country_code) or valid_tz(x.timezone)
     city = x.city
     start_location, end_location = x.start_location, x.end_location
 
     if x.kind in TRANSPORT:
         # `city` is where transport arrives. It departs from the airport's zone, or start_city's, or
-        # the model's start_timezone, or else wherever the previous leg landed (fill_timezones).
-        start_tz = places.city_timezone(x.start_city, x.start_country_code) or start_tz
+        # else wherever the previous leg landed (fill_timezones).
+        start_tz = places.city_timezone(x.start_city, x.start_country_code)
         dep = places.lookup(x.start_iata or iata_of(x.start_location))
         arr = places.lookup(x.end_iata or iata_of(x.end_location))
         if dep:
@@ -66,10 +65,6 @@ def normalise(
             end_tz = valid_tz(arr.timezone) or end_tz
             end_location = f"{arr.city} ({arr.iata})"
             city = arr.city
-    else:
-        # Anything else happens in its city; failing that, if the model gave one zone, it's both.
-        start_tz = city_tz or start_tz or end_tz
-        end_tz = end_tz or start_tz
 
     # Guard against obviously inverted ranges (e.g. overnight flight with the arrival date omitted).
     if end is not None and end < start and x.kind is not Kind.LODGING:
@@ -124,8 +119,8 @@ def fill_timezones(rs: list[Reservation]) -> None:
                 r.end_tz = arr.timezone
             # A transport leg's city is where it arrives.
             r.end_tz = r.end_tz or places.city_timezone(r.city)
-        elif tz := places.city_timezone(r.city):
-            r.start_tz = r.end_tz = tz
+        else:
+            r.start_tz = r.end_tz = places.city_timezone(r.city) or r.start_tz
     arrival: str | None = None
     landed: datetime | None = None
     for r in rs:
