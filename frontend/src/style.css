@@ -11,6 +11,7 @@
   --lodging: #8e44ad;
   --car: #e67e22;
   --rail: #16a085;
+  --ferry: #0891b2;
   --restaurant: #c0392b;
   --activity: #d4a017;
   --other: #7f8c8d;
@@ -526,6 +527,9 @@ button.danger {
 .entry.rail {
   --kind: var(--rail);
 }
+.entry.ferry {
+  --kind: var(--ferry);
+}
 .entry.restaurant {
   --kind: var(--restaurant);
 }
@@ -644,6 +648,9 @@ button.danger {
 }
 .segment.rail {
   --kind: var(--rail);
+}
+.segment.ferry {
+  --kind: var(--ferry);
 }
 .segment.restaurant {
   --kind: var(--restaurant);

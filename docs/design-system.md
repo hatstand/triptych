@@ -45,6 +45,7 @@ its icon (both via a `--kind` variable that `.segment.<kind>` sets).
 | lodging | `--lodging` | `#8e44ad` | `hotel` |
 | car | `--car` | `#e67e22` | `car` |
 | rail | `--rail` | `#16a085` | `train` |
+| ferry | `--ferry` | `#0891b2` | `ferry` |
 | restaurant | `--restaurant` | `#c0392b` | `restaurant` |
 | activity | `--activity` | `#d4a017` | `ticket` |
 | other | `--other` | `#7f8c8d` | `place` |
@@ -159,7 +160,7 @@ with a 1.2s pulse.
 `li.entry.<kind>` is a three-column grid: the `.clock` (`52px`: start time at `1.05rem` 600 with
 tabular figures, its zone abbreviation below in `.75rem` `--muted`), the rail node `.node` (a `32px`
 `--card` circle with a 2px `--kind` ring and the kind's icon at text size), then the entry's card.
-A flight, train or connecting journey also has its arrival at the foot of the clock (with the weekday above it when it lands on a later day), level with a `12px` `.stop` ring on the rail; its card stretches to the row so the arrival lines up with the card's foot. The rail is a 2px `--line` rule behind the nodes, unbroken from the first node to the last: each entry draws it down to the next, and each day heading after the first carries it past the heading, which is indented to the card column. Under `520px` the clock and node shrink to `44px`
+A flight, train, ferry or connecting journey also has its arrival at the foot of the clock (with the weekday above it when it lands on a later day), level with a `12px` `.stop` ring on the rail; its card stretches to the row so the arrival lines up with the card's foot. The rail is a 2px `--line` rule behind the nodes, unbroken from the first node to the last: each entry draws it down to the next, and each day heading after the first carries it past the heading, which is indented to the card column. Under `520px` the clock and node shrink to `44px`
 and `28px`.
 
 Entries are in the order things happen, compared as instants across zones
@@ -171,7 +172,7 @@ could be out of sequence with the entries around them, stay on its cards ("Check
 "By 11:00") and its clock is empty.
 
 **Timeline item** `.card.segment.<kind>`: the body: title row with a remove link, times (`.when`:
-on the timeline the end, since the start is in the clock, or for a flight or train just its duration, since both times are; with the zone in `.muted.small`
+on the timeline the end, since the start is in the clock, or for a flight, train or ferry just its duration, since both times are; with the zone in `.muted.small`
 when it changes), route or address, and a `.facts` definition list (two columns: muted label,
 value). Inside a journey's legs, where there is no clock, a segment has its own icon column (28px,
 icon 24px in the kind colour) and its start time.
@@ -232,16 +233,16 @@ Triptych uses its own names for the icons it needs, mapped to Lucide names in
 | `ticket` | `ticket` | Activities and events |
 | `luggage` | `luggage` | Baggage |
 | `layover` | `clock` | Layover / connection time |
-| `transfer` | `arrow-left-right` | Change of airport or station |
+| `transfer` | `arrow-left-right` | Change of airport, station or port |
 | `warning` | `triangle-alert` | Tight or risky connections, alerts |
 | `place` | `map-pin` | Other items, addresses |
 | `calendar` | `calendar` | Dates, calendar export |
 | `checkout` | `log-out` | Hotel check-out on the timeline |
 
-Only flight, lodging, car, rail, restaurant, activity and other are reservation kinds today.
-The journey view uses `warning` for airport and station changes and `layover` / `transfer` on
-the connections between legs; bus, ferry, takeoff, landing, rental and luggage are ready for
-when the model grows.
+Only flight, lodging, car, rail, ferry, restaurant, activity and other are reservation kinds
+today. The journey view uses `warning` for airport, station and port changes and `layover` /
+`transfer` on the connections between legs; bus, takeoff, landing, rental and luggage are ready
+for when the model grows.
 
 In templates, import the macro from `_icons.html`:
 

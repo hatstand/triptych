@@ -67,7 +67,7 @@ def pick_destination(rs: list[Reservation]) -> str | None:
     ordered = sorted(rs, key=lambda r: r.start_local)
     if not any(r.kind is Kind.LODGING and r.city for r in ordered) and (stops := transport_stops(ordered)):
         return stops[0]
-    for kinds in ((Kind.LODGING,), (Kind.FLIGHT, Kind.RAIL), tuple(Kind)):
+    for kinds in ((Kind.LODGING,), (Kind.FLIGHT, Kind.RAIL, Kind.FERRY), tuple(Kind)):
         for r in ordered:
             if r.kind in kinds and r.city:
                 return r.city

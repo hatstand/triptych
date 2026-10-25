@@ -4,12 +4,12 @@
 {% from "_icons.html" import icon, kind_icons as icons %}
 {% from "_photo.html" import photo_credit %}
 <script type="module" src="{{ static('dialog.ts') }}"></script>
-{% set transport = ('flight', 'rail') %}
+{% set transport = ('flight', 'rail', 'ferry') %}
 {#- Arrival (or end) of r after its start, with its date when that differs and its zone when it changes. -#}
 {% macro until(start, start_tz, end, end_tz) -%}
 {% if end.date() != start.date() %}{{ end.strftime('%a') }} {% endif %}{{ end.strftime('%H:%M') }}{% if end_tz and end_tz != start_tz %} <span class="muted small">{{ end | tz_abbr(end_tz) }}</span>{% endif %}
 {%- endmacro %}
-{#- One reservation. On the timeline its times are in the clock column (a flight or train's arrival
+{#- One reservation. On the timeline its times are in the clock column (a flight, train or ferry's arrival
     too); inside a journey they are on the card, with the icon. -#}
 {% macro segment(r, on_rail=false) %}
 <article class="card segment {{ r.kind.value }}">
@@ -25,7 +25,7 @@
     {% elif not on_rail or r.end_local %}
     <div class="when">
       {% if not on_rail %}{{ r.start_local.strftime('%H:%M') }}{% if r.start_tz %} <span class="muted small">{{ r.start_local | tz_abbr(r.start_tz) }}</span>{% endif %}{% endif %}
-      {% if r.end_local %}{{ '→' if r.kind.value in ('flight', 'rail', 'car') else 'until' }} {{ until(r.start_local, r.start_tz, r.end_local, r.end_tz) }}
+      {% if r.end_local %}{{ '→' if r.kind.value in ('flight', 'rail', 'ferry', 'car') else 'until' }} {{ until(r.start_local, r.start_tz, r.end_local, r.end_tz) }}
         {%- if r.kind.value in transport %} <span class="muted small">· {{ elapsed(r.start_local, r.start_tz, r.end_local, r.end_tz) | duration }}</span>{% endif %}{% endif %}
     </div>
     {% endif %}
@@ -92,7 +92,7 @@
   </div>
 </details>
 {% endmacro %}
-{#- The clock column: when an entry happens, and for a flight or train when it arrives, at the
+{#- The clock column: when an entry happens, and for a flight, train or ferry when it arrives, at the
     bottom of its card. Times only ever go forward down the timeline. -#}
 {% macro at(t, tz, label=none) %}
 <div class="at">
@@ -107,7 +107,7 @@
   {% if end %}{{ at(end, end_tz, end.strftime('%a') if end.date() != t.date() else none) }}{% endif %}
 </div>
 {% endmacro %}
-{#- The rail beside an entry: its node, and a stop where a flight or train arrives. -#}
+{#- The rail beside an entry: its node, and a stop where a flight, train or ferry arrives. -#}
 {% macro track(node, arrives=false) %}
 <div class="track"><div class="node">{{ node }}</div>{% if arrives %}<div class="stop"></div>{% endif %}</div>
 {% endmacro %}

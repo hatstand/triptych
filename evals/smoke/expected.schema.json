@@ -148,7 +148,7 @@
             }
           ],
           "default": null,
-          "description": "Flight or train number",
+          "description": "Flight, train or sailing number",
           "title": "Service Number"
         },
         "title": {
@@ -274,6 +274,7 @@
         "lodging",
         "car",
         "rail",
+        "ferry",
         "restaurant",
         "activity",
         "other"

@@ -236,7 +236,7 @@ CREATE TABLE public.reservation (
     dedupe_key text NOT NULL,
     source_run_id uuid,
     service_number text,
-    CONSTRAINT reservation_kind_check CHECK ((kind = ANY (ARRAY['flight'::text, 'lodging'::text, 'car'::text, 'rail'::text, 'restaurant'::text, 'activity'::text, 'other'::text])))
+    CONSTRAINT reservation_kind_check CHECK ((kind = ANY (ARRAY['flight'::text, 'lodging'::text, 'car'::text, 'rail'::text, 'ferry'::text, 'restaurant'::text, 'activity'::text, 'other'::text])))
 );
 
 
@@ -740,4 +740,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261024220000'),
     ('20261025120000'),
     ('20261025140000'),
-    ('20261025150000');
+    ('20261025150000'),
+    ('20261025220000');

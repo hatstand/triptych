@@ -63,7 +63,7 @@ def res(kind: Kind, title: str, start: datetime, end: datetime | None = None, **
 
 
 async def seed() -> str:
-    """One user with an upcoming trip (a connecting flight, hotel, dinner, train), a later one and a
+    """One user with an upcoming trip (connecting flights, hotel, dinner, a ferry), a later one and a
     past one, plus an inbox in every state and an alert. Dates are relative to today, so the home
     page always has upcoming and past trips. Returns a session token for the user."""
     me = await db.user_for_email(EMAIL)
@@ -127,6 +127,18 @@ async def seed() -> str:
             at(d + timedelta(days=3), "17:30"),
             provider="Lisbon Walker",
             city="Sintra",
+        ),
+        res(
+            Kind.FERRY,
+            "Cais do Sodré → Cacilhas",
+            at(d + timedelta(days=4), "10:20"),
+            at(d + timedelta(days=4), "10:35"),
+            provider="Transtejo",
+            start_location="Cais do Sodré",
+            end_location="Cacilhas",
+            start_tz="Europe/Lisbon",
+            end_tz="Europe/Lisbon",
+            city="Almada",
         ),
         res(
             Kind.FLIGHT,
@@ -209,7 +221,8 @@ async def seed() -> str:
             ("Casa do Miradouro confirmation", lisbon[2:3]),
             ("Your table at Taberna da Rua das Flores", lisbon[3:4]),
             ("Sintra tour tickets.pdf", lisbon[4:5]),
-            ("TAP booking 7HQ2LM", lisbon[5:]),
+            ("Transtejo ticket", lisbon[5:6]),
+            ("TAP booking 7HQ2LM", lisbon[6:]),
             ("Eurostar e-tickets QJZ8RT", paris),
             ("Kanra Kyoto stay", kyoto),
         ]

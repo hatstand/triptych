@@ -1,4 +1,4 @@
-"""Group connecting flight/train segments into journeys for display.
+"""Group connecting flight/train/ferry segments into journeys for display.
 
 Derived at render time from a trip's reservations; nothing is stored. Two consecutive transport
 segments are one journey when all of these hold:
@@ -18,7 +18,7 @@ from triptych import places
 from triptych.models import Kind, Reservation
 
 MAX_LAYOVER = timedelta(hours=24)
-TRANSPORT = frozenset({Kind.FLIGHT, Kind.RAIL})
+TRANSPORT = frozenset({Kind.FLIGHT, Kind.RAIL, Kind.FERRY})
 
 _IATA = re.compile(r"\(([A-Z]{3})\)\s*$")
 
@@ -109,7 +109,11 @@ class Connection:
         """Shown prominently: a change of airport/station needs ground transfer time."""
         if not self.changes:
             return None
-        nouns = {frozenset({Kind.FLIGHT}): "Airport change", frozenset({Kind.RAIL}): "Station change"}
+        nouns = {
+            frozenset({Kind.FLIGHT}): "Airport change",
+            frozenset({Kind.RAIL}): "Station change",
+            frozenset({Kind.FERRY}): "Port change",
+        }
         noun = nouns.get(self.kinds, "Transfer")
         return f"{noun}: {self.arrive} → {self.depart}, {format_duration(self.wait)} to make it"
 
@@ -133,11 +137,14 @@ class Journey:
 
     @property
     def summary(self) -> str:
-        """'2 flights', '3 trains', or '2 segments' when mixed."""
+        """'2 flights', '3 trains', '2 ferries', or '2 segments' when mixed."""
         kinds = {r.kind for r in self.legs}
-        noun = {frozenset({Kind.FLIGHT}): "flights", frozenset({Kind.RAIL}): "trains"}.get(
-            frozenset(kinds), "segments"
-        )
+        nouns = {
+            frozenset({Kind.FLIGHT}): "flights",
+            frozenset({Kind.RAIL}): "trains",
+            frozenset({Kind.FERRY}): "ferries",
+        }
+        noun = nouns.get(frozenset(kinds), "segments")
         return f"{len(self.legs)} {noun}"
 
     @property

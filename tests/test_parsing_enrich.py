@@ -356,3 +356,56 @@ def test_service_number_reads_the_old_flight_number_key() -> None:
     )
     assert r.service_number == "G324" and r.service_label == "Train"
     assert "service_number" in r.model_dump() and "flight_number" not in r.model_dump()
+
+
+def test_ferry_keeps_its_ports_and_takes_city_timezones() -> None:
+    """Ports have no IATA codes: one the model gives a ferry (Dublin's airport) is dropped, and the
+    ports stay as written instead of becoming 'Dublin (DUB)'."""
+    x = ExtractedReservation(
+        kind=Kind.FERRY,
+        title="Holyhead → Dublin",
+        provider="Irish Ferries",
+        start_local="2027-05-02T08:10",
+        end_local="2027-05-02T11:25",
+        start_location="Holyhead Port",
+        end_location="Dublin Port",
+        start_iata="HLY",
+        end_iata="DUB",
+        city="Dublin",
+        country_code="IE",
+        start_city="Holyhead",
+        start_country_code="GB",
+        service_number="W1",
+    )
+    assert (x.start_iata, x.end_iata) == (None, None)
+    r = enrich.normalise(x, reservation_id="r", ingest_id="i")
+    assert r is not None
+    assert (r.start_location, r.end_location, r.city) == ("Holyhead Port", "Dublin Port", "Dublin")
+    assert (r.start_tz, r.end_tz) == ("Europe/London", "Europe/Dublin")
+    assert r.service_label == "Sailing"
+    ics = calendar([Trip(id="t", owner="me", name="Dublin", reservations=[r])], "test").decode()
+    assert "DTSTART;TZID=Europe/London:20270502T081000" in ics
+    assert "DTEND;TZID=Europe/Dublin:20270502T112500" in ics
+    assert "Sailing: W1" in ics
+
+
+def test_ferry_without_timezone_departs_where_the_flight_arrived() -> None:
+    flight = ExtractedReservation(
+        kind=Kind.FLIGHT,
+        title="A3 601 LHR→ATH",
+        start_local="2027-07-10T07:00",
+        end_local="2027-07-10T12:40",
+        start_iata="LHR",
+        end_iata="ATH",
+    )
+    ferry = ExtractedReservation(
+        kind=Kind.FERRY,
+        title="Piraeus → Santorini",
+        start_local="2027-07-10T17:30",
+        end_local="2027-07-10T22:15",
+        start_location="Piraeus Port",
+        end_location="Santorini (Thira) Port",
+    )
+    rs = [r for x in (flight, ferry) if (r := enrich.normalise(x, reservation_id=x.title, ingest_id="i"))]
+    enrich.fill_timezones(rs)
+    assert (rs[1].start_tz, rs[1].end_tz) == ("Europe/Athens", "Europe/Athens")
