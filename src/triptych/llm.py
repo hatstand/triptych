@@ -30,12 +30,16 @@ connection (SFO→JFK→LIS) is one reservation per leg.
 - Times are LOCAL to where they happen, formatted YYYY-MM-DDTHH:MM. If only a date is given use \
 15:00 for hotel check-in, 11:00 for check-out, 09:00 otherwise.
 - If the year is missing, infer the next occurrence on or after the date the document was received.
-- For flights always fill start_iata/end_iata (3-letter airport codes) and flight_number.
+- For flights always fill start_iata/end_iata (3-letter airport codes) and service_number (the \
+flight number). For trains fill service_number with the train number.
 - city is where the traveller will BE (the arrival city for transport, the hotel's city for lodging).
 - Always fill country_code for city. For transport also fill start_city (where it departs from, in \
 English) and start_country_code: a train from Chengdu East to Beijing West has start_city "Chengdu", \
 city "Beijing", both CN.
-- Fill timezone with the IANA timezone of city (e.g. Asia/Shanghai for Beijing).
+- Fill start_timezone and end_timezone with the IANA timezones where the reservation starts and \
+ends. For transport they are start_city's and city's: a flight from London to Beijing has \
+start_timezone "Europe/London" and end_timezone "Asia/Shanghai". A hotel in Beijing has \
+Asia/Shanghai for both.
 - Never invent confirmation codes, seats or times that are not in the document. Use null instead.
 - If the document contains no travel reservations (newsletters, marketing, receipts for unrelated \
 things) set is_travel_document=false and return an empty list.

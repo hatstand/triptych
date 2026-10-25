@@ -81,7 +81,7 @@ async def seed() -> str:
             start_tz="America/Los_Angeles",
             end_tz="Europe/London",
             city="London",
-            flight_number="BA286",
+            service_number="BA286",
             seat="23A",
         ),
         res(
@@ -96,7 +96,7 @@ async def seed() -> str:
             start_tz="Europe/London",
             end_tz="Europe/Lisbon",
             city="Lisbon",
-            flight_number="BA500",
+            service_number="BA500",
             seat="14C",
         ),
         res(
@@ -140,7 +140,7 @@ async def seed() -> str:
             start_tz="Europe/Lisbon",
             end_tz="Europe/London",
             city="London",
-            flight_number="TP1351",
+            service_number="TP1351",
         ),
     ]
     p = date.today() + timedelta(days=40)
