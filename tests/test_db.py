@@ -365,6 +365,36 @@ def test_reconcile_skips_what_the_user_deleted() -> None:
     assert rec.added == []
 
 
+def test_reconcile_changes_the_kind_of_the_same_departure() -> None:
+    """A run that knows a kind the old one didn't (a ferry filed as `other`) updates it in place."""
+    old = from_ingest(res(Kind.OTHER, "2026-11-15T09:30", city="Lisbon", code="F7"), "mail-1")
+    ferry = old.model_copy(update={"id": "n1", "kind": Kind.FERRY, "title": "Lisbon to Cacilhas"})
+    other_code = ferry.model_copy(update={"id": "n2", "confirmation_code": "Z9"})
+    rec = db.reconcile([old], [other_code, ferry], [], set())
+    assert [u.id for u in rec.updated] == [old.id]
+    assert rec.changes[0].fields[0] == db.FieldChange(field="kind", old="other", new="ferry")
+    assert rec.missing == [] and rec.added == [other_code]  # a different booking code is a different one
+
+    # An owner who set the kind themselves keeps it.
+    kept = old.model_copy(update={"edited_fields": ["kind"]})
+    assert db.reconcile([kept], [ferry], [], set()).updated[0].kind is Kind.OTHER
+
+
+async def test_applying_a_reprocess_changes_the_kind_in_place(me: str) -> None:
+    item = InboxItem(
+        ingest_id="mail-2", source="email", label="x", received_at=datetime.now(UTC), state="done"
+    )
+    await db.upsert_inbox(me, item)
+    old = from_ingest(res(Kind.OTHER, "2026-11-15T09:30", city="Lisbon", code="F7"), "mail-2")
+    [stored] = (await db.file_reservations(me, "mail-2", [old])).reservations
+    ferry = old.model_copy(update={"id": str(uuid.uuid4()), "kind": Kind.FERRY})
+    done = await db.apply_reprocess(me, "mail-2", str(uuid.uuid4()), [ferry])
+    [trip_id] = done.filed.trip_ids
+    trip = await db.get_trip(me, trip_id)
+    assert trip is not None
+    assert [(r.id, r.kind) for r in trip.reservations] == [(stored.reservation.id, Kind.FERRY)]
+
+
 async def test_applying_a_reprocess_updates_in_place_and_never_resurrects(me: str) -> None:
     item = InboxItem(
         ingest_id="mail-1", source="email", label="x", received_at=datetime.now(UTC), state="done"
