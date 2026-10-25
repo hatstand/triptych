@@ -38,6 +38,10 @@ dev = [
     "squawk-cli==2.68.0",
     "playwright==1.64.1",
     "moto[s3]>=5.2.4",
+    "pydantic-evals>=2.61.0",
+    "scipy>=1.18.1",
+    "pyyaml>=6.0.3",
+    "rich>=15.0.0",
 ]
 
 [build-system]
@@ -60,7 +64,7 @@ allowed-confusables = ["–"]
 python-version = "3.13"
 
 [tool.ty.src]
-include = ["src", "tests", "scripts"]
+include = ["src", "tests", "scripts", "evals"]
 
 [tool.ty.rules]
 # Treat every diagnostic as an error so `ty check` fails CI/Tilt on anything it finds.
@@ -68,4 +72,7 @@ possibly-unresolved-reference = "error"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["src", "."]
+# `uv run pytest -m llm` runs the eval smoke set against a local Ollama (evals/README.md).
+markers = ["llm: needs a local Ollama with the extraction model pulled"]
+addopts = "-m 'not llm'"

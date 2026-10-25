@@ -1,0 +1,10 @@
+# yaml-language-server: $schema=../../expected.schema.json
+status: verified
+received_at: '2026-10-26T07:00:00-07:00'
+input: ../../../../samples/05-newsletter.eml
+source: email
+tags:
+- email
+- no-travel
+is_travel_document: false
+reservations: []

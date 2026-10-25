@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../expected.schema.json
+status: verified
+received_at: '2026-10-23T09:12:00-07:00'
+input: ../../../../samples/01-flight-lisbon.eml
+source: email
+tags:
+- email
+- flight
+- round-trip
+is_travel_document: true
+reservations:
+- kind: flight
+  start_local: 2026-11-12T15:40
+  end_local: 2026-11-13T11:25
+  start_iata: SFO
+  end_iata: LIS
+  city: Lisbon
+  country_code: PT
+  start_city: San Francisco
+  start_country_code: US
+  timezone: Europe/Lisbon
+  confirmation_code: QZ7K2M
+  flight_number: AQ 236
+  title: AQ 236 SFO→LIS
+  provider: Atlantica Air
+  seat: 23A
+  accept:
+    start_city:
+    - null
+    start_country_code:
+    - null
+    city:
+    - Lisboa
+- kind: flight
+  start_local: 2026-11-17T13:05
+  end_local: 2026-11-17T16:50
+  start_iata: LIS
+  end_iata: SFO
+  city: San Francisco
+  country_code: US
+  start_city: Lisbon
+  start_country_code: PT
+  timezone: America/Los_Angeles
+  confirmation_code: QZ7K2M
+  flight_number: AQ 237
+  title: AQ 237 LIS→SFO
+  provider: Atlantica Air
+  seat: 21C
+  accept:
+    start_city:
+    - null
+    start_country_code:
+    - null
