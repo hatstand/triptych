@@ -89,7 +89,7 @@ def normalise(
         end_location=end_location,
         address=x.address,
         city=city,
-        flight_number=x.flight_number,
+        service_number=x.service_number,
         seat=x.seat,
         travelers=x.travelers,
         notes=x.notes,
