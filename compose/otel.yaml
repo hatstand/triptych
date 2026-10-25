@@ -1,0 +1,29 @@
+# Opt-in, self-hosted place to look at traces and logs: Grafana's all-in-one OpenTelemetry image
+# (an OTel Collector feeding Tempo, Loki and Prometheus, with Grafana on :3000). Append
+# :compose/otel.yaml to COMPOSE_FILE. It points the app and Restate at it, so a trace runs from the
+# web request through Restate into the worker, Postgres and Ollama.
+x-otlp: &otlp
+  environment:
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-lgtm:4318
+
+services:
+  otel-lgtm:
+    image: docker.io/grafana/otel-lgtm:0.37.0
+    restart: unless-stopped
+    # Grafana has no sign-in in this image: keep it on loopback (or the tailnet via BIND_ADDR).
+    ports: ["${BIND_ADDR:-127.0.0.1}:3000:3000"]
+    volumes:
+      - otel-lgtm-data:/data
+
+  restate:
+    environment:
+      # OTLP/gRPC by default; Restate adds a span per invocation and per journal step.
+      RESTATE_TRACING_ENDPOINT: http://otel-lgtm:4317
+
+  web: *otlp
+  worker: *otlp
+  smtp: *otlp
+  admin: *otlp
+
+volumes:
+  otel-lgtm-data:

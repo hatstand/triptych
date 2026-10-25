@@ -3,7 +3,10 @@
   "name": "triptych-email",
   "main": "src/index.ts",
   "compatibility_date": "2026-10-01",
-  "observability": { "enabled": true },
+  // Workers Logs plus Cloudflare's automatic OpenTelemetry tracing (handler, fetch to /inbound).
+  // To send both to the same OTLP backend as the app, add it under Workers Observability →
+  // Destinations in the dashboard and list its name in logs/traces "destinations".
+  "observability": { "enabled": true, "traces": { "enabled": true } },
   "vars": {
     // Every address goes to marvin's public site. For per-machine test instances over Funnel, use
     // "https://{instance}.axolotl-goblin.ts.net/inbound": plans+<instance>@ then picks the machine,

@@ -8,11 +8,15 @@ import asyncio
 import logging
 import signal
 import socket
+from typing import cast
 
 import httpx
 import restate
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
+from hypercorn.typing import ASGIFramework
+from opentelemetry.instrumentation.asgi import OpenTelemetryMiddleware
+from restate.server_types import RestateAppT
 
 from triptych import db, telemetry
 from triptych.config import settings
@@ -75,6 +79,18 @@ async def request_photos() -> None:
         log.exception("couldn't ask for missing photos")
 
 
+def traced(endpoint: RestateAppT) -> ASGIFramework:
+    """Restate sends each attempt's trace context (W3C traceparent) as request headers, so a server
+    span per attempt puts everything the handler does (Ollama, Postgres, photo lookups) into the
+    invocation's trace.
+    Per-message send/receive spans would be noise on these long-lived HTTP/2 streams."""
+    middleware = OpenTelemetryMiddleware(
+        endpoint, excluded_urls="/discover,/health", exclude_spans=["receive", "send"]
+    )
+    # Typed with plain mappings rather than hypercorn's TypedDicts; it is an ASGI 3 app all the same.
+    return cast(ASGIFramework, middleware)
+
+
 async def start_up() -> None:
     if await register():
         await fill_timezones()
@@ -82,23 +98,23 @@ async def start_up() -> None:
 
 
 async def main() -> None:
-    telemetry.setup("triptych-worker")
-    # Listen before serving, so Restate's call back during registration waits in the backlog until
-    # hypercorn accepts it instead of racing the bind.
-    sock = socket.create_server(("0.0.0.0", 9080))
-    sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
-    config = Config()
-    config.bind = [f"fd://{sock.fileno()}"]
-    # A Logger, not "-", so hypercorn logs through ours instead of adding a plain-text handler.
-    config.errorlog = logging.getLogger("hypercorn.error")
-    # Stop on SIGINT, which compose sends this service (stop_signal). The Restate SDK takes over
-    # SIGTERM once serving, only to tell running invocations, so on its own the worker never exits
-    # and every deploy waits out Docker's stop timeout before killing it.
-    stop = asyncio.Event()
-    asyncio.get_running_loop().add_signal_handler(signal.SIGINT, stop.set)
-    startup = asyncio.create_task(start_up())
-    await serve(app, config, shutdown_trigger=stop.wait)
-    startup.cancel()
+    with telemetry.running("triptych-worker"):
+        # Listen before serving, so Restate's call back during registration waits in the backlog
+        # until hypercorn accepts it instead of racing the bind.
+        sock = socket.create_server(("0.0.0.0", 9080))
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+        config = Config()
+        config.bind = [f"fd://{sock.fileno()}"]
+        # A Logger, not "-", so hypercorn logs through ours instead of adding a plain-text handler.
+        config.errorlog = logging.getLogger("hypercorn.error")
+        # Stop on SIGINT, which compose sends this service (stop_signal). The Restate SDK takes over
+        # SIGTERM once serving, only to tell running invocations, so on its own the worker never
+        # exits and every deploy waits out Docker's stop timeout before killing it.
+        stop = asyncio.Event()
+        asyncio.get_running_loop().add_signal_handler(signal.SIGINT, stop.set)
+        startup = asyncio.create_task(start_up())
+        await serve(traced(app), config, shutdown_trigger=stop.wait)
+        startup.cancel()
 
 
 if __name__ == "__main__":
