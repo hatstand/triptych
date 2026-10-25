@@ -229,7 +229,6 @@ CREATE TABLE public.reservation (
     end_location text,
     address text,
     city text,
-    flight_number text,
     seat text,
     travelers text[] DEFAULT '{}'::text[] NOT NULL,
     notes text,
@@ -740,4 +739,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261024210000'),
     ('20261024220000'),
     ('20261025120000'),
-    ('20261025140000');
+    ('20261025140000'),
+    ('20261025150000');
