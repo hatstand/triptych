@@ -61,6 +61,38 @@ def test_normalise_flight_uses_airport_timezones() -> None:
     assert enrich.to_utc(r.start_local, r.start_tz) == datetime(2026, 11, 12, 23, 40, tzinfo=UTC)
 
 
+def test_flight_reads_airport_codes_from_its_locations() -> None:
+    x = ExtractedReservation(
+        kind=Kind.FLIGHT,
+        title="BA 286",
+        start_local="2027-01-20T16:30",
+        end_local="2027-01-21T10:40",
+        start_location="San Francisco International (SFO)",
+        end_location="London Heathrow (LHR)",
+    )
+    r = enrich.normalise(x, reservation_id="r1", ingest_id="i1")
+    assert r is not None
+    assert (r.start_tz, r.end_tz) == ("America/Los_Angeles", "Europe/London")
+    assert (r.start_location, r.end_location) == ("San Francisco (SFO)", "London (LHR)")
+
+
+def test_fill_timezones_corrects_a_flight_from_its_airports() -> None:
+    """A flight stored with its arrival zone at both ends gets its departure airport's zone."""
+    r = Reservation(
+        id="r",
+        kind=Kind.FLIGHT,
+        title="BA 286",
+        start_local=datetime(2027, 1, 20, 16, 30),
+        start_tz="Europe/London",
+        end_local=datetime(2027, 1, 21, 10, 40),
+        end_tz="Europe/London",
+        start_location="San Francisco (SFO)",
+        end_location="London (LHR)",
+    )
+    enrich.fill_timezones([r])
+    assert (r.start_tz, r.end_tz) == ("America/Los_Angeles", "Europe/London")
+
+
 def test_normalise_rejects_unparseable_time_and_bad_tz() -> None:
     bad = ExtractedReservation(kind=Kind.OTHER, title="?", start_local="sometime next week")
     assert enrich.normalise(bad, reservation_id="r", ingest_id="i") is None

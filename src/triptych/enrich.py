@@ -4,6 +4,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from triptych import places
+from triptych.journeys import iata_of
 from triptych.models import ExtractedReservation, Kind, Reservation
 
 TRANSPORT = (Kind.FLIGHT, Kind.RAIL)
@@ -55,7 +56,8 @@ def normalise(
         # `city` is where transport arrives. It departs from the airport's zone, or start_city's, or
         # else wherever the previous leg landed (fill_timezones).
         start_tz = places.city_timezone(x.start_city, x.start_country_code)
-        dep, arr = places.lookup(x.start_iata), places.lookup(x.end_iata)
+        dep = places.lookup(x.start_iata or iata_of(x.start_location))
+        arr = places.lookup(x.end_iata or iata_of(x.end_location))
         if dep:
             start_tz = valid_tz(dep.timezone) or start_tz
             start_location = f"{dep.city} ({dep.iata})"
@@ -101,7 +103,8 @@ def fill_timezones(rs: list[Reservation]) -> None:
     """Fill in timezones the document didn't give. Hotels and restaurants rarely state one, and
     trains have no airport codes to look up, but the leg that got you there says where you are.
 
-    A hotel/restaurant in a city whose name is unambiguous takes that city's zone, even over the
+    A flight or train whose locations name a known airport or station ('London (LHR)') takes its
+    zones. A hotel/restaurant in a city whose name is unambiguous takes that city's zone, even over the
     model's (which once put a Shanghai hotel in Asia/Hong_Kong), as does a transport leg with no
     arrival zone. Failing that a hotel/restaurant takes the arrival tz of the latest earlier
     transport leg (or the departure tz of the next one). A transport leg with no departure zone
@@ -109,6 +112,11 @@ def fill_timezones(rs: list[Reservation]) -> None:
     the zone it arrives in. `rs` must be sorted by start time; mutated in place."""
     for r in rs:
         if r.kind in TRANSPORT:
+            # An airport's zone beats any guess, made here or by the model.
+            if dep := places.lookup(iata_of(r.start_location)):
+                r.start_tz = dep.timezone
+            if arr := places.lookup(iata_of(r.end_location)):
+                r.end_tz = arr.timezone
             # A transport leg's city is where it arrives.
             r.end_tz = r.end_tz or places.city_timezone(r.city)
         else:
