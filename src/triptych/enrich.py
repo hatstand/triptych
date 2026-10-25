@@ -118,7 +118,16 @@ def fill_timezones(rs: list[Reservation]) -> None:
     arrival zone. Failing that a hotel/restaurant takes the arrival tz of the latest earlier
     transport leg (or the departure tz of the next one). A transport leg with no departure zone
     leaves from where the previous one landed if that was within STILL_THERE, and otherwise from
-    the zone it arrives in. `rs` must be sorted by start time; mutated in place."""
+    the zone it arrives in. A zone the owner set (Reservation.edited_fields) is never changed, and
+    tells the segments around it where they are. `rs` must be sorted by start time; mutated in
+    place."""
+    owner_set = [{f: getattr(r, f) for f in ("start_tz", "end_tz") if f in r.edited_fields} for r in rs]
+
+    def keep_owner_set() -> None:
+        for r, kept in zip(rs, owner_set, strict=True):
+            for f, tz in kept.items():
+                setattr(r, f, tz)
+
     for r in rs:
         if r.kind in TRANSPORT:
             # An airport's zone beats any guess, made here or by the model.
@@ -130,6 +139,7 @@ def fill_timezones(rs: list[Reservation]) -> None:
             r.end_tz = r.end_tz or places.city_timezone(r.city)
         elif tz := places.city_timezone(r.city):
             r.start_tz = r.end_tz = tz
+    keep_owner_set()
     arrival: str | None = None
     landed: datetime | None = None
     for r in rs:
@@ -149,3 +159,4 @@ def fill_timezones(rs: list[Reservation]) -> None:
             departure = r.start_tz or departure
         elif r.start_tz is None and departure:
             r.start_tz = r.end_tz = departure
+    keep_owner_set()

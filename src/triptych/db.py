@@ -14,7 +14,7 @@ import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from datetime import date, datetime
-from typing import Any, Literal
+from typing import Any, Literal, LiteralString
 
 import restate
 from psycopg import AsyncConnection
@@ -36,6 +36,7 @@ from triptych.models import (
     RawInput,
     ReprocessRequest,
     Reservation,
+    ReservationFields,
     Trip,
     TripSummary,
 )
@@ -89,8 +90,22 @@ async def changes(url: str) -> AsyncGenerator[str | None]:
 RESERVATION_COLUMNS = """
     id::text, kind, title, provider, confirmation_code, start_local, start_tz, end_local, end_tz,
     start_location, end_location, address, city, service_number, seat, travelers, notes,
-    source_ingest_id, source_run_id::text
+    source_ingest_id, source_run_id::text, edited_fields
 """
+
+# What a reservation's owner can correct on the trip page (ReservationFields).
+EDITABLE = (
+    "kind", "title", "provider", "confirmation_code", "start_local", "start_tz", "end_local", "end_tz",
+    "start_location", "end_location", "address", "city", "service_number", "seat", "travelers", "notes",
+)  # fmt: skip
+
+# Filing a segment that is already there updates it, except for what its owner corrected. (Its
+# kind is part of its dedupe key, so filing never changes that.)
+UNLESS_EDITED = ",\n".join(
+    f"{f} = CASE WHEN '{f}' = ANY(reservation.edited_fields) THEN reservation.{f} ELSE EXCLUDED.{f} END"
+    for f in EDITABLE
+    if f != "kind"
+)
 
 # A trip's photo credit (columns named photo_*), from the place_photo row for its place if that has an
 # image. The version is the place and when it was fetched, so it changes with the picture. (Finding the
@@ -151,19 +166,14 @@ async def _reservations(conn: AsyncConnection, trip_ids: list[str]) -> list[Rese
 
 async def _upsert_reservation(conn: AsyncConnection, trip_id: str, r: Reservation) -> None:
     await conn.execute(
-        """
+        f"""
         INSERT INTO reservation (id, trip_id, kind, title, provider, confirmation_code, start_local,
             start_tz, end_local, end_tz, start_location, end_location, address, city, service_number,
             seat, travelers, notes, source_ingest_id, source_run_id, dedupe_key)
         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (trip_id, dedupe_key) DO UPDATE SET
             -- keep the existing id: it keys this segment's scheduled reminders (see reminders.py)
-            title = EXCLUDED.title, provider = EXCLUDED.provider,
-            confirmation_code = EXCLUDED.confirmation_code, start_local = EXCLUDED.start_local,
-            start_tz = EXCLUDED.start_tz, end_local = EXCLUDED.end_local, end_tz = EXCLUDED.end_tz,
-            start_location = EXCLUDED.start_location, end_location = EXCLUDED.end_location,
-            address = EXCLUDED.address, city = EXCLUDED.city, service_number = EXCLUDED.service_number,
-            seat = EXCLUDED.seat, travelers = EXCLUDED.travelers, notes = EXCLUDED.notes,
+            {UNLESS_EDITED},
             source_ingest_id = EXCLUDED.source_ingest_id, source_run_id = EXCLUDED.source_run_id
         """,
         (
@@ -569,11 +579,9 @@ async def file_reservations(owner: str, ingest_id: str, reservations: list[Reser
 # their reminders), new ones are filed, and nothing is ever deleted: a reservation the new run
 # doesn't mention is only reported. Deleted ones (dismissed_reservation) stay deleted.
 
-# Fields a reprocess may change, in the order a diff shows them.
-FIELDS = (
-    "title", "provider", "confirmation_code", "start_local", "start_tz", "end_local", "end_tz",
-    "start_location", "end_location", "address", "city", "service_number", "seat", "travelers", "notes",
-)  # fmt: skip
+# Fields a reprocess may change, in the order a diff shows them: all but those the owner
+# corrected, and kind (a run that calls it something else has found something else).
+FIELDS = tuple(f for f in EDITABLE if f != "kind")
 
 
 def _shown(value: object) -> str | None:
@@ -626,11 +634,18 @@ def _as_dismissal(r: Reservation) -> Dismissal:
 
 
 def reconcile(
-    current: list[Reservation], candidates: list[Reservation], gone: list[Dismissal], taken: set[str]
+    current: list[Reservation],
+    candidates: list[Reservation],
+    gone: list[Dismissal],
+    taken: set[str],
+    keys: dict[str, str] | None = None,
 ) -> Reconciliation:
     """Match a run's reservations (`candidates`) to the ingest's `current` ones, one to one: the
     exact key first, then the looser rules `dismissed` uses. `taken` is the dedupe key of every
-    reservation the user has."""
+    reservation the user has. `keys` are the current ones' stored dedupe keys, which are what their
+    extraction said even where the owner has corrected them since. A match keeps every field its
+    owner corrected."""
+    keys = keys or {}
     free = list(current)
     match: dict[int, Reservation] = {}
 
@@ -642,7 +657,7 @@ def reconcile(
                 match[i] = e
                 free.remove(e)
 
-    pair(lambda c, e: dedupe_key(c) == dedupe_key(e))
+    pair(lambda c, e: dedupe_key(c) in (keys.get(e.id), dedupe_key(e)))
     pair(lambda c, e: dismissed(c, _as_dismissal(e)))
 
     out = Reconciliation(missing=free)
@@ -652,7 +667,13 @@ def reconcile(
             # Timezones are often inferred after extraction (from the trip's other segments), so a
             # run that doesn't name one leaves the known one.
             u = c.model_copy(
-                update={"id": e.id, "start_tz": c.start_tz or e.start_tz, "end_tz": c.end_tz or e.end_tz}
+                update={
+                    "id": e.id,
+                    "start_tz": c.start_tz or e.start_tz,
+                    "end_tz": c.end_tz or e.end_tz,
+                    **{f: getattr(e, f) for f in e.edited_fields},
+                    "edited_fields": e.edited_fields,
+                }
             )
             out.updated.append(u)
             fields = [
@@ -686,11 +707,14 @@ async def _reconciliation(
         )
         current = await cur.fetchall()
     cur = await conn.execute(
-        "SELECT dedupe_key FROM reservation WHERE trip_id IN (SELECT id FROM trip WHERE owner = %s)",
+        """SELECT id::text, dedupe_key, source_ingest_id FROM reservation
+           WHERE trip_id IN (SELECT id FROM trip WHERE owner = %s)""",
         (owner,),
     )
-    taken = {row[0] for row in await cur.fetchall()}
-    return reconcile(current, candidates, await _dismissals(conn, owner, ingest_id), taken)
+    rows = await cur.fetchall()
+    keys = {rid: key for rid, key, ingest in rows if ingest == ingest_id}
+    taken = {key for _, key, _ in rows}
+    return reconcile(current, candidates, await _dismissals(conn, owner, ingest_id), taken, keys)
 
 
 async def preview_reprocess(owner: str, ingest_id: str, candidates: list[Reservation]) -> Reconciliation:
@@ -721,9 +745,10 @@ async def apply_reprocess(
                     start_local = %s, start_tz = %s, end_local = %s, end_tz = %s,
                     start_location = %s, end_location = %s, address = %s, city = %s,
                     service_number = %s, seat = %s, travelers = %s, notes = %s, source_run_id = %s,
-                    dedupe_key = %s
-                WHERE a.id = %s AND NOT EXISTS (SELECT 1 FROM reservation b
-                    WHERE b.trip_id = a.trip_id AND b.dedupe_key = %s AND b.id <> a.id)
+                    -- A corrected one keeps the key its owner's edits were made against.
+                    dedupe_key = CASE WHEN a.edited_fields = '{}' THEN %s ELSE a.dedupe_key END
+                WHERE a.id = %s AND (a.edited_fields <> '{}' OR NOT EXISTS (SELECT 1 FROM reservation b
+                    WHERE b.trip_id = a.trip_id AND b.dedupe_key = %s AND b.id <> a.id))
                 RETURNING trip_id::text
                 """,
                 (u.title, u.provider, u.confirmation_code, u.start_local, u.start_tz, u.end_local,
@@ -841,6 +866,40 @@ async def rename_trip(owner: str, trip_id: str, name: str) -> None:
                 "UPDATE trip SET name = %s, name_edited = true WHERE id = %s", (name.strip(), trip_id)
             )
             await _changed(conn, owner)
+
+
+async def edit_reservation(
+    owner: str, trip_id: str, reservation_id: str, fields: ReservationFields
+) -> Filed | None:
+    """Correct a reservation. Every field that changes is marked as the owner's, so filing and
+    reprocessing leave it be. Returns the trip as stored (a new time means new reminders), or None
+    if nothing changed."""
+    async with connection() as conn, conn.transaction():
+        await _owned(conn, owner, trip_id)
+        async with conn.cursor(row_factory=class_row(Reservation)) as cur:
+            await cur.execute(
+                f"SELECT {RESERVATION_COLUMNS} FROM reservation WHERE id = %s AND trip_id = %s",
+                (reservation_id, trip_id),
+            )
+            r = await cur.fetchone()
+        if r is None:
+            raise restate.TerminalError("reservation not found", status_code=404)
+        changed: list[LiteralString] = [f for f in EDITABLE if getattr(fields, f) != getattr(r, f)]
+        if not changed:
+            return None
+        values = fields.model_dump(include=set(changed))
+        if "kind" in values:
+            values["kind"] = fields.kind.value
+        await conn.execute(
+            f"""UPDATE reservation SET {", ".join(f"{f} = %({f})s" for f in changed)},
+                    edited_fields = %(edited)s
+                WHERE id = %(id)s""",
+            {**values, "edited": sorted({*r.edited_fields, *changed}), "id": reservation_id},
+        )
+        await _fill_timezones(conn, trip_id)
+        await _retitle(conn, trip_id)
+        await _changed(conn, owner)
+        return await _stored(conn, [trip_id])
 
 
 async def delete_trip(owner: str, trip_id: str) -> None:

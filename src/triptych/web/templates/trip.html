@@ -9,6 +9,61 @@
 {% macro until(start, start_tz, end, end_tz) -%}
 {% if end.date() != start.date() %}{{ end.strftime('%a') }} {% endif %}{{ end.strftime('%H:%M') }}{% if end_tz and end_tz != start_tz %} <span class="muted small">{{ end | tz_abbr(end_tz) }}</span>{% endif %}
 {%- endmacro %}
+{% macro edit_button(r) -%}
+<button type="button" class="link small" commandfor="edit-{{ r.id }}" command="show-modal">edit</button>
+{%- endmacro %}
+{#- A labelled field of the edit dialog, marked when its owner has corrected it before. -#}
+{% macro field(r, name, label, value, type='text', wide=false) %}
+<label class="field{{ ' wide' if wide }}">
+  <span>{{ label }}{% if name in r.edited_fields %} <span class="muted">· edited</span>{% endif %}</span>
+  {% if type == 'textarea' %}<textarea name="{{ name }}" rows="2">{{ value or '' }}</textarea>
+  {% else %}<input name="{{ name }}" type="{{ 'text' if type == 'zone' else type }}" value="{{ value or '' }}"
+    {%- if type == 'zone' %} list="timezones" placeholder="Europe/Lisbon" autocomplete="off" spellcheck="false"{% endif %}
+    {%- if kwargs.required %} required{% endif %}>{% endif %}
+</label>
+{% endmacro %}
+{#- Every field of a reservation, to put right what extraction got wrong. What its owner changes
+    stays as they set it when the same booking is filed or reprocessed again (db.edit_reservation).
+    Cancel, Escape and a click outside close it unsaved; dialog.ts puts the values back. -#}
+{% macro edit_dialog(r) %}
+{% set local = '%Y-%m-%dT%H:%M' %}
+<dialog id="edit-{{ r.id }}" class="dialog wide" closedby="any" aria-labelledby="edit-{{ r.id }}-title">
+  <h2 id="edit-{{ r.id }}-title">Edit {{ r.title }}</h2>
+  <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/edit" class="stack">
+    <div class="fields">
+      <label class="field">
+        <span>Kind{% if 'kind' in r.edited_fields %} <span class="muted">· edited</span>{% endif %}</span>
+        <select name="kind">
+          {% for k in kinds %}<option value="{{ k.value }}"{% if k == r.kind %} selected{% endif %}>{{ k.value | capitalize }}</option>{% endfor %}
+        </select>
+      </label>
+      {{ field(r, 'title', 'Title', r.title, required=true) }}
+      {{ field(r, 'start_local', 'Starts', r.start_local.strftime(local), type='datetime-local', required=true) }}
+      {{ field(r, 'start_tz', 'Start timezone', r.start_tz, type='zone') }}
+      {{ field(r, 'end_local', 'Ends', r.end_local.strftime(local) if r.end_local, type='datetime-local') }}
+      {{ field(r, 'end_tz', 'End timezone', r.end_tz, type='zone') }}
+      {{ field(r, 'start_location', 'From', r.start_location) }}
+      {{ field(r, 'end_location', 'To', r.end_location) }}
+      {{ field(r, 'city', 'City', r.city) }}
+      {{ field(r, 'provider', 'Provider', r.provider) }}
+      {{ field(r, 'address', 'Address', r.address, wide=true) }}
+      {{ field(r, 'confirmation_code', 'Confirmation', r.confirmation_code) }}
+      {{ field(r, 'service_number', 'Flight, train or sailing number', r.service_number) }}
+      {{ field(r, 'seat', 'Seat', r.seat) }}
+      {{ field(r, 'travelers', 'Travelers, one per line', r.travelers | join('\n'), type='textarea', wide=true) }}
+      {{ field(r, 'notes', 'Notes', r.notes, type='textarea', wide=true) }}
+    </div>
+    <div class="dialog-actions">
+      <button type="button" class="button secondary" commandfor="edit-{{ r.id }}" command="close">Cancel</button>
+      <button>Save</button>
+    </div>
+  </form>
+  <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/delete" class="dialog-footer"
+        onsubmit="return confirm('Remove this item?')">
+    <button class="danger">Remove item</button>
+  </form>
+</dialog>
+{% endmacro %}
 {#- One reservation. On the timeline its times are in the clock column (a flight, train or ferry's arrival
     too); inside a journey they are on the card, with the icon. -#}
 {% macro segment(r, on_rail=false) %}
@@ -17,8 +72,7 @@
   <div class="body">
     <div class="row">
       <b>{{ r.title }}</b>
-      <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/delete"
-            onsubmit="return confirm('Remove this item?')"><button class="link small">remove</button></form>
+      {{ edit_button(r) }}
     </div>
     {% if on_rail and r.kind.value in transport %}
     {% if r.end_local %}<div class="muted small">{{ elapsed(r.start_local, r.start_tz, r.end_local, r.end_tz) | duration }}</div>{% endif %}
@@ -60,8 +114,7 @@
   <div class="body">
     <div class="row">
       <b>{{ h.title }}</b>
-      <form method="post" action="/trips/{{ trip.id }}/reservations/{{ h.id }}/delete"
-            onsubmit="return confirm('Remove this item?')"><button class="link small">remove</button></form>
+      {{ edit_button(h) }}
     </div>
     <div class="when">Check-in from {{ h.start_local.strftime('%H:%M') }}
       {%- if s.nights %} <span class="muted small">· {{ s.nights }} night{{ 's' if s.nights != 1 }}, check out {{ h.end_local.strftime('%a %H:%M') }}</span>{% endif %}</div>
@@ -190,4 +243,7 @@
     </section>
   </aside>
 </div>
+{#- Outside the timeline, so a leg's dialog opens even while its journey is folded. -#}
+{% for r in trip.reservations %}{{ edit_dialog(r) }}{% endfor %}
+<datalist id="timezones">{% for z in timezones %}<option value="{{ z }}">{% endfor %}</datalist>
 {% endblock %}

@@ -363,6 +363,14 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
     await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
     await page.screenshot(path=out / scheme / "08-home-short-bottom.png", animations="disabled")
     await page.close()
+    # A reservation's edit dialog, open over the trip page.
+    page = await user.new_page()
+    await page.goto(f"{WEB}/trips/{trip_id}", wait_until="load")
+    await page.evaluate("document.fonts.ready")
+    await page.locator(".timeline button[command=show-modal]:visible").first.click()
+    await page.locator("dialog[open]").wait_for()
+    await page.screenshot(path=out / scheme / "10-reservation-edit.png", animations="disabled")
+    await page.close()
     for ctx in (anon, user, admin):
         await ctx.close()
 

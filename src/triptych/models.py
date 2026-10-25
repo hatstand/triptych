@@ -154,8 +154,9 @@ class Extraction(BaseModel):
 # --- Normalised domain -----------------------------------------------------------------------
 
 
-class Reservation(BaseModel):
-    id: str
+class ReservationFields(BaseModel):
+    """What a reservation says: everything its owner can correct on the trip page."""
+
     kind: Kind
     title: str
     provider: str | None = None
@@ -177,9 +178,15 @@ class Reservation(BaseModel):
     seat: str | None = None
     travelers: list[str] = Field(default_factory=list)
     notes: str | None = None
+
+
+class Reservation(ReservationFields):
+    id: str
     source_ingest_id: str | None = None
     source_run_id: str | None = None
     """The extraction run (db extraction_run) this came from."""
+    edited_fields: list[str] = Field(default_factory=list)
+    """The fields its owner corrected, which filing and reprocessing leave as they are."""
 
     @property
     def start_date(self) -> date:
@@ -392,6 +399,12 @@ class TripRef(BaseModel):
 class RemoveReservation(BaseModel):
     trip_id: str
     reservation_id: str
+
+
+class EditReservation(BaseModel):
+    trip_id: str
+    reservation_id: str
+    fields: ReservationFields
 
 
 class RenameTrip(BaseModel):
