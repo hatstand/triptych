@@ -8,7 +8,7 @@ from datetime import date, datetime
 from enum import StrEnum
 from typing import Annotated, Any, Literal
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, WithJsonSchema
+from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, WithJsonSchema
 
 from triptych import places
 
@@ -85,7 +85,12 @@ class ExtractedReservation(BaseModel):
     start_city: str | None = Field(None, description="City in English the transport departs from")
     start_country_code: StartCountry = None
     timezone: str | None = Field(None, description="IANA timezone of the city, e.g. Europe/Lisbon")
-    flight_number: str | None = None
+    service_number: str | None = Field(
+        None,
+        # Extraction runs stored before the rename (extraction_run.output) still say flight_number.
+        validation_alias=AliasChoices("service_number", "flight_number"),
+        description="Flight or train number, e.g. 'BA 286', 'G324', 'Alfa Pendular 121'",
+    )
     seat: str | None = None
     travelers: list[str] = Field(default_factory=list)
     notes: str | None = Field(None, description="Other useful facts: cabin, room type, party size…")
@@ -115,7 +120,12 @@ class Reservation(BaseModel):
     end_location: str | None = None
     address: str | None = None
     city: str | None = None
-    flight_number: str | None = None
+    service_number: str | None = Field(
+        None,
+        # Restate journals from before the rename still say flight_number.
+        validation_alias=AliasChoices("service_number", "flight_number"),
+    )
+    """A flight or train number."""
     seat: str | None = None
     travelers: list[str] = Field(default_factory=list)
     notes: str | None = None
@@ -126,6 +136,11 @@ class Reservation(BaseModel):
     @property
     def start_date(self) -> date:
         return self.start_local.date()
+
+    @property
+    def service_label(self) -> str:
+        """What to call `service_number`."""
+        return {Kind.FLIGHT: "Flight", Kind.RAIL: "Train"}.get(self.kind, "Number")
 
     @property
     def end_date(self) -> date:

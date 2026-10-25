@@ -40,7 +40,7 @@ def _event(trip: Trip, r: Reservation) -> Event:
     for label, val in (
         ("Provider", r.provider),
         ("Confirmation", r.confirmation_code),
-        ("Flight", r.flight_number),
+        (r.service_label, r.service_number),
         ("Seat", r.seat),
         ("Notes", r.notes),
     ):
