@@ -231,7 +231,7 @@ def test_reprocess_starts_a_workflow_per_ingest_with_an_original(
     r = client.post("/", data=data, headers={**as_login(OWNER), "Origin": SITE})
     assert r.status_code == 200
     assert "Started 1 ingest as batch" in r.text
-    assert asked == [{"state": "failed", "email": None, "since": None, "limit": 10}]
+    assert asked == [{"ingest_id": None, "state": "failed", "email": None, "since": None, "limit": 10}]
     [req] = restate_client.sent
     assert (req.ingest_id, req.mode, req.model, req.from_run_id) == ("mail-1", "dry_run", "gemma4:31b", None)
 
@@ -276,3 +276,44 @@ def test_reprocess_from_another_origin_is_refused(
     r = client.post("/", data=data, headers={**as_login(OWNER), "Origin": "https://evil.example"})
     assert r.status_code == 403
     assert restate_client.sent == []
+
+
+def test_ingest_rows_offer_a_dry_run_of_just_that_ingest(
+    filters: list[str | None], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    r = client.get("/", headers=as_login(OWNER))
+    assert '<input type="hidden" name="ingest" value="web-1">' not in r.text  # nothing to reprocess from
+
+    kept = FAILED.model_copy(update={"has_original": True, "has_run": True})
+    queued = FAILED.model_copy(update={"ingest_id": "web-2", "state": "queued", "has_original": True})
+
+    async def recent_ingests(state: str | None = None, limit: int = 100) -> list[db.AdminInboxItem]:
+        return [kept, queued]
+
+    monkeypatch.setattr(admin.db, "recent_ingests", recent_ingests)
+    r = client.get("/", headers=as_login(OWNER))
+    assert '<input type="hidden" name="ingest" value="web-1">' in r.text
+    assert 'name="source" value="extract"' in r.text and 'name="source" value="stored"' in r.text
+    assert 'value="web-2"' not in r.text  # not finished yet
+
+
+def test_reprocess_one_ingest(
+    filters: list[str | None], restate_client: FakeRestate, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    asked: list[dict[str, Any]] = []
+
+    async def reprocess_candidates(**kw: Any) -> list[db.ReprocessCandidate]:
+        asked.append(kw)
+        return [db.ReprocessCandidate(ingest_id="web-1", owner="u1", input_id="i1", current_run_id="run-1")]
+
+    monkeypatch.setattr(admin.db, "reprocess_candidates", reprocess_candidates)
+    data = {"action": "reprocess", "ingest": "web-1", "source": "stored", "model": "gemma4:31b"}
+    r = client.post("/", data=data, headers={**as_login(OWNER), "Origin": SITE})
+    assert r.status_code == 200
+    assert "Started 1 ingest as batch" in r.text
+    assert asked == [{"ingest_id": "web-1", "state": None, "email": None, "since": None, "limit": 50}]
+    [req] = restate_client.sent
+    assert (req.ingest_id, req.mode, req.from_run_id) == ("web-1", "dry_run", "run-1")
+    # Each go is its own batch, so the workflow key is fresh and Apply on it re-derives just this one.
+    client.post("/", data=data, headers={**as_login(OWNER), "Origin": SITE})
+    assert restate_client.sent[0].batch_id != restate_client.sent[1].batch_id

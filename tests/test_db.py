@@ -245,6 +245,9 @@ async def test_admin_ingest_queries_span_users(me: str) -> None:
         ("old", "me@example.com"),
     ]
     assert [i.ingest_id for i in await db.recent_ingests("failed")] == ["b", "old"]
+    assert not any(i.has_original or i.has_run for i in await db.recent_ingests())  # nothing was kept
+    [one] = await db.reprocess_candidates(ingest_id="b")
+    assert (one.ingest_id, one.owner) == ("b", you)
 
 
 async def test_trips_share_their_place_photo_once_stored(me: str) -> None:

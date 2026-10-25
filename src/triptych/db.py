@@ -1174,6 +1174,10 @@ async def notifications(owner: str) -> list[Notification]:
 class AdminInboxItem(InboxItem):
     owner: str
     """The owner's primary address (their user id if they have none)."""
+    has_original: bool = False
+    """Its original was kept, so it can be extracted again."""
+    has_run: bool = False
+    """It has a recorded run, so it can be re-derived without the GPU."""
 
 
 async def ingest_counts(since: datetime) -> dict[str, int]:
@@ -1190,7 +1194,8 @@ async def recent_ingests(state: str | None = None, limit: int = 100) -> list[Adm
             """SELECT ingest_id, source, label, received_at, state, message,
                       ARRAY(SELECT x::text FROM unnest(trip_ids) x) AS trip_ids,
                       coalesce((SELECT email FROM user_email e WHERE e.user_id = i.owner
-                                ORDER BY created_at, email LIMIT 1), owner::text) AS owner
+                                ORDER BY created_at, email LIMIT 1), owner::text) AS owner,
+                      input_id IS NOT NULL AS has_original, current_run_id IS NOT NULL AS has_run
                FROM inbox_item i WHERE %(state)s::text IS NULL OR state = %(state)s
                ORDER BY received_at DESC LIMIT %(limit)s""",
             {"state": state, "limit": limit},
@@ -1206,19 +1211,31 @@ class ReprocessCandidate(BaseModel):
 
 
 async def reprocess_candidates(
-    *, state: str | None = None, email: str | None = None, since: date | None = None, limit: int = 50
+    *,
+    ingest_id: str | None = None,
+    state: str | None = None,
+    email: str | None = None,
+    since: date | None = None,
+    limit: int = 50,
 ) -> list[ReprocessCandidate]:
     """Finished ingests matching the admin's filter, newest first."""
     async with connection() as conn, conn.cursor(row_factory=class_row(ReprocessCandidate)) as cur:
         await cur.execute(
             """SELECT ingest_id, owner::text, input_id::text, current_run_id::text FROM inbox_item
                WHERE state IN ('done', 'no_travel', 'failed')
+                 AND (%(ingest)s::text IS NULL OR ingest_id = %(ingest)s)
                  AND (%(state)s::text IS NULL OR state = %(state)s)
                  AND (%(email)s::text IS NULL
                       OR owner IN (SELECT user_id FROM user_email WHERE email = %(email)s))
                  AND (%(since)s::date IS NULL OR received_at >= %(since)s)
                ORDER BY received_at DESC LIMIT %(limit)s""",
-            {"state": state, "email": email and normalise_email(email), "since": since, "limit": limit},
+            {
+                "ingest": ingest_id,
+                "state": state,
+                "email": email and normalise_email(email),
+                "since": since,
+                "limit": limit,
+            },
         )
         return await cur.fetchall()
 

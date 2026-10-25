@@ -30,7 +30,15 @@ from playwright.async_api import Browser, BrowserContext, Route, ViewportSize, a
 
 from triptych import auth, db, photos
 from triptych.config import settings
-from triptych.models import InboxItem, IngestState, Kind, Notification, ReprocessRequest, Reservation
+from triptych.models import (
+    ExtractionRun,
+    InboxItem,
+    IngestState,
+    Kind,
+    Notification,
+    ReprocessRequest,
+    Reservation,
+)
 from triptych.services import place_photo
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -239,6 +247,12 @@ async def seed() -> str:
             trip_ids=filed.trip_ids,
         )
         await db.upsert_inbox(me, item)
+        # A recorded run, so the admin page offers to re-derive it.
+        run = ExtractionRun(
+            id=str(uuid.uuid4()), ingest_id=ingest, owner=me, input_id=None, model="gemma4:26b",
+            model_digest=None, prompt_version="v1", code_version="dev", params={}, purpose="ingest",
+        )  # fmt: skip
+        await db.add_extraction_run(run)
     unfiled: list[tuple[str, IngestState, str | None]] = [
         ("Fwd: Car hire voucher", "extracting", None),
         ("Screenshot 2026-10-21.png", "queued", None),
