@@ -208,13 +208,15 @@ main {
 }
 input,
 textarea,
+select,
 button,
 .button {
   font: inherit;
   border-radius: 8px;
 }
 input,
-textarea {
+textarea,
+select {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--line);
@@ -449,6 +451,39 @@ button.danger {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+/* A dialog with a form of labelled fields, two to a row where there's room. */
+.dialog.wide {
+  width: min(560px, calc(100vw - 32px));
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px 12px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+.field.wide {
+  grid-column: 1 / -1;
+}
+/* A long form scrolls under its buttons, which stay at the foot of the dialog. */
+.dialog.wide .dialog-actions {
+  position: sticky;
+  bottom: -18px;
+  margin: 0 -18px -18px;
+  padding: 12px 18px 18px;
+  background: var(--card);
+  border-top: 1px solid var(--line);
+}
+.field input,
+.field textarea,
+.field select {
+  font-size: 1rem;
 }
 /* The timeline: a clock column, then the rail with a node per entry, then the entry's card. The
    rail is one line from the first node to the last: each entry draws it from its node down to the

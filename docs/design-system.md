@@ -199,6 +199,10 @@ side) over a 45% black backdrop; `.dialog-actions` puts Cancel and the primary b
 bottom right, and `.dialog-footer` sets a destructive action apart under a `--line` rule.
 Cancel, Escape and a backdrop click close it, and `dialog.ts` resets its forms so nothing
 unsaved survives (it also fills in commands and backdrop clicks where a browser lacks them).
+`.dialog.wide` (560px) holds a form of labelled fields: `.fields` lays `.field` labels (a
+`0.85rem` `--muted` caption over the input) two to a row where they fit, one on a phone, and
+`.field.wide` takes a whole row. Its `.dialog-actions` stick to the foot of the dialog while the
+fields scroll. The trip page's reservation editor is one.
 
 **Answer** `.answer`: `--bg` inset box that keeps the model's line breaks.
 

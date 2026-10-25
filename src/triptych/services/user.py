@@ -9,7 +9,15 @@ Each write is one `ctx.run` step wrapping an idempotent DB transaction (see db.p
 import restate
 
 from triptych import db
-from triptych.models import FileRequest, FileResult, ReconcileRequest, RemoveReservation, RenameTrip, TripRef
+from triptych.models import (
+    EditReservation,
+    FileRequest,
+    FileResult,
+    ReconcileRequest,
+    RemoveReservation,
+    RenameTrip,
+    TripRef,
+)
 from triptych.services import place_photo, reminders
 
 user = restate.VirtualObject("User")
@@ -62,6 +70,24 @@ async def remove_reservation(ctx: restate.ObjectContext, req: RemoveReservation)
         # Removing the Porto hotel from a Lisbon & Porto trip can move its destination.
         await place_photo.request(ctx, [req.trip_id])
     return exists
+
+
+@user.handler()
+async def edit_reservation(ctx: restate.ObjectContext, req: EditReservation) -> None:
+    filed = await ctx.run_typed(
+        "edit reservation",
+        db.edit_reservation,
+        restate.RunOptions[db.Filed | None](),
+        ctx.key(),
+        req.trip_id,
+        req.reservation_id,
+        req.fields,
+    )
+    if filed is not None:
+        # A new time is a new reminder; the old one finds the time changed and does nothing.
+        await reminders.schedule(ctx, ctx.key(), filed.reservations)
+        # A new city can move the trip's destination.
+        await place_photo.request(ctx, filed.trip_ids)
 
 
 @user.handler()

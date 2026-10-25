@@ -13,6 +13,7 @@ from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Any, TypedDict, cast
 from urllib.parse import quote
+from zoneinfo import available_timezones
 
 import restate
 from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
@@ -20,19 +21,22 @@ from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.sse import EventSourceResponse, ServerSentEvent
 from fastapi.templating import Jinja2Templates
 from limits import RateLimitItem
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 from starlette.middleware.base import RequestResponseEndpoint
 
-from triptych import auth, db, ical, inbound, journeys, llm, senders, telemetry
+from triptych import auth, db, enrich, ical, inbound, journeys, llm, senders, telemetry
 from triptych.config import settings
 from triptych.models import (
     Answer,
     AskTrip,
+    EditReservation,
     IngestRequest,
+    Kind,
     Notification,
     Overview,
     RemoveReservation,
     RenameTrip,
+    ReservationFields,
     Trip,
     TripRef,
 )
@@ -79,6 +83,8 @@ templates.env.filters["tz_abbr"] = journeys.tz_abbr
 # Jinja types globals by its own defaults' types; any value is allowed.
 cast(dict[str, Any], templates.env.globals)["static"] = Assets().url
 cast(dict[str, Any], templates.env.globals)["elapsed"] = journeys.elapsed
+cast(dict[str, Any], templates.env.globals)["kinds"] = list(Kind)
+cast(dict[str, Any], templates.env.globals)["timezones"] = sorted(available_timezones())
 
 
 def state(request: Request) -> AppState:
@@ -514,6 +520,58 @@ async def trip_ask(
 @app.post("/trips/{trip_id}/rename")
 async def trip_rename(trip_id: str, me: User, client: Client, name: Annotated[str, Form()]) -> Response:
     await client.object_call(user_svc.rename_trip, me.id, RenameTrip(trip_id=trip_id, name=name))
+    return RedirectResponse(f"/trips/{trip_id}", status_code=303)
+
+
+class ReservationForm(ReservationFields):
+    """The trip page's edit form (trip.html): a blank field is none, travelers are one per line."""
+
+    @field_validator("*", mode="before")
+    @classmethod
+    def blank_is_none(cls, v: Any) -> Any:
+        if isinstance(v, str):
+            return v.strip() or None
+        return v
+
+    @field_validator("travelers", mode="before")
+    @classmethod
+    def one_per_line(cls, v: Any) -> Any:
+        lines = v if isinstance(v, list) else [v or ""]
+        return [name.strip() for line in lines for name in str(line).splitlines() if name.strip()]
+
+    @field_validator("start_tz", "end_tz")
+    @classmethod
+    def known_zone(cls, v: str | None) -> str | None:
+        if v is not None and enrich.valid_tz(v) is None:
+            raise ValueError(f"{v} isn't a timezone we know, like Europe/Lisbon")
+        return v
+
+    @model_validator(mode="after")
+    def ends_after_it_starts(self) -> "ReservationForm":
+        """The timeline runs forward in time, so nothing may end before it starts. Wall clocks in two
+        zones are compared as instants; without both zones, as the times written."""
+        if self.end_local is None:
+            return self
+        start, end = self.start_local, self.end_local
+        if self.start_tz and self.end_tz:
+            start, end = enrich.to_utc(start, self.start_tz), enrich.to_utc(end, self.end_tz)
+        elif self.start_tz or self.end_tz:
+            return self  # one zone unknown: it could be either way round
+        if start is not None and end is not None and end < start:
+            raise ValueError("it ends before it starts")
+        return self
+
+
+@app.post("/trips/{trip_id}/reservations/{reservation_id}/edit")
+async def reservation_edit(
+    trip_id: str, reservation_id: str, me: User, client: Client, form: Annotated[ReservationForm, Form()]
+) -> Response:
+    fields = ReservationFields.model_validate(form.model_dump())
+    await client.object_call(
+        user_svc.edit_reservation,
+        me.id,
+        EditReservation(trip_id=trip_id, reservation_id=reservation_id, fields=fields),
+    )
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)
 
 
