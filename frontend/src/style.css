@@ -457,6 +457,9 @@ button.danger {
   --node: 32px;
   --gap: 10px;
   --rail-x: calc(var(--clock) + var(--gap) + var(--node) / 2 - 1px);
+  --entry-gap: 12px;
+  --stop: 12px;
+  --stop-lift: 27px;
 }
 .day {
   position: relative;
@@ -497,7 +500,7 @@ button.danger {
   grid-template-columns: var(--clock) var(--node) minmax(0, 1fr);
   gap: 0 var(--gap);
   align-items: start;
-  padding-bottom: 12px;
+  padding-bottom: var(--entry-gap);
 }
 .entry::before {
   top: calc(10px + var(--node) / 2);
@@ -505,6 +508,11 @@ button.danger {
 }
 .day-group:last-child .entry:last-child::before {
   display: none;
+}
+/* The last entry still runs from its node to where it arrives, if it does. */
+.day-group:last-child .entry:last-child:has(.stop)::before {
+  display: block;
+  bottom: calc(var(--entry-gap) + var(--stop-lift) + var(--stop) / 2);
 }
 .entry.flight {
   --kind: var(--flight);
@@ -562,9 +570,9 @@ button.danger {
 /* Where a flight or train arrives, level with the arrival time at the foot of the clock. */
 .stop {
   position: relative;
-  width: 12px;
-  height: 12px;
-  margin-bottom: 27px;
+  width: var(--stop);
+  height: var(--stop);
+  margin-bottom: var(--stop-lift);
   border: 2px solid var(--kind);
   border-radius: 50%;
   background: var(--card);
