@@ -66,20 +66,25 @@ class LlmError(RuntimeError):
     pass
 
 
-def chat_params() -> dict[str, Any]:
+Think = bool | str
+"""Ollama's `think`: on or off, or a level ("low", "medium", "high") for models that take one."""
+
+
+def chat_params(think: Think = False) -> dict[str, Any]:
     """The generation settings every call uses (recorded with each extraction run)."""
     return {
         # Gemma 4 thinks by default; for extraction that mostly burns tokens (and can loop until
-        # the context is exhausted), so turn it off and cap output to fail fast and retry instead.
-        "think": False,
+        # the context is exhausted), so it's off unless an eval asks, and output is capped to fail
+        # fast and retry instead.
+        "think": think,
         "options": {"temperature": 0, "num_ctx": settings.llm_num_ctx, "num_predict": 4096},
     }
 
 
-def prompt_version() -> str:
+def prompt_version(system: str = EXTRACT_SYSTEM) -> str:
     """Names the extraction prompt: changes whenever the system prompt or the output schema does."""
     schema = json.dumps(Extraction.model_json_schema(), sort_keys=True)
-    return hashlib.sha256(f"{EXTRACT_SYSTEM}\n{schema}".encode()).hexdigest()[:12]
+    return hashlib.sha256(f"{system}\n{schema}".encode()).hexdigest()[:12]
 
 
 async def model_digest(model: str) -> str | None:
@@ -93,13 +98,17 @@ async def model_digest(model: str) -> str | None:
 
 
 async def _chat(
-    messages: list[dict[str, Any]], *, fmt: dict[str, Any] | None = None, model: str | None = None
+    messages: list[dict[str, Any]],
+    *,
+    fmt: dict[str, Any] | None = None,
+    model: str | None = None,
+    think: Think = False,
 ) -> str:
     body: dict[str, Any] = {
         "model": model or settings.llm_model,
         "messages": messages,
         "stream": False,
-        **chat_params(),
+        **chat_params(think),
         "keep_alive": "30m",
     }
     if fmt is not None:
@@ -116,7 +125,10 @@ async def _chat(
     return content
 
 
-async def extract(req: LlmExtractRequest) -> Extraction:
+async def extract(
+    req: LlmExtractRequest, *, system: str = EXTRACT_SYSTEM, think: Think = False
+) -> Extraction:
+    """`system` and `think` are for evals trying another prompt or thinking; production uses neither."""
     doc = req.document
     user_msg: dict[str, Any] = {
         "role": "user",
@@ -129,9 +141,10 @@ async def extract(req: LlmExtractRequest) -> Extraction:
     if doc.images_b64:
         user_msg["images"] = doc.images_b64
     raw = await _chat(
-        [{"role": "system", "content": EXTRACT_SYSTEM}, user_msg],
+        [{"role": "system", "content": system}, user_msg],
         fmt=Extraction.model_json_schema(),
         model=req.model,
+        think=think,
     )
     try:
         return Extraction.model_validate_json(raw)

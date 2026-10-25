@@ -1,0 +1,25 @@
+# yaml-language-server: $schema=../../expected.schema.json
+status: verified
+received_at: '2026-10-23T10:01:00+01:00'
+input: ../../../../samples/02-hotel-lisbon.eml
+source: email
+tags:
+- email
+- html
+- lodging
+is_travel_document: true
+reservations:
+- kind: lodging
+  start_local: 2026-11-13T15:00
+  end_local: 2026-11-17T11:00
+  city: Lisbon
+  country_code: PT
+  start_timezone: Europe/Lisbon
+  end_timezone: Europe/Lisbon
+  confirmation_code: HX55821
+  title: Casa do Miradouro
+  provider: Casa do Miradouro
+  address: Rua da Saudade 21, 1100-583 Lisboa, Portugal
+  accept:
+    city:
+    - Lisboa

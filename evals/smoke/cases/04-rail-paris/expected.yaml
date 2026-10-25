@@ -1,0 +1,31 @@
+# yaml-language-server: $schema=../../expected.schema.json
+status: verified
+received_at: '2026-10-25T08:00:00Z'
+input: ../../../../samples/04-rail-paris.eml
+source: email
+tags:
+- email
+- rail
+is_travel_document: true
+reservations:
+- kind: rail
+  start_local: 2027-01-21T08:31
+  end_local: 2027-01-21T11:47
+  city: Paris
+  country_code: FR
+  start_city: London
+  start_country_code: GB
+  start_timezone: Europe/London
+  end_timezone: Europe/Paris
+  confirmation_code: ELR9PX
+  service_number: '9024'
+  title: Train 9024 London→Paris
+  provider: EuroLink Rail
+  start_location: London St Pancras International
+  end_location: Paris Gare du Nord
+  seat: Coach 7, Seat 61
+  accept:
+    start_iata:
+    - QQS
+    end_iata:
+    - XPG

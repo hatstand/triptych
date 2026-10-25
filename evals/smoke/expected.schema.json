@@ -1,0 +1,365 @@
+{
+  "$defs": {
+    "ExpectedReservation": {
+      "additionalProperties": false,
+      "description": "One reservation as it should be extracted. A field left out means it should be null.",
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/Kind"
+        },
+        "start_local": {
+          "description": "YYYY-MM-DDTHH:MM, local to where it starts",
+          "title": "Start Local",
+          "type": "string"
+        },
+        "end_local": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "YYYY-MM-DDTHH:MM, local to where it ends",
+          "title": "End Local"
+        },
+        "start_iata": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Iata"
+        },
+        "end_iata": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Iata"
+        },
+        "city": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Where the traveller will be: arrival city for transport",
+          "title": "City"
+        },
+        "country_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "ISO 3166 alpha-2 of city",
+          "title": "Country Code"
+        },
+        "start_city": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Transport only: the city it departs from",
+          "title": "Start City"
+        },
+        "start_country_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Country Code"
+        },
+        "start_timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "IANA timezone where it starts (start_city's)",
+          "title": "Start Timezone"
+        },
+        "end_timezone": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "IANA timezone where it ends (city's)",
+          "title": "End Timezone"
+        },
+        "confirmation_code": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Confirmation Code"
+        },
+        "service_number": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Flight or train number",
+          "title": "Service Number"
+        },
+        "title": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Title"
+        },
+        "provider": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Provider"
+        },
+        "start_location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Start Location"
+        },
+        "end_location": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "End Location"
+        },
+        "address": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Address"
+        },
+        "seat": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seat"
+        },
+        "travelers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Travelers",
+          "type": "array"
+        },
+        "notes": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Notes"
+        },
+        "accept": {
+          "additionalProperties": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "type": "array"
+          },
+          "description": "Other answers that are also right, per field ({city: [New York City]}); null if leaving it out is fine too",
+          "title": "Accept",
+          "type": "object"
+        }
+      },
+      "required": [
+        "kind",
+        "start_local"
+      ],
+      "title": "ExpectedReservation",
+      "type": "object"
+    },
+    "Kind": {
+      "enum": [
+        "flight",
+        "lodging",
+        "car",
+        "rail",
+        "restaurant",
+        "activity",
+        "other"
+      ],
+      "title": "Kind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "cases/<id>/expected.yaml",
+  "properties": {
+    "status": {
+      "default": "draft",
+      "description": "Only verified cases are scored; drafts are the model's answer, unchecked",
+      "enum": [
+        "draft",
+        "verified"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "received_at": {
+      "description": "When it was received: the model infers missing years from it",
+      "format": "date-time",
+      "title": "Received At",
+      "type": "string"
+    },
+    "input": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "The input file relative to this one (default: inputs/<id>/)",
+      "title": "Input"
+    },
+    "source": {
+      "default": "upload",
+      "enum": [
+        "upload",
+        "paste",
+        "email"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
+    "tags": {
+      "description": "Slices to report on: rail, pdf, no-travel\u2026",
+      "items": {
+        "type": "string"
+      },
+      "title": "Tags",
+      "type": "array"
+    },
+    "notes": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Notes"
+    },
+    "is_travel_document": {
+      "title": "Is Travel Document",
+      "type": "boolean"
+    },
+    "reservations": {
+      "items": {
+        "$ref": "#/$defs/ExpectedReservation"
+      },
+      "title": "Reservations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "received_at",
+    "is_travel_document"
+  ],
+  "title": "Expected",
+  "type": "object"
+}

@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=../../expected.schema.json
+status: verified
+received_at: '2026-10-24T18:30:00+01:00'
+input: ../../../../samples/03-dinner-lisbon.eml
+source: email
+tags:
+- email
+- restaurant
+- no-year
+is_travel_document: true
+reservations:
+- kind: restaurant
+  start_local: 2026-11-14T20:30
+  city: Lisbon
+  country_code: PT
+  start_timezone: Europe/Lisbon
+  end_timezone: Europe/Lisbon
+  confirmation_code: TN-448190
+  title: Taberna da Rua
+  provider: Taberna da Rua
+  address: Travessa do Fala-Só 8, Lisboa
+  accept:
+    city:
+    - Lisboa
