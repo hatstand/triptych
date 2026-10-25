@@ -152,6 +152,7 @@ def cmd_redraft(args: argparse.Namespace) -> None:
     if args.model not in pulled_models():
         raise SystemExit(f"not pulled on {settings.ollama_url}: ollama pull {args.model}")
     root = root_of(args)
+    golden.ensure_layout(root)  # the schema editors check against changes with the format
     note = f"Redrafted from what {args.model} (prompt {llm.prompt_version()}) answered."
 
     async def go() -> None:
