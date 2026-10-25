@@ -14,8 +14,10 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+from itertools import pairwise
 
 from triptych import places
+from triptych.journeys import MAX_LAYOVER, TRANSPORT, city_of
 from triptych.models import Kind, Reservation, TripSummary
 
 SLACK = timedelta(days=1)
@@ -47,8 +49,24 @@ class Bucket:
         self.end = max(self.end, other.end)
 
 
+def transport_stops(rs: list[Reservation]) -> list[str]:
+    """Where a trip with no lodging stops, longest total stay first: each transport leg's arrival city,
+    held until the next leg leaves. Connections (under MAX_LAYOVER), the final arrival and anywhere back
+    in the departure city don't count, so LHR→PVG, PVG→SYD, SYD→PVG, PVG→LHR is Sydney, then Shanghai."""
+    legs = sorted((r for r in rs if r.kind in TRANSPORT), key=lambda r: r.start_local)
+    home = city_of(legs[0].start_location) if legs else None
+    stays: dict[str, timedelta] = {}
+    for leg, onward in pairwise(legs):
+        held = onward.start_local - (leg.end_local or leg.start_local)
+        if leg.city and held >= MAX_LAYOVER and " ".join(leg.city.casefold().split()) != home:
+            stays[leg.city] = stays.get(leg.city, timedelta()) + held
+    return sorted(stays, key=lambda city: stays[city], reverse=True)
+
+
 def pick_destination(rs: list[Reservation]) -> str | None:
     ordered = sorted(rs, key=lambda r: r.start_local)
+    if not any(r.kind is Kind.LODGING and r.city for r in ordered) and (stops := transport_stops(ordered)):
+        return stops[0]
     for kinds in ((Kind.LODGING,), (Kind.FLIGHT, Kind.RAIL), tuple(Kind)):
         for r in ordered:
             if r.kind in kinds and r.city:
@@ -79,11 +97,14 @@ MAX_TITLE_CITIES = 3
 
 
 def trip_title(rs: list[Reservation]) -> str:
-    """A name for a trip from everything in it: where you stay (else the destination) and when.
+    """A name for a trip from everything in it: where you stay (else where the transport stops, else the
+    destination) and when.
     "Lisbon, November 2026", "Lisbon & Porto, November 2026", "Tokyo, Kyoto & Osaka, March–April 2027".
     Recomputed as reservations are added, so it grows with the itinerary until the user renames it."""
     ordered = sorted(rs, key=lambda r: r.start_local)
     stays = list(dict.fromkeys(r.city for r in ordered if r.kind is Kind.LODGING and r.city))
+    if not stays:
+        stays = transport_stops(ordered)
     if not stays and (destination := pick_destination(ordered)):
         stays = [destination]
     if len(stays) > MAX_TITLE_CITIES:

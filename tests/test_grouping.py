@@ -1,7 +1,7 @@
 import itertools
 from datetime import date, datetime
 
-from triptych.grouping import assign, trip_title
+from triptych.grouping import assign, pick_destination, transport_stops, trip_title
 from triptych.models import Kind, Reservation, TripSummary
 
 
@@ -121,3 +121,32 @@ def test_trip_title_caps_cities_and_spans_years() -> None:
     stays.append(res(Kind.FLIGHT, "2027-01-02T10:00", None, "London"))
     assert trip_title(stays[:3] + stays[4:]) == "Tokyo, Kyoto & Osaka, December 2026–January 2027"
     assert trip_title([res(Kind.ACTIVITY, "2026-12-20T10:00")]) == "Trip, December 2026"
+
+
+def leg(start: str, end: str, origin: str, city: str) -> Reservation:
+    return res(Kind.FLIGHT, start, end, city).model_copy(update={"start_location": origin})
+
+
+def test_flights_only_trip_is_named_by_where_it_stays_longest() -> None:
+    flights = [
+        leg("2026-11-01T21:00", "2026-11-02T17:00", "London (LHR)", "Shanghai"),
+        leg("2026-11-04T20:00", "2026-11-05T09:00", "Shanghai (PVG)", "Sydney"),
+        leg("2026-11-17T21:00", "2026-11-18T05:00", "Sydney (SYD)", "Shanghai"),
+        leg("2026-11-23T11:00", "2026-11-23T16:00", "Shanghai (PVG)", "London"),
+    ]
+    assert transport_stops(flights) == ["Sydney", "Shanghai"]
+    assert pick_destination(flights) == "Sydney"
+    assert trip_title(flights) == "Sydney & Shanghai, November 2026"
+
+
+def test_connections_and_home_are_not_stops() -> None:
+    flights = [
+        leg("2026-11-01T21:00", "2026-11-02T07:00", "London (LHR)", "Dubai"),
+        leg("2026-11-02T10:00", "2026-11-02T22:00", "Dubai (DXB)", "Sydney"),
+        leg("2026-11-10T10:00", "2026-11-10T20:00", "Sydney (SYD)", "London"),
+        leg("2026-11-12T10:00", "2026-11-12T13:00", "London (LHR)", "Lisbon"),
+    ]
+    assert transport_stops(flights) == ["Sydney"]
+    one_way = [leg("2026-11-01T09:00", "2026-11-01T12:00", "London (LHR)", "Lisbon")]
+    assert transport_stops(one_way) == []
+    assert trip_title(one_way) == "Lisbon, November 2026"

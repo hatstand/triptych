@@ -312,6 +312,23 @@ async def test_older_reservations_get_their_timezone_refilled(me: str) -> None:
     assert (lodging.start_tz, lodging.end_tz) == ("Europe/Lisbon", "Europe/Lisbon")
 
 
+async def test_older_trips_get_retitled_unless_renamed(me: str) -> None:
+    ours = (await db.file_reservations(me, "i1", [outbound(), home()])).trip_ids[0]
+    spring = res(Kind.LODGING, "2027-03-01T15:00", "2027-03-05T11:00", "Porto")
+    theirs = (await db.file_reservations(me, "i2", [spring])).trip_ids[0]
+    await db.rename_trip(me, theirs, "Spring break")
+    async with db.connection() as conn:
+        await conn.execute(
+            "UPDATE trip SET destination = 'San Francisco', name = 'San Francisco' WHERE id = %s", (ours,)
+        )
+        await conn.commit()
+    await db.retitle_trips()
+    trip = await db.get_trip(me, ours)
+    assert trip and (trip.name, trip.destination) == ("Lisbon, November 2026", "Lisbon")
+    trip = await db.get_trip(me, theirs)
+    assert trip and trip.name == "Spring break"
+
+
 def test_reconcile_matches_one_to_one_and_reports_what_changed() -> None:
     lisbon, porto_, flight = (from_ingest(r, "mail-1") for r in (hotel(), porto(), outbound()))
     # The new run: the hotel retitled (same code and day), the flight a minute later (same code and

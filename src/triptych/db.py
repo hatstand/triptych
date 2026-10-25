@@ -1007,6 +1007,16 @@ async def refill_timezones() -> None:
             await _fill_timezones(conn, trip_id)
 
 
+async def retitle_trips() -> None:
+    """Re-run `_retitle` on every trip, for names and places picked before `grouping` knew better (a
+    flights-only trip named after its first stop). Not under the User object: it only does what filing
+    would, and leaves names their owners chose."""
+    async with connection() as conn, conn.transaction():
+        cur = await conn.execute("SELECT id::text FROM trip")
+        for (trip_id,) in await cur.fetchall():
+            await _retitle(conn, trip_id)
+
+
 class ReminderTarget(BaseModel):
     owner: str | None = None
     trip_id: str | None = None
