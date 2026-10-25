@@ -2,6 +2,7 @@
 
     keep original ─▶ parse ─▶ Llm.extract (scope "gpu": flow-controlled + retried) ─▶ record run
         ─▶ normalise ─▶ User.file_reservations ─▶ (SHADOW_MODEL set) start a shadow Reprocess
+        ─▶ (original kept) EvalShare.copy, a no-op unless the owner shares with the eval set
 
 The original is kept first (inputs.py), so it survives even when extraction fails, and every
 extraction is recorded with the model and prompt that made it (db extraction_run).
@@ -26,7 +27,7 @@ from triptych.models import (
     ParsedDocument,
     ReprocessRequest,
 )
-from triptych.services import reprocess
+from triptych.services import eval_share, reprocess
 from triptych.services.llm_service import GPU_SCOPE, limit_key, record_run
 from triptych.services.llm_service import extract as llm_extract
 from triptych.services.user import file_reservations
@@ -80,6 +81,7 @@ async def run(ctx: restate.WorkflowContext, req: IngestRequest) -> InboxItem:
             f"inbox: {item.state}", db.upsert_inbox, restate.RunOptions[None](), req.user, item
         )
 
+    input_id: str | None = None
     try:
         await publish(state="parsing")
         try:
@@ -121,20 +123,21 @@ async def run(ctx: restate.WorkflowContext, req: IngestRequest) -> InboxItem:
         ]
         if not reservations:
             await publish(state="no_travel", message="No travel reservations found in this document.")
-            await shadow(ctx, input_id)
-            return item
-
-        await publish(state="filing")
-        filed = await ctx.object_call(
-            file_reservations, req.user, FileRequest(ingest_id=ctx.key(), reservations=reservations)
-        )
-        n = len(reservations)
-        await publish(
-            state="done", trip_ids=filed.trip_ids, message=f"Added {n} reservation{'s' * (n != 1)}."
-        )
+        else:
+            await publish(state="filing")
+            filed = await ctx.object_call(
+                file_reservations, req.user, FileRequest(ingest_id=ctx.key(), reservations=reservations)
+            )
+            n = len(reservations)
+            await publish(
+                state="done", trip_ids=filed.trip_ids, message=f"Added {n} reservation{'s' * (n != 1)}."
+            )
         await shadow(ctx, input_id)
     except restate.TerminalError as e:
         await publish(state="failed", message=str(e)[:500])
+    if input_id:
+        # Failed and no-travel ingests too: they're the cases the eval set most needs.
+        ctx.object_send(eval_share.copy, req.user, ctx.key())
     return item
 
 

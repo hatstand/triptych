@@ -334,6 +334,125 @@ async def add_extraction_run(run: ExtractionRun) -> None:
             )
 
 
+# --- the extraction eval set (evalset.py) -----------------------------------------------------
+
+
+class EvalCase(BaseModel):
+    """A shared ingest as the eval set copies it: its original and the run that made its reservations."""
+
+    ingest_id: str
+    label: str
+    state: str
+    input: RawInput
+    run: ExtractionRun | None
+
+
+class EvalSharing(BaseModel):
+    since: datetime
+    copied: int
+    """Ingests of theirs already in the eval bucket."""
+    total: int
+    """Ingests of theirs with a kept original."""
+
+
+async def eval_sharing(user_id: str) -> EvalSharing | None:
+    """Whether a user shares their originals with the eval set, and how far the copying has got."""
+    async with connection() as conn:
+        cur = await conn.execute(
+            """SELECT s.created_at,
+                      (SELECT count(*)::int FROM eval_copy c WHERE c.owner = s.user_id),
+                      (SELECT count(*)::int FROM inbox_item i
+                       WHERE i.owner = s.user_id AND i.input_id IS NOT NULL)
+               FROM eval_share s WHERE s.user_id = %s""",
+            (user_id,),
+        )
+        row = await cur.fetchone()
+    return EvalSharing(since=row[0], copied=row[1], total=row[2]) if row else None
+
+
+async def set_eval_sharing(user_id: str, share: bool) -> None:
+    async with connection() as conn:
+        if share:
+            await conn.execute(
+                "INSERT INTO eval_share (user_id) VALUES (%s) ON CONFLICT DO NOTHING", (user_id,)
+            )
+        else:
+            await conn.execute("DELETE FROM eval_share WHERE user_id = %s", (user_id,))
+
+
+async def eval_case(ingest_id: str) -> EvalCase | None:
+    """None unless the ingest has a kept original and its owner shares with the eval set."""
+    async with connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            """
+            SELECT i.ingest_id, i.label, i.state,
+                   ri.id::text AS input_id, ri.owner::text, ri.sha256, ri.object_key, ri.size, ri.source,
+                   ri.content_type, ri.filename, ri.received_at,
+                   r.id::text AS run_id, r.model, r.model_digest, r.prompt_version, r.code_version,
+                   r.params, r.purpose, r.output, r.error
+            FROM inbox_item i
+            JOIN raw_input ri ON ri.id = i.input_id
+            JOIN eval_share s ON s.user_id = i.owner
+            LEFT JOIN extraction_run r ON r.id = i.current_run_id
+            WHERE i.ingest_id = %s
+            """,
+            (ingest_id,),
+        )
+        row = await cur.fetchone()
+    if row is None:
+        return None
+    kept = RawInput(
+        id=row["input_id"],
+        owner=row["owner"],
+        sha256=row["sha256"],
+        object_key=row["object_key"],
+        size=row["size"],
+        source=row["source"],
+        content_type=row["content_type"],
+        filename=row["filename"],
+        received_at=row["received_at"],
+    )
+    run = None
+    if row["run_id"] is not None:
+        run = ExtractionRun(
+            id=row["run_id"],
+            ingest_id=ingest_id,
+            owner=kept.owner,
+            input_id=kept.id,
+            model=row["model"],
+            model_digest=row["model_digest"],
+            prompt_version=row["prompt_version"],
+            code_version=row["code_version"],
+            params=row["params"],
+            purpose=row["purpose"],
+            output=row["output"],
+            error=row["error"],
+        )
+    return EvalCase(ingest_id=ingest_id, label=row["label"], state=row["state"], input=kept, run=run)
+
+
+async def mark_eval_copied(ingest_id: str, owner: str) -> None:
+    async with connection() as conn:
+        await conn.execute(
+            "INSERT INTO eval_copy (ingest_id, owner) VALUES (%s, %s) ON CONFLICT (ingest_id) DO NOTHING",
+            (ingest_id, owner),
+        )
+
+
+async def uncopied_eval_ingests(owner: str) -> list[str]:
+    """A sharing user's ingests with a kept original that aren't in the eval bucket yet, oldest first."""
+    async with connection() as conn:
+        cur = await conn.execute(
+            """SELECT i.ingest_id FROM inbox_item i
+               JOIN eval_share s ON s.user_id = i.owner
+               WHERE i.owner = %s AND i.input_id IS NOT NULL
+                 AND NOT EXISTS (SELECT 1 FROM eval_copy c WHERE c.ingest_id = i.ingest_id)
+               ORDER BY i.received_at, i.ingest_id""",
+            (owner,),
+        )
+        return [r[0] for r in await cur.fetchall()]
+
+
 # --- writes (called from Restate handlers inside ctx.run) -------------------------------------
 
 

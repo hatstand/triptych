@@ -328,6 +328,7 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
         (user, "04-account", f"{WEB}/account"),
         (user, "05-account-senders", f"{WEB}/account/senders"),
         (admin, "06-admin", f"{ADMIN}/?batch={BATCH}"),
+        (user, "09-account-sharing", f"{WEB}/account/sharing"),
     ]
     (out / scheme).mkdir(parents=True, exist_ok=True)
     for ctx, name, url in shots:
@@ -374,6 +375,9 @@ async def main() -> None:
         "RESTATE_UI_URL": "http://localhost:9070",
         # Nothing listens here, so the admin page's model status shows its error state at once.
         "OLLAMA_URL": "http://127.0.0.1:9",
+        # Only so the account page offers eval set sharing; rendering it never touches a bucket.
+        "INPUTS_BUCKET": "triptych-inputs",
+        "EVALS_BUCKET": "triptych-evals",
     }
     servers = [
         await serve("triptych.web.app:app", WEB, env),

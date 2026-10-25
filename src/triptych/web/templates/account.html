@@ -86,6 +86,27 @@
       <input name="email" type="email" placeholder="another@example.com" required>
       <button>Add address</button>
     </form>
+    {% elif tab == "sharing" %}
+    <h2>Eval set</h2>
+    <p class="muted small">Share the bookings you send Triptych with the private set used to test and improve
+      how it reads them. While sharing is on, every email, upload and paste you've sent is copied, unencrypted,
+      to a private bucket that only Triptych's developer can read, and each new one is copied as it arrives.
+      The copies are used only to check extraction, and are never published.</p>
+    {% if sharing %}
+    <p>Sharing since {{ sharing.since.strftime('%d %b %Y') }}.
+      {% if sharing.copied < sharing.total %}{{ sharing.copied }} of {{ sharing.total }} copied so far.
+      {% else %}All {{ sharing.total }} copied.{% endif %}</p>
+    <form method="post" action="/account/sharing">
+      <input type="hidden" name="share" value="false">
+      <button class="button secondary">Stop sharing</button>
+    </form>
+    <p class="muted small">Stopping sharing stops new copies. Copies already made stay in the eval set.</p>
+    {% else %}
+    <form method="post" action="/account/sharing">
+      <input type="hidden" name="share" value="true">
+      <button>Share my bookings</button>
+    </form>
+    {% endif %}
     {% endif %}
   </div>
 </section>

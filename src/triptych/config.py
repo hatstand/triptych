@@ -32,6 +32,10 @@ class Settings:
     inputs_access_key_id: str | None
     inputs_secret_access_key: str | None
     inputs_master_keyset: str | None
+    # The private bucket holding the extraction eval set (evalset.py): plaintext copies of the
+    # originals of accounts that opted in. Same endpoint and credentials as the inputs bucket, so
+    # that token must reach both. Unset = sharing isn't offered.
+    evals_bucket: str | None
     # What's deployed, recorded with each extraction run (the image tag on marvin).
     code_version: str
 
@@ -97,6 +101,7 @@ def load() -> Settings:
         inputs_secret_access_key=env("INPUTS_SECRET_ACCESS_KEY") or None,
         # A Tink JSON keyset holding one AEAD key (`python -m triptych.inputs new-master-keyset`).
         inputs_master_keyset=env("INPUTS_MASTER_KEYSET") or None,
+        evals_bucket=env("EVALS_BUCKET") or None,
         code_version=env("CODE_VERSION", "dev"),
     )
 

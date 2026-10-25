@@ -282,6 +282,21 @@ To try a candidate model on real mail, `ollama pull` it and set `SHADOW_MODEL=<m
 every new ingest is then also extracted with it, and the diff shows up on /admin as batch `shadow`,
 never applied.
 
+### Eval set sharing
+
+Accounts can opt in on the account page (Eval set) to share their originals with the extraction eval
+set (src/triptych/evalset.py). Opting in copies, decrypted, every original they already have to a
+second private bucket, and every new ingest is copied as it finishes, failed and no-travel ones
+included. Each ingest becomes `inputs/<ingest id>/` holding `original.<ext>`, `parsed.txt` and
+`case.json` (its run's output, the draft to label). Until `EVALS_BUCKET` is set, the tab isn't shown.
+
+1. R2 → create bucket `triptych-evals` (no public access).
+2. Give the `triptych-inputs` token **Object Read & Write** on `triptych-evals` too: copies go
+   through the same client.
+3. Add `EVALS_BUCKET=triptych-evals` to `/srv/triptych/.env` and redeploy.
+
+Stopping sharing stops new copies; copies already made stay.
+
 <a id="zero-downtime-web"></a>
 ## Zero-downtime deploys
 
