@@ -37,6 +37,7 @@ from triptych.models import (
     TripRef,
 )
 from triptych.services import assistant as assistant_svc
+from triptych.services import eval_share as eval_share_svc
 from triptych.services import ingest as ingest_svc
 from triptych.services import user as user_svc
 from triptych.web import live, ratelimit
@@ -223,8 +224,15 @@ async def logout(request: Request) -> Response:
     return resp
 
 
-ACCOUNT_TABS = {"passkeys": "Passkeys", "senders": "Sending addresses"}
+ACCOUNT_TABS = {"passkeys": "Passkeys", "senders": "Sending addresses", "sharing": "Eval set"}
 """Account page tabs: each is its own URL, /account/<tab>, and /account shows the first."""
+
+
+def account_tabs() -> dict[str, str]:
+    """Eval set sharing is only offered where there's an eval bucket to share into."""
+    if settings.evals_bucket and settings.inputs_bucket:
+        return ACCOUNT_TABS
+    return {k: v for k, v in ACCOUNT_TABS.items() if k != "sharing"}
 
 
 async def render_account(
@@ -241,13 +249,14 @@ async def render_account(
         "account.html",
         {
             "email": me.email,
-            "tabs": ACCOUNT_TABS,
+            "tabs": account_tabs(),
             "tab": tab,
             "passkeys": await auth.passkeys(me.id),
             "senders": await senders.addresses(me.id),
             "pending_senders": await senders.pending(me.id),
             "new_sender": new_sender,
             "inbound_address": settings.inbound_address,
+            "sharing": await db.eval_sharing(me.id) if tab == "sharing" else None,
             "error": error,
             "sender_error": sender_error,
         },
@@ -262,7 +271,7 @@ async def account_page(request: Request, me: User) -> Response:
 
 @app.get("/account/{tab}", response_class=HTMLResponse)
 async def account_tab(request: Request, tab: str, me: User) -> Response:
-    if tab not in ACCOUNT_TABS:
+    if tab not in account_tabs():
         raise HTTPException(404)
     if tab == next(iter(ACCOUNT_TABS)):
         return RedirectResponse("/account", status_code=308)
@@ -294,6 +303,17 @@ async def sender_delete(request: Request, me: User, email: Annotated[str, Form()
     except senders.SenderError as e:
         return await render_account(request, me, "senders", sender_error=str(e))
     return RedirectResponse("/account/senders", status_code=303)
+
+
+@app.post("/account/sharing")
+async def sharing_set(me: User, client: Client, share: Annotated[bool, Form()]) -> Response:
+    """Opting in copies everything already kept, then every new ingest (services/eval_share.py)."""
+    if "sharing" not in account_tabs():
+        raise HTTPException(404)
+    await db.set_eval_sharing(me.id, share)
+    if share:
+        await client.object_send(eval_share_svc.share_all, me.id, None)
+    return RedirectResponse("/account/sharing", status_code=303)
 
 
 # --- passkey ceremonies (driven by static/passkey.js) ----------------------------------------

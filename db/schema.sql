@@ -46,6 +46,27 @@ CREATE TABLE public.dismissed_reservation (
 
 
 --
+-- Name: eval_copy; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.eval_copy (
+    ingest_id text NOT NULL,
+    owner uuid NOT NULL,
+    copied_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: eval_share; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.eval_share (
+    user_id uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: extraction_run; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -308,6 +329,22 @@ ALTER TABLE ONLY public.dismissed_reservation
 
 
 --
+-- Name: eval_copy eval_copy_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_copy
+    ADD CONSTRAINT eval_copy_pkey PRIMARY KEY (ingest_id);
+
+
+--
+-- Name: eval_share eval_share_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_share
+    ADD CONSTRAINT eval_share_pkey PRIMARY KEY (user_id);
+
+
+--
 -- Name: extraction_run extraction_run_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -444,6 +481,13 @@ ALTER TABLE ONLY public.web_session
 
 
 --
+-- Name: eval_copy_owner_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX eval_copy_owner_idx ON public.eval_copy USING btree (owner);
+
+
+--
 -- Name: extraction_run_ingest_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -540,6 +584,22 @@ CREATE INDEX web_session_user_idx ON public.web_session USING btree (user_id);
 
 ALTER TABLE ONLY public.dismissed_reservation
     ADD CONSTRAINT dismissed_reservation_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
+-- Name: eval_copy eval_copy_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_copy
+    ADD CONSTRAINT eval_copy_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
+-- Name: eval_share eval_share_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.eval_share
+    ADD CONSTRAINT eval_share_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(id) ON DELETE CASCADE;
 
 
 --
@@ -677,4 +737,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261024160000'),
     ('20261024170000'),
     ('20261024210000'),
-    ('20261024220000');
+    ('20261024220000'),
+    ('20261025120000');
