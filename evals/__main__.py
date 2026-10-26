@@ -5,6 +5,7 @@ add       add local files (a .eml saved from Gmail, a PDF) as cases, drafted by 
 check     validate every expected.yaml and say what's left to verify
 run       score models, prompts and thinking settings against the verified cases
 compare   two runs side by side
+gate      on marvin, after a deploy and nightly: sync, run production's model, fail on a regression
 ui        label cases in the browser: each original beside its answer, and how runs did on it
 """
 
@@ -50,7 +51,17 @@ def cmd_run(args: argparse.Namespace) -> None:
         for t in args.think or ["off"]
         for e in args.examples or ["off"]
     ]
-    run(found, variants, root, repeat=args.repeat, concurrency=args.concurrency)
+    run(found, variants, root, repeat=args.repeat, concurrency=args.concurrency, via_restate=args.via_restate)
+
+
+def cmd_gate(args: argparse.Namespace) -> None:
+    from evals.gate import gate
+    from evals.sync import client, sync
+
+    root = root_of(args)
+    s3, bucket = client()
+    sync(root, s3, bucket)
+    sys.exit(gate(root, via_restate=args.via_restate or settings.restate_ingress_url))
 
 
 def cmd_sync(args: argparse.Namespace) -> None:
@@ -232,7 +243,15 @@ def main(argv: list[str] | None = None) -> None:
         "--concurrency", type=int, default=1, help="cases at once (Ollama queues beyond OLLAMA_NUM_PARALLEL)"
     )
     p.add_argument("--include-drafts", action="store_true", help="score unverified drafts too")
+    p.add_argument(
+        "--via-restate", metavar="INGRESS_URL",
+        help="extract through production's Llm service, queued behind real work (production's prompt only)",
+    )  # fmt: skip
     p.set_defaults(func=cmd_run)
+
+    p = sub.add_parser("gate", help="on marvin: sync, run production's model, fail on a regression")
+    p.add_argument("--via-restate", metavar="INGRESS_URL", help="default RESTATE_INGRESS_URL")
+    p.set_defaults(func=cmd_gate)
 
     p = sub.add_parser("sync", help="pull shared cases from the eval bucket")
     p.set_defaults(func=cmd_sync)

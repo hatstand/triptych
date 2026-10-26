@@ -12,20 +12,26 @@ the host they were measured on and only compared within one.
 """
 
 import asyncio
+import hashlib
 import json
 import re
 import socket
 import subprocess
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+import httpx
 import ollama
+import restate
+import restate.client
 from pydantic import BaseModel
 from pydantic_evals import Case as EvalCase
 from pydantic_evals import Dataset
 from pydantic_evals.evaluators import Evaluator, EvaluatorContext
+from restate.client_types import HttpError
 from rich.console import Console
 from rich.table import Table
 
@@ -35,6 +41,8 @@ from triptych import llm
 from triptych.config import settings
 from triptych.llm import Think
 from triptych.models import Extraction, IngestSource, LlmExtractRequest
+from triptych.services.llm_service import GPU_SCOPE, limit_key
+from triptych.services.llm_service import extract as llm_extract
 
 
 class Inputs(BaseModel):
@@ -75,7 +83,35 @@ class Variant:
         return f"{self.model}-{self.prompt_version}{think}{'-examples' * self.examples}"
 
 
-async def answer(case: Case, variant: Variant, pool: fewshot.Pool | None) -> Answer:
+Extract = Callable[[LlmExtractRequest, Variant], Awaitable[Extraction]]
+"""How a run asks the model: straight to Ollama, or queued through production's Llm service."""
+
+
+async def direct(req: LlmExtractRequest, variant: Variant) -> Extraction:
+    return await llm.extract(req, system=variant.system, think=variant.think)
+
+
+def queued(client: restate.RestateClient) -> Extract:
+    """Through the production Llm service in the gpu scope's eval lane, so cases wait their turn
+    behind real mail instead of competing with it for the GPU (marvin; services/llm_service.py)."""
+
+    async def extract(req: LlmExtractRequest, variant: Variant) -> Extraction:
+        key = hashlib.sha256(req.model_dump_json().encode()).hexdigest()  # a retry attaches to it
+        return await client.scope(GPU_SCOPE).service_call(
+            llm_extract, req, limit_key=limit_key("eval", "eval"), idempotency_key=key
+        )
+
+    return extract
+
+
+def queueable(variant: Variant) -> bool:
+    """Production's Llm service runs production's prompt, without thinking."""
+    return variant.prompt == "current" and variant.think is False
+
+
+async def answer(
+    case: Case, variant: Variant, pool: fewshot.Pool | None, extract: Extract = direct
+) -> Answer:
     """What the model makes of one case. An Ollama failure is an answer too (scored as no answer),
     so one bad case doesn't stop the run."""
     doc, data = fewshot.document(case)
@@ -85,8 +121,8 @@ async def answer(case: Case, variant: Variant, pool: fewshot.Pool | None) -> Ans
     )
     ids = [e.ingest_id for e in shown]
     try:
-        extraction = await llm.extract(req, system=variant.system, think=variant.think)
-    except llm.ERRORS as e:
+        extraction = await extract(req, variant)
+    except (*llm.ERRORS, HttpError) as e:
         return Answer(error=f"{type(e).__name__}: {e}", examples=ids)
     return Answer(extraction=extraction, examples=ids)
 
@@ -172,11 +208,12 @@ async def run_variant(
     repeat: int,
     concurrency: int,
     console: Console,
+    extract: Extract = direct,
 ) -> Path:
     started = datetime.now(UTC)
     by_id = {c.id: c for c in cases}
     report = await dataset(cases).evaluate(
-        lambda inputs: answer(by_id[inputs.id], variant, pool),
+        lambda inputs: answer(by_id[inputs.id], variant, pool, extract),
         name=variant.label,
         max_concurrency=concurrency,
         repeat=repeat,
@@ -335,25 +372,44 @@ def summary_md(results: dict[str, Any]) -> str:
 
 
 def run(
-    cases: list[Case], variants: list[Variant], root: Path, *, repeat: int = 1, concurrency: int = 1
+    cases: list[Case],
+    variants: list[Variant],
+    root: Path,
+    *,
+    repeat: int = 1,
+    concurrency: int = 1,
+    via_restate: str | None = None,
 ) -> list[Path]:
+    """Run each variant over the cases: against OLLAMA_URL, or with `via_restate` (an ingress URL)
+    through production's Llm service, queued behind real work."""
     if not cases:
         raise SystemExit("no cases to run (verified ones only, unless --include-drafts)")
+    if via_restate and not all(queueable(v) for v in variants):
+        raise SystemExit("--via-restate runs production's prompt with thinking off, nothing else")
     check_models(variants)
     console = Console()
 
     async def go() -> list[Path]:
+        if via_restate is None:
+            return await each(direct)
+        # No timeout: a case can wait behind a backlog of real mail for as long as that takes.
+        async with httpx.AsyncClient(base_url=via_restate, timeout=None, http2=True) as http:
+            return await each(queued(restate.client.Client(http)))
+
+    async def each(extract: Extract) -> list[Path]:
         pool = await fewshot.pool(root) if any(v.examples for v in variants) else None
         if pool is not None and not pool.size:
             console.print(
                 "[yellow]no case is tagged `corrected` with an owner in case.json, so examples on "
                 "will show nothing (run `python -m evals sync` after correcting some in the app)[/yellow]"
             )
-        return [
-            await run_variant(
-                v, cases, root, pool=pool, repeat=repeat, concurrency=concurrency, console=console
-            )
-            for v in variants
-        ]
+        out = []
+        for v in variants:
+            path = await run_variant(
+                v, cases, root, pool=pool, repeat=repeat, concurrency=concurrency, console=console,
+                extract=extract,
+            )  # fmt: skip
+            out.append(path)
+        return out
 
     return asyncio.run(go())

@@ -162,6 +162,22 @@ speed, so compare durations only between runs on the same host. Answers can also
 between CUDA and ROCm. Before switching `LLM_MODEL`, re-run the winner on marvin (or try it there
 first as `SHADOW_MODEL`).
 
+## The gate on marvin
+
+`python -m evals gate` runs on marvin after every deploy and every night (deploy/README.md). It
+syncs, then runs the verified and partly labelled cases with production's model and prompt through
+production's Llm service, in the gpu scope's `eval` lane, so cases wait behind real mail rather
+than competing with it. `run --via-restate <ingress>` does the same for a one-off run.
+
+- It fails (exit 3) when the run without examples is net more than one case worse than the last
+  good run (`runs/gate.json`), counting only cases in both. A pass becomes the new last good run.
+- With `LLM_EXAMPLES` on it runs again with examples, and if that's net more than one case worse
+  than without (and showed any examples at all), it pauses them; resume them on /admin.
+- It prints totals only: its output lands in GitHub Actions logs, and per-case detail holds
+  people's email. That stays in `runs/` on marvin.
+
+To start the baseline over (after relabelling a lot, say), delete `runs/gate.json`.
+
 ## Tests
 
 `uv run pytest tests/test_eval_score.py` checks the scoring, case files and sync without a model.
