@@ -15,8 +15,8 @@
       <use href="#card" transform="rotate(18 12 20)" fill="#000" stroke="#000" stroke-width="1.5"/>
     </mask>
   </defs>
-  <g mask="url(#behind-both)"><use href="#card" transform="rotate(-18 12 20)" fill="#16a085"/></g>
-  <g mask="url(#behind-front)"><use href="#card" transform="rotate(18 12 20)" fill="#8e44ad"/></g>
-  <use href="#card" fill="#1f6feb"/>
+  <g mask="url(#behind-both)"><use href="#card" transform="rotate(-18 12 20)" fill="#0f7d6d"/></g>
+  <g mask="url(#behind-front)"><use href="#card" transform="rotate(18 12 20)" fill="#7c4fc0"/></g>
+  <use href="#card" fill="#f55f55"/>
   <path transform="translate(6.6 6) scale(.45)" fill="#fff" stroke="#fff" stroke-linejoin="round" d="M12 2c1.1 0 1.6 1.2 1.6 2.5V9l8.4 5v2l-8.4-2.6V19l2.6 1.8v1.6L12 21.5l-4.2.9v-1.6l2.6-1.8v-5.6L2 16v-2l8.4-5V4.5C10.4 3.2 10.9 2 12 2Z"/>
 </svg>
