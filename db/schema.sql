@@ -67,6 +67,19 @@ CREATE TABLE public.eval_share (
 
 
 --
+-- Name: examples_pause; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.examples_pause (
+    singleton boolean DEFAULT true NOT NULL,
+    paused_at timestamp with time zone DEFAULT now() NOT NULL,
+    paused_by text NOT NULL,
+    reason text NOT NULL,
+    CONSTRAINT examples_pause_singleton_check CHECK (singleton)
+);
+
+
+--
 -- Name: extraction_example; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -363,6 +376,14 @@ ALTER TABLE ONLY public.eval_copy
 
 ALTER TABLE ONLY public.eval_share
     ADD CONSTRAINT eval_share_pkey PRIMARY KEY (user_id);
+
+
+--
+-- Name: examples_pause examples_pause_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.examples_pause
+    ADD CONSTRAINT examples_pause_pkey PRIMARY KEY (singleton);
 
 
 --
@@ -797,4 +818,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261025230000'),
     ('20261026120000'),
     ('20261026140000'),
-    ('20261026150000');
+    ('20261026150000'),
+    ('20261026200000');

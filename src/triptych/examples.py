@@ -18,6 +18,10 @@ later email from that sender:
   it isn't taught;
 - an example is usable only SETTLE after its latest correction, so one still being made isn't
   taught half done.
+
+Examples can be paused without a redeploy (db.pause_examples): the nightly eval does it when they
+made extraction worse, and an admin can on /admin. While paused, extraction runs as if
+LLM_EXAMPLES were off.
 """
 
 import base64
@@ -199,6 +203,8 @@ def pick(
 
 async def with_examples(extract: LlmExtractRequest, ingest_id: str, req: IngestRequest) -> LlmExtractRequest:
     """`extract` (the new ingest's extraction) with its owner's examples for it, inside `ctx.run`."""
+    if await db.examples_pause() is not None:
+        return extract
     doc = extract.document
     candidates = [e for e in await db.live_examples(req.user) if e.ingest_id != ingest_id]
     if not candidates:

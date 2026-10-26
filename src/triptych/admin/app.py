@@ -98,6 +98,7 @@ async def render(
     items = await db.reprocess_batch(batch) if batch else []
     rates = await db.correction_rates(datetime.now(UTC) - timedelta(days=CORRECTION_DAYS))
     worked = await db.admin_examples()
+    paused = await db.examples_pause()
     llm_status: dict[str, Any]
     try:
         llm_status = await llm.health()
@@ -123,6 +124,7 @@ async def render(
             "correction_days": CORRECTION_DAYS,
             "llm_examples": settings.llm_examples,
             "examples": worked,
+            "examples_pause": paused,
             "restate_ui_url": settings.restate_ui_url,
             **extra,
         },
@@ -162,6 +164,10 @@ class ApplyForm(BaseModel):
 
 class RemoveExampleForm(BaseModel):
     ingest: str
+
+
+class PauseExamplesForm(BaseModel):
+    reason: str = Field("paused by hand", max_length=500)
 
 
 def new_batch() -> str:
@@ -228,6 +234,12 @@ async def post(request: Request, login: Admin) -> Response:
             case "apply":
                 batch, n = await apply_batch(rs(request), ApplyForm.model_validate(form))
                 return await render(request, login, batch=batch, started=n)
+            case "pause_examples":
+                await db.pause_examples(login, PauseExamplesForm.model_validate(form).reason)
+                return await render(request, login)
+            case "resume_examples":
+                await db.resume_examples()
+                return await render(request, login)
             case "remove_example":
                 removed = RemoveExampleForm.model_validate(form).ingest
                 await db.delete_example(removed)
