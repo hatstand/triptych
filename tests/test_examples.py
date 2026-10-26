@@ -1,6 +1,7 @@
 """Worked examples for extraction: the owner's corrections, kept for their own later mail, and only
 what may be taught of them (moto stands in for R2)."""
 
+import base64
 import dataclasses
 import os
 import uuid
@@ -20,7 +21,10 @@ from triptych.models import (
     Extraction,
     ExtractionRun,
     InboxItem,
+    IngestRequest,
     Kind,
+    LlmExtractRequest,
+    ParsedDocument,
     ReservationFields,
 )
 
@@ -182,3 +186,33 @@ async def test_an_example_is_used_only_once_settled_and_only_for_its_owner(
 
 async def test_refresh_does_nothing_where_originals_arent_kept(me: str) -> None:
     assert not await examples.refresh("mail-1")
+
+
+async def test_the_next_mail_from_that_sender_is_shown_the_corrected_answer(
+    store: InputStore, me: str
+) -> None:
+    trip_id, by_kind = await filed(store, me)
+    await edit(me, trip_id, by_kind[Kind.FLIGHT], start_local=datetime(2026, 11, 3, 10, 15))
+    ex = await example(store)
+    assert ex is not None
+    await db.save_example(ex, timedelta(0))
+
+    def mail(sender: bytes, body: bytes) -> tuple[LlmExtractRequest, IngestRequest]:
+        data = b"From: " + sender + b"\r\nSubject: Hello\r\n\r\n" + body
+        req = IngestRequest(
+            user=me, source="email", content_type="message/rfc822",
+            data_b64=base64.b64encode(data).decode(), received_at=NOW,
+        )  # fmt: skip
+        doc = ParsedDocument(subject="Hello", text=body.decode())
+        return LlmExtractRequest(document=doc, received_at=NOW), req
+
+    nothing_alike = b"Your table for two at Taberna is booked for 8pm."
+    extract, req = mail(b"Iberia <offers@iberia.com>", nothing_alike)
+    [taught] = (await examples.with_examples(extract, "mail-2", req)).examples
+    assert (taught.ingest_id, taught.received_at, taught.subject) == ("mail-1", NOW, "Your flight")
+    assert taught.answer.reservations[0].start_local == "2026-11-03T10:15"
+
+    extract, req = mail(b"Taberna <hi@taberna.pt>", nothing_alike)
+    assert (await examples.with_examples(extract, "mail-2", req)).examples == []  # another sender
+    extract, req = mail(b"Iberia <offers@iberia.com>", nothing_alike)
+    assert (await examples.with_examples(extract, "mail-1", req)).examples == []  # never its own

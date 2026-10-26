@@ -102,6 +102,7 @@ CREATE TABLE public.extraction_run (
     output jsonb,
     error text,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
+    examples text[] DEFAULT '{}'::text[] NOT NULL,
     CONSTRAINT extraction_run_purpose_check CHECK ((purpose = ANY (ARRAY['ingest'::text, 'reprocess'::text, 'shadow'::text, 'eval'::text])))
 );
 
@@ -793,4 +794,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261025150000'),
     ('20261025220000'),
     ('20261025230000'),
-    ('20261026120000');
+    ('20261026120000'),
+    ('20261026140000');

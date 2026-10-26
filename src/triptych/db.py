@@ -331,12 +331,13 @@ async def add_extraction_run(run: ExtractionRun) -> None:
         await conn.execute(
             """
             INSERT INTO extraction_run (id, ingest_id, owner, input_id, model, model_digest,
-                prompt_version, code_version, params, purpose, output, error)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                prompt_version, code_version, params, purpose, output, error, examples)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING
             """,
             (run.id, run.ingest_id, run.owner, run.input_id, run.model, run.model_digest,
-             run.prompt_version, run.code_version, Jsonb(run.params), run.purpose, output, run.error),
+             run.prompt_version, run.code_version, Jsonb(run.params), run.purpose, output, run.error,
+             run.examples),
         )  # fmt: skip
         if run.purpose == "ingest":
             await conn.execute(
@@ -517,13 +518,19 @@ async def delete_example(ingest_id: str) -> None:
         await conn.execute("DELETE FROM extraction_example WHERE ingest_id = %s", (ingest_id,))
 
 
-async def live_examples(owner: str) -> list[Example]:
+class LiveExample(Example):
+    received_at: datetime
+
+
+async def live_examples(owner: str) -> list[LiveExample]:
     """A user's examples past their settle time, newest first."""
-    async with connection() as conn, conn.cursor(row_factory=class_row(Example)) as cur:
+    async with connection() as conn, conn.cursor(row_factory=class_row(LiveExample)) as cur:
         await cur.execute(
-            """SELECT ingest_id, owner::text, sender_domain, subject, text, answer, changes, partial
-               FROM extraction_example WHERE owner = %s AND live_at <= now()
-               ORDER BY updated_at DESC, ingest_id""",
+            """SELECT e.ingest_id, e.owner::text, sender_domain, subject, text, answer, changes, partial,
+                      i.received_at
+               FROM extraction_example e JOIN inbox_item i USING (ingest_id)
+               WHERE e.owner = %s AND live_at <= now()
+               ORDER BY updated_at DESC, e.ingest_id""",
             (owner,),
         )
         return await cur.fetchall()

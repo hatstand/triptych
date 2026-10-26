@@ -5,6 +5,7 @@ Errors are raised, never swallowed: callers run these inside `ctx.run`, so Resta
 
 import hashlib
 import json
+from datetime import datetime
 from typing import Any
 
 import httpx
@@ -68,6 +69,8 @@ class LlmError(RuntimeError):
     pass
 
 
+MAX_OUTPUT_TOKENS = 4096
+
 Think = bool | str
 """Ollama's `think`: on or off, or a level ("low", "medium", "high") for models that take one."""
 
@@ -79,7 +82,7 @@ def chat_params(think: Think = False) -> dict[str, Any]:
         # the context is exhausted), so it's off unless an eval asks, and output is capped to fail
         # fast and retry instead.
         "think": think,
-        "options": {"temperature": 0, "num_ctx": settings.llm_num_ctx, "num_predict": 4096},
+        "options": {"temperature": 0, "num_ctx": settings.llm_num_ctx, "num_predict": MAX_OUTPUT_TOKENS},
     }
 
 
@@ -127,6 +130,14 @@ async def _chat(
     return content
 
 
+def document_message(received_at: datetime, subject: str | None, text: str) -> str:
+    return (
+        f"Document received: {received_at:%Y-%m-%d}\n"
+        f"Subject: {subject or '(none)'}\n\n"
+        f"{text or '(no text — see attached images)'}"
+    )
+
+
 async def extract(
     req: LlmExtractRequest, *, system: str = EXTRACT_SYSTEM, think: Think = False
 ) -> Extraction:
@@ -134,16 +145,17 @@ async def extract(
     doc = req.document
     user_msg: dict[str, Any] = {
         "role": "user",
-        "content": (
-            f"Document received: {req.received_at:%Y-%m-%d}\n"
-            f"Subject: {doc.subject or '(none)'}\n\n"
-            f"{doc.text or '(no text — see attached images)'}"
-        ),
+        "content": document_message(req.received_at, doc.subject, doc.text),
     }
     if doc.images_b64:
         user_msg["images"] = doc.images_b64
+    # Worked examples go first as earlier turns of the conversation, answered as the owner wanted.
+    shown: list[dict[str, Any]] = []
+    for ex in req.examples:
+        shown.append({"role": "user", "content": document_message(ex.received_at, ex.subject, ex.text)})
+        shown.append({"role": "assistant", "content": ex.answer.model_dump_json()})
     raw = await _chat(
-        [{"role": "system", "content": system}, user_msg],
+        [{"role": "system", "content": system}, *shown, user_msg],
         fmt=Extraction.model_json_schema(),
         model=req.model,
         think=think,

@@ -355,6 +355,8 @@ class ExtractionRun(BaseModel):
     purpose: ExtractionPurpose
     output: Extraction | None = None
     error: str | None = None
+    examples: list[str] = Field(default_factory=list)
+    """The ingests whose examples the model was shown first (LlmExtractRequest.examples)."""
 
 
 class InboxItem(BaseModel):
@@ -483,11 +485,23 @@ class Overview(BaseModel):
     notifications: list[Notification]
 
 
+class ExtractionExample(BaseModel):
+    """A document of the owner's they corrected, and the answer they wanted (examples.py)."""
+
+    ingest_id: str
+    received_at: datetime
+    subject: str | None
+    text: str
+    answer: Extraction
+
+
 class LlmExtractRequest(BaseModel):
     document: ParsedDocument
     received_at: datetime
     model: str | None = None
     """An Ollama model other than LLM_MODEL (reprocessing, shadow runs)."""
+    examples: list[ExtractionExample] = Field(default_factory=list)
+    """Worked examples shown before the document, most relevant last (LLM_EXAMPLES)."""
 
 
 class LlmSubjectRequest(BaseModel):

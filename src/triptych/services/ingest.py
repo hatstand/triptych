@@ -1,6 +1,7 @@
 """`Ingest` workflow (key = ingest id): one forwarded email / upload → reservations filed into trips.
 
-    keep original ─▶ parse ─▶ Llm.extract (scope "gpu": flow-controlled + retried) ─▶ record run
+    keep original ─▶ parse ─▶ (LLM_EXAMPLES on) the owner's examples
+        ─▶ Llm.extract (scope "gpu": flow-controlled + retried) ─▶ record run
         ─▶ normalise ─▶ User.file_reservations ─▶ (SHADOW_MODEL set) start a shadow Reprocess
         ─▶ (original kept) EvalShare.copy, a no-op unless the owner shares with the eval set
 
@@ -17,7 +18,7 @@ from datetime import timedelta
 
 import restate
 
-from triptych import db, enrich, inputs, parsing
+from triptych import db, enrich, examples, inputs, parsing
 from triptych.config import settings
 from triptych.models import (
     FileRequest,
@@ -43,6 +44,8 @@ KEEP_RETRY = restate.RunOptions[str | None](
     max_retry_interval=timedelta(minutes=2),
     retry_interval_factor=2.0,
 )
+
+EXAMPLES_RETRY = restate.RunOptions[LlmExtractRequest](max_attempts=3)
 
 
 def _label(req: IngestRequest) -> str:
@@ -98,21 +101,29 @@ async def run(ctx: restate.WorkflowContext, req: IngestRequest) -> InboxItem:
 
         await publish(state="extracting")
         run_id = str(ctx.uuid())
+        extract_req = LlmExtractRequest(document=doc, received_at=req.received_at)
+        if settings.llm_examples:  # with it off, the journal is just as it was before examples
+            try:
+                extract_req = await ctx.run_typed(
+                    "examples", examples.with_examples, EXAMPLES_RETRY, extract_req, ctx.key(), req
+                )
+            except restate.TerminalError as e:
+                # Examples only help, so extract without them rather than not at all.
+                log.error("ingest %s: no examples: %s", ctx.key(), e)
+        shown = [ex.ingest_id for ex in extract_req.examples]
         try:
             extraction = await ctx.scope(GPU_SCOPE).service_call(
-                llm_extract,
-                LlmExtractRequest(document=doc, received_at=req.received_at),
-                limit_key=limit_key("batch", req.user),
+                llm_extract, extract_req, limit_key=limit_key("batch", req.user)
             )
         except restate.TerminalError as e:
             await ctx.run_typed(
                 "record run", record_run, restate.RunOptions[None](), run_id, ctx.key(), req.user,
-                input_id, settings.llm_model, "ingest", None, str(e)[:2000],
+                input_id, settings.llm_model, "ingest", None, str(e)[:2000], shown,
             )  # fmt: skip
             raise
         await ctx.run_typed(
             "record run", record_run, restate.RunOptions[None](), run_id, ctx.key(), req.user, input_id,
-            settings.llm_model, "ingest", extraction, None,
+            settings.llm_model, "ingest", extraction, None, shown,
         )  # fmt: skip
 
         reservations = [
