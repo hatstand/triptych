@@ -431,6 +431,12 @@ class RenameTrip(BaseModel):
     name: str
 
 
+class MergeTrips(BaseModel):
+    trip_id: str
+    """The trip that is moved into `into` and then deleted."""
+    into: str
+
+
 class PhotoRequest(BaseModel):
     place: str
 

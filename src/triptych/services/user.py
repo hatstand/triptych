@@ -13,6 +13,7 @@ from triptych.models import (
     EditReservation,
     FileRequest,
     FileResult,
+    MergeTrips,
     ReconcileRequest,
     RemoveReservation,
     RenameTrip,
@@ -95,6 +96,16 @@ async def rename_trip(ctx: restate.ObjectContext, req: RenameTrip) -> None:
     await ctx.run_typed(
         "rename trip", db.rename_trip, restate.RunOptions[None](), ctx.key(), req.trip_id, req.name
     )
+
+
+@user.handler()
+async def merge_trips(ctx: restate.ObjectContext, req: MergeTrips) -> None:
+    await ctx.run_typed(
+        "merge trips", db.merge_trips, restate.RunOptions[None](), ctx.key(), req.trip_id, req.into
+    )
+    # The merged trip can have a new destination, so a new photo. Reminders are keyed by reservation
+    # id and time, neither of which a merge changes.
+    await place_photo.request(ctx, [req.into])
 
 
 @user.handler()

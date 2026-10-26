@@ -400,6 +400,20 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
     await page.locator(".timeline button[command=show-modal]:visible").first.click()
     await page.locator("dialog[open]").wait_for()
     await page.screenshot(path=out / scheme / "10-reservation-edit.png", animations="disabled")
+    # The trip's own edit dialog, which offers merging into another trip without dragging.
+    await page.keyboard.press("Escape")
+    await page.locator("button[commandfor=trip-edit][command=show-modal]").click()
+    await page.locator("dialog[open]").wait_for()
+    await page.screenshot(path=out / scheme / "11-trip-edit.png", animations="disabled")
+    await page.close()
+    # One trip card dropped on another on the home page asks before merging them (merge.ts).
+    page = await user.new_page()
+    await page.goto(f"{WEB}/", wait_until="load")
+    await page.evaluate("document.fonts.ready")
+    cards = page.locator(".trip-card")
+    await cards.nth(1).drag_to(cards.nth(0))
+    await page.locator("dialog#merge[open]").wait_for()
+    await page.screenshot(path=out / scheme / "12-merge-trips.png", animations="disabled")
     await page.close()
     for ctx in (anon, user, admin):
         await ctx.close()

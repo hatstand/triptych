@@ -32,6 +32,7 @@ from triptych.models import (
     EditReservation,
     IngestRequest,
     Kind,
+    MergeTrips,
     Notification,
     Overview,
     RemoveReservation,
@@ -492,10 +493,17 @@ async def add_plans(
 @app.get("/trips/{trip_id}", response_class=HTMLResponse)
 async def trip_page(request: Request, trip_id: str, me: User) -> Response:
     t = await load_trip(me.id, trip_id)
+    others = [s for s in await db.trip_summaries(me.id) if s.id != trip_id]
     return templates.TemplateResponse(
         request,
         "trip.html",
-        {"email": me.email, "trip": t, "summary": t.summary(), "days": journeys.timeline(t.reservations)},
+        {
+            "email": me.email,
+            "trip": t,
+            "summary": t.summary(),
+            "days": journeys.timeline(t.reservations),
+            "others": others,
+        },
     )
 
 
@@ -538,6 +546,12 @@ async def trip_ask(
 async def trip_rename(trip_id: str, me: User, client: Client, name: Annotated[str, Form()]) -> Response:
     await client.object_call(user_svc.rename_trip, me.id, RenameTrip(trip_id=trip_id, name=name))
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)
+
+
+@app.post("/trips/{trip_id}/merge")
+async def trip_merge(trip_id: str, me: User, client: Client, into: Annotated[str, Form()]) -> Response:
+    await client.object_call(user_svc.merge_trips, me.id, MergeTrips(trip_id=trip_id, into=into))
+    return RedirectResponse(f"/trips/{into}", status_code=303)
 
 
 class ReservationForm(ReservationFields):

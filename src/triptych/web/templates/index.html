@@ -4,6 +4,8 @@
 <script type="module" src="{{ static('live.ts') }}"></script>
 <script type="module" src="{{ static('copy.ts') }}"></script>
 <script type="module" src="{{ static('photo.ts') }}"></script>
+<script type="module" src="{{ static('dialog.ts') }}"></script>
+<script type="module" src="{{ static('merge.ts') }}"></script>
 {% endblock %}
 {% block content %}
 {# /events re-renders the sse-swap sections from these same partials as they change (web/live.py) #}
@@ -46,4 +48,18 @@
   </aside>
 </div>
 </div>
+
+{#- Asked when one trip card is dropped on another; merge.ts fills in the names and the form. -#}
+<dialog id="merge" class="dialog" closedby="any" aria-labelledby="merge-title">
+  <h2 id="merge-title">Merge trips?</h2>
+  <form method="post" class="stack">
+    <p class="merge-question">Move everything in <b data-merge="source"></b> into <b data-merge="into"></b>?
+      <span class="muted"><span data-merge="source"></span> is then deleted.</span></p>
+    <input type="hidden" name="into">
+    <div class="dialog-actions">
+      <button type="button" class="button secondary" commandfor="merge" command="close">Cancel</button>
+      <button autofocus>Merge</button>
+    </div>
+  </form>
+</dialog>
 {% endblock %}
