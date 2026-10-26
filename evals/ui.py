@@ -17,6 +17,8 @@ import email.policy
 import hashlib
 import json
 import re
+import shutil
+import subprocess
 import webbrowser
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -54,6 +56,7 @@ from triptych.models import Extraction, IngestRequest, IngestSource, Kind
 from triptych.web.assets import STATIC, Assets, Static
 
 HERE = Path(__file__).parent
+FRONTEND = HERE.parent / "frontend"
 HOSTS = ("127.0.0.1", "localhost")
 CASE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
 
@@ -587,10 +590,34 @@ def source_context(
     return context
 
 
-def serve(root: Path, port: int, *, open_browser: bool = False) -> None:
+def newest(*paths: Path) -> float:
+    """The latest change to any file under these paths (0 if none exist)."""
+    files = [f for p in paths for f in ([p] if p.is_file() else p.rglob("*")) if f.is_file()]
+    return max((f.stat().st_mtime for f in files), default=0)
+
+
+def build_frontend() -> None:
+    """Build the stylesheet and script the pages use, if they're missing or older than their sources,
+    as `npm ci && npm run build` in frontend/ would (installing only when the lockfile changed)."""
+    manifest = STATIC / ".vite/manifest.json"
+    sources = (FRONTEND / "src", FRONTEND / "vite.config.ts", FRONTEND / "package-lock.json")
+    if manifest.exists() and manifest.stat().st_mtime >= newest(*sources):
+        return
+    npm = shutil.which("npm")
+    if npm is None:
+        print("No npm on PATH, so the pages are unstyled: install Node, or build frontend/ yourself")
+        return
+    installed = FRONTEND / "node_modules/.package-lock.json"
+    if not installed.exists() or installed.stat().st_mtime < newest(FRONTEND / "package-lock.json"):
+        print("Installing the frontend's packages (npm ci)…")
+        subprocess.run([npm, "ci", "--no-audit", "--no-fund"], cwd=FRONTEND, check=True)
+    print("Building the frontend…")
+    subprocess.run([npm, "run", "build", "--silent"], cwd=FRONTEND, check=True, stdout=subprocess.DEVNULL)
+
+
+def serve(root: Path, port: int, *, open_browser: bool = True) -> None:
     ensure_layout(root)
-    if not (STATIC / ".vite/manifest.json").exists():
-        print("The pages look unstyled until the frontend is built: (cd frontend && npm ci && npm run build)")
+    build_frontend()
     url = f"http://127.0.0.1:{port}/"
     print(f"Labelling {root} at {url} (Ctrl+C to stop)")
     if open_browser:

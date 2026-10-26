@@ -240,7 +240,7 @@ def main(argv: list[str] | None = None) -> None:
 
     p = sub.add_parser("ui", help="label cases in the browser, on localhost")
     p.add_argument("--port", type=int, default=8765)
-    p.add_argument("--open", action="store_true", help="open it in the browser")
+    p.add_argument("--no-open", dest="open", action="store_false", help="don't open it in the browser")
     p.set_defaults(func=cmd_ui)
 
     p = sub.add_parser("compare", help="two runs side by side")

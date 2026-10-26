@@ -60,9 +60,10 @@ A draft is what production's model answered when the mail arrived. Check it agai
 fix it, and mark it verified. Only verified cases are scored.
 
 ```sh
-(cd frontend && npm ci && npm run build)   # once, and after pulling frontend changes: the UI's styles and script
-uv run python -m evals ui --open           # http://127.0.0.1:8765/
+uv run python -m evals ui   # opens http://127.0.0.1:8765/
 ```
+
+It builds the frontend first if it's missing or out of date (it needs Node and npm on the path).
 
 The UI lists the cases and opens each one with the original on the left (the email as it was sent,
 with remote images blocked until you ask, or the text and images the model was given) and the
