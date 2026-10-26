@@ -1,0 +1,108 @@
+{#- expected.yaml as a form. Every change to it (save, add, remove, take a run's answer) comes back
+    from the server as a whole new form, swapped in for this one. -#}
+{% set base = '/cases/' ~ case_id %}
+{% macro error(name) %}{% if form.errors.get(name) %}<small class="error">{{ form.errors[name] }}</small>{% endif %}{% endmacro %}
+{% macro text(i, r, f, placeholder='', list=none, wide=false) -%}
+{% set name = 'r' ~ i ~ '.' ~ f %}
+<label class="field{% if wide %} wide{% endif %}{% if form.errors.get(name) %} invalid{% endif %}">
+  <span>{{ f }}</span>
+  <input name="{{ name }}" value="{{ r[f] }}"{% if placeholder %} placeholder="{{ placeholder }}"{% endif %}{% if list %} list="{{ list }}"{% endif %} autocomplete="off" spellcheck="false">
+  {{ error(name) }}
+</label>
+{%- endmacro %}
+<form id="case-form" class="answer-form card" hx-post="{{ base }}" hx-swap="outerHTML"{% if form.dirty %} data-dirty{% endif %}>
+  <input type="hidden" name="digest" value="{{ form.digest }}">
+  <input type="hidden" name="count" value="{{ form.reservations | length }}">
+  <input type="hidden" name="input" value="{{ form.case.input }}">
+  {% if form.errors.get('') %}<p class="error banner">{{ form.errors[''] }}</p>
+  {% elif form.errors %}<p class="error banner">Not saved: {{ form.errors | length }} {{ 'field needs' if form.errors | length == 1 else 'fields need' }} fixing.</p>
+  {% elif saved %}<p class="saved banner" role="status">Saved {{ form.case.status }}.</p>{% endif %}
+
+  <div class="fields case-fields">
+    <label class="field">
+      <span>status</span>
+      <select name="status">{% for s in ('draft', 'verified') %}<option {% if form.case.status == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    </label>
+    <label class="field">
+      <span>source</span>
+      <select name="source">{% for s in sources %}<option {% if form.case.source == s %}selected{% endif %}>{{ s }}</option>{% endfor %}</select>
+    </label>
+    <label class="field{% if form.errors.get('received_at') %} invalid{% endif %}">
+      <span>received_at</span>
+      <input name="received_at" value="{{ form.case.received_at }}" spellcheck="false">
+      {{ error('received_at') }}
+    </label>
+    <label class="field check{% if form.errors.get('is_travel_document') %} invalid{% endif %}">
+      <input type="checkbox" name="is_travel_document" {% if form.case.is_travel_document %}checked{% endif %}>
+      <span>is_travel_document</span>
+    </label>
+    <label class="field wide">
+      <span>tags</span>
+      <input name="tags" value="{{ form.case.tags }}" placeholder="comma separated: rail, multi-leg, no-year" spellcheck="false">
+    </label>
+    <label class="field wide">
+      <span>notes</span>
+      <textarea name="notes" rows="2">{{ form.case.notes }}</textarea>
+    </label>
+  </div>
+
+  <h2>Reservations <span class="muted">{{ form.reservations | length }}</span></h2>
+  {% for r in form.reservations %}{% set i = loop.index0 %}
+  <fieldset class="reservation {{ r.kind }}">
+    <legend>{{ i + 1 }}. {{ r.title or r.kind or 'New reservation' }}</legend>
+    <button type="button" class="link remove" hx-post="{{ base }}/form" hx-target="#case-form" hx-swap="outerHTML" name="op" value="remove:{{ i }}">Remove</button>
+    <div class="fields">
+      {% set name = 'r' ~ i ~ '.kind' %}
+      <label class="field{% if form.errors.get(name) %} invalid{% endif %}">
+        <span>kind</span>
+        <select name="{{ name }}">
+          {% if not r.kind %}<option value="" selected>choose…</option>{% endif %}
+          {% for k in kinds %}<option {% if r.kind == k.value %}selected{% endif %}>{{ k.value }}</option>{% endfor %}
+        </select>
+        {{ error(name) }}
+      </label>
+      {{ text(i, r, 'service_number') }}
+      {{ text(i, r, 'start_local', 'YYYY-MM-DDTHH:MM') }}
+      {{ text(i, r, 'end_local', 'YYYY-MM-DDTHH:MM') }}
+      {{ text(i, r, 'start_iata') }}
+      {{ text(i, r, 'end_iata') }}
+      {{ text(i, r, 'start_city') }}
+      {{ text(i, r, 'city') }}
+      {{ text(i, r, 'start_country_code') }}
+      {{ text(i, r, 'country_code') }}
+      {{ text(i, r, 'start_timezone', list='zones') }}
+      {{ text(i, r, 'end_timezone', list='zones') }}
+      {{ text(i, r, 'confirmation_code') }}
+      {{ text(i, r, 'accept', '{city: [Lisboa], start_city: [null]}', wide=true) }}
+    </div>
+    {% set ns = namespace(open=false) %}{% for f in reference if form.errors.get('r' ~ i ~ '.' ~ f) %}{% set ns.open = true %}{% endfor %}
+    <details class="reference"{% if ns.open %} open{% endif %}>
+      <summary class="small muted">Not scored: title, provider, locations, seat, travellers…</summary>
+      <div class="fields">
+        {{ text(i, r, 'title', wide=true) }}
+        {{ text(i, r, 'provider') }}
+        {{ text(i, r, 'seat') }}
+        {{ text(i, r, 'start_location') }}
+        {{ text(i, r, 'end_location') }}
+        {{ text(i, r, 'address', wide=true) }}
+        <label class="field">
+          <span>travelers</span>
+          <textarea name="r{{ i }}.travelers" rows="2" placeholder="one per line">{{ r.travelers }}</textarea>
+        </label>
+        <label class="field">
+          <span>notes</span>
+          <textarea name="r{{ i }}.notes" rows="2">{{ r.notes }}</textarea>
+        </label>
+      </div>
+    </details>
+  </fieldset>
+  {% endfor %}
+  <button type="button" class="button secondary" hx-post="{{ base }}/form" hx-target="#case-form" hx-swap="outerHTML" name="op" value="add">Add reservation</button>
+  <datalist id="zones">{% for z in timezones %}<option value="{{ z }}">{% endfor %}</datalist>
+
+  <div class="form-actions">
+    <span class="muted small"><span class="dirty-note">Unsaved changes · </span>Ctrl+S saves</span>
+    <button id="save" class="button secondary" name="action" value="save">Save</button>
+    <button name="action" value="verify">Save as verified, next draft</button>
+  </div>
+</form>

@@ -56,11 +56,29 @@ uv run python -m evals sync     # fetch new shared cases; each gets cases/<id>/e
 uv run python -m evals check    # validate everything and list the drafts left to verify
 ```
 
-A draft is what production's model answered when the mail arrived. Open it next to
-`inputs/<id>/original.*` (or `parsed.txt`, the text the model saw), fix it, and change
-`status: draft` to `status: verified`. Only verified cases are scored. Editors with the YAML
-language server (VS Code's YAML extension) validate and autocomplete against
-`expected.schema.json`.
+A draft is what production's model answered when the mail arrived. Check it against the original,
+fix it, and mark it verified. Only verified cases are scored.
+
+```sh
+uv run python -m evals ui   # opens http://127.0.0.1:8765/
+```
+
+It builds the frontend first if it's missing or out of date (it needs Node and npm on the path).
+
+The UI lists the cases and opens each one with the original on the left (the email as it was sent,
+with remote images blocked until you ask, or the text and images the model was given) and the
+answer as a form on the right. **Save** writes `expected.yaml` after checking it against the same
+schema `check` uses, plus times and timezones the scorer can read; **Save as verified, next
+draft** also marks it verified and moves on. Ctrl+S saves. Under the form, each run in `runs/` that
+answered the case is scored against the label as it stands, showing only the fields the model got
+wrong, and **Put this answer in the form** starts the form from that run's answer (unsaved). The UI
+only listens on localhost. Saving rewrites the file, so comments you added to it by hand are lost;
+it refuses to save over a change made in another editor since the page loaded.
+
+Editing the YAML by hand works as well: open `cases/<id>/expected.yaml` next to
+`inputs/<id>/original.*` (or `parsed.txt`, the text the model saw) and change `status: draft` to
+`status: verified`. Editors with the YAML language server (VS Code's YAML extension) validate and
+autocomplete against `expected.schema.json`.
 
 After the prompt or the extraction schema changes, `uv run python -m evals redraft` drafts every
 unverified case again with your local model, so you correct the current answer rather than an old

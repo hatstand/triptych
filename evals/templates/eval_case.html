@@ -1,0 +1,32 @@
+{% extends "base.html" %}
+{% block title %}{{ case_id }} · Eval cases · Triptych{% endblock %}
+{% block head %}{% include "_eval_head.html" %}{% endblock %}
+{% block content %}
+<div class="eval-case">
+  <header class="eval-head">
+    <a href="/">Cases</a>
+    <h1 class="mono">{{ case_id }}</h1>
+    {% if expected %}<span class="badge {{ expected.status }}">{{ expected.status }}</span>{% endif %}
+    <nav class="pager small">
+      <span class="muted">{{ position[0] }} of {{ position[1] }}</span>
+      {% if prev %}<a href="/cases/{{ prev }}" rel="prev">Previous</a>{% endif %}
+      {% if next %}<a href="/cases/{{ next }}" rel="next">Next</a>{% endif %}
+    </nav>
+  </header>
+  {% if problem %}
+  <div class="card">
+    <p class="error">cases/{{ case_id }}/expected.yaml doesn't load, so there's no form for it. Fix it in your editor and reload.</p>
+    <pre class="problem">{{ problem }}</pre>
+    <pre class="model-text">{{ raw }}</pre>
+  </div>
+  {% else %}
+  <div class="eval-panes">
+    {% include "_source.html" %}
+    <div class="eval-answer">
+      {% include "_form.html" %}
+      {% include "_runs.html" %}
+    </div>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

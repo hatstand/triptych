@@ -5,6 +5,7 @@ add       add local files (a .eml saved from Gmail, a PDF) as cases, drafted by 
 check     validate every expected.yaml and say what's left to verify
 run       score models, prompts and thinking settings against the verified cases
 compare   two runs side by side
+ui        label cases in the browser: each original beside its answer, and how runs did on it
 """
 
 import argparse
@@ -178,6 +179,12 @@ def cmd_redraft(args: argparse.Namespace) -> None:
     asyncio.run(go())
 
 
+def cmd_ui(args: argparse.Namespace) -> None:
+    from evals.ui import serve
+
+    serve(root_of(args), args.port, open_browser=args.open)
+
+
 def cmd_compare(args: argparse.Namespace) -> None:
     from evals.compare import compare
 
@@ -230,6 +237,11 @@ def main(argv: list[str] | None = None) -> None:
     )
     p.add_argument("--case", action="append", help="only this case id")
     p.set_defaults(func=cmd_redraft)
+
+    p = sub.add_parser("ui", help="label cases in the browser, on localhost")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--no-open", dest="open", action="store_false", help="don't open it in the browser")
+    p.set_defaults(func=cmd_ui)
 
     p = sub.add_parser("compare", help="two runs side by side")
     p.add_argument("before", help="a runs/<run> folder or its results.json")

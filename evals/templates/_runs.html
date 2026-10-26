@@ -1,0 +1,55 @@
+{#- How each recorded run did on this case, scored against the label as saved now. Refreshed after
+    every save. -#}
+{% set base = '/cases/' ~ case_id %}
+<section id="runs" class="runs" hx-get="{{ base }}/runs" hx-trigger="saved from:body" hx-swap="outerHTML">
+  <h2>Model runs <span class="muted">{{ runs | length }}</span></h2>
+  {% if not runs %}
+  <p class="muted small">No run has answered this case yet. <code>python -m evals run --case {{ case_id }}{% if expected.status == 'draft' %} --include-drafts{% endif %}</code></p>
+  {% endif %}
+  {% for run in runs %}{% set s = run.score %}{% set m = run.meta %}
+  <details class="run card"{% if loop.first %} open{% endif %}>
+    <summary>
+      <span class="badge {{ 'verified' if s.fully_correct else 'wrong' }}">{{ 'fully correct' if s.fully_correct else 'not right' }}</span>
+      <b>{{ m.model }}</b>
+      <span class="muted small">prompt {{ m.prompt_version }}{% if m.think is not false %} · think {{ m.think }}{% endif %} · {{ m.started[:16] | replace('T', ' ') }}{% if run.name != case_id %} · {{ run.name }}{% endif %}</span>
+    </summary>
+    {% if s.error %}
+    <p class="error">{{ s.error }}</p>
+    {% else %}
+    {% if not s.classified %}<p class="error">Called it {{ 'travel' if s.predicted_travel else 'not travel' }}; the label says {{ 'travel' if s.is_travel_document else 'not travel' }}.</p>{% endif %}
+    {% for p in s.pairs %}
+    {% set off = p.fields | rejectattr('outcome', 'in', ['na', 'correct']) | list %}
+    {% set right = p.fields | selectattr('outcome', 'equalto', 'correct') | list %}
+    {% if off %}
+    <table class="diff">
+      <caption>{{ p.title }}</caption>
+      <thead><tr><th>field</th><th>label</th><th>model</th><th></th></tr></thead>
+      <tbody>
+      {% for f in off %}
+        <tr>
+          <td class="mono">{{ f.field }}</td>
+          <td>{{ f.expected if f.expected is not none else '—' }}</td>
+          <td>{{ f.predicted if f.predicted is not none else '—' }}</td>
+          <td><span class="outcome {{ f.outcome }}">{{ f.outcome }}</span>{% if f.note %} <span class="muted small">{{ f.note }}</span>{% endif %}</td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    <p class="muted small right">and {{ right | length }} {{ 'field' if right | length == 1 else 'fields' }} right: {{ right | map(attribute='field') | join(', ') }}</p>
+    {% else %}
+    <p class="outcome-line"><span class="outcome correct">right</span> {{ p.title }}: all {{ right | length }} fields</p>
+    {% endif %}
+    {% endfor %}
+    {% for i in s.missed %}{% set r = expected.reservations[i] %}
+    <p class="outcome-line"><span class="outcome missed">missed</span> {{ r.title or r.kind.value }} · {{ r.start_local }}</p>
+    {% endfor %}
+    {% for j in s.spurious %}{% set r = run.extraction.reservations[j] %}
+    <p class="outcome-line"><span class="outcome hallucinated">extra</span> {{ r.title }} · {{ r.kind.value }} · {{ r.start_local }}</p>
+    {% endfor %}
+    {% endif %}
+    {% if run.extraction %}
+    <button type="button" class="button secondary small" hx-post="{{ base }}/form" hx-include="#case-form" hx-target="#case-form" hx-swap="outerHTML" name="op" value="adopt:{{ run.dir }}:{{ run.index }}">Put this answer in the form</button>
+    {% endif %}
+  </details>
+  {% endfor %}
+</section>
