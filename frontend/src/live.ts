@@ -6,3 +6,6 @@ import "htmx-ext-sse";
 // We only swap in our own server-rendered HTML; nothing needs htmx to evaluate script.
 htmx.config.allowEval = false;
 htmx.config.allowScriptTags = false;
+// No <style> for hx-indicator, which nothing uses: the Content-Security-Policy would refuse it.
+// htmx inserts it on DOMContentLoaded, after this module has run.
+htmx.config.includeIndicatorStyles = false;

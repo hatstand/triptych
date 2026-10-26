@@ -10,6 +10,8 @@ for (const button of document.querySelectorAll<HTMLButtonElement>("button[data-c
   if (!(input instanceof HTMLInputElement)) continue;
   let timer: number | undefined;
 
+  input.addEventListener("click", () => input.select());
+
   button.addEventListener("click", async () => {
     try {
       await navigator.clipboard.writeText(input.value);
