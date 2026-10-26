@@ -27,7 +27,6 @@ from datetime import UTC, datetime
 from email.message import EmailMessage
 from pathlib import Path
 from typing import Any, Self, TypedDict, cast, get_args
-from zoneinfo import available_timezones
 
 import uvicorn
 import yaml
@@ -51,7 +50,7 @@ from evals.cases import (
     read_expected,
     write_expected,
 )
-from triptych import enrich, parsing
+from triptych import enrich, parsing, places
 from triptych.models import Extraction, IngestRequest, IngestSource, Kind
 from triptych.web.assets import STATIC, Assets, Static
 
@@ -182,7 +181,7 @@ class Form:
                 if f in data and enrich.parse_local(data[f]) is None:
                     errors[f"r{i}.{f}"] = "not a time: YYYY-MM-DDTHH:MM"
             for f in ZONES:
-                if f in data and not enrich.valid_tz(data[f]):
+                if f in data and data[f] not in places.timezones():
                     errors[f"r{i}.{f}"] = "not an IANA timezone"
             reservations.append(data)
         c = self.case
@@ -388,7 +387,7 @@ def templates_for() -> Jinja2Templates:
     env["static"] = Assets().url
     env["kinds"] = list(Kind)
     env["sources"] = get_args(IngestSource)
-    env["timezones"] = sorted(available_timezones())
+    env["timezones"] = places.timezones()
     env["scored"] = SCORED
     env["reference"] = REFERENCE
     return templates
