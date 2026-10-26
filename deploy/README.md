@@ -181,11 +181,12 @@ reaches it: `https://marvin.axolotl-goblin.ts.net:9070` if you serve it with
 
 ## Public access
 
-`https://triptych.purplehatstands.com` goes through a Cloudflare Tunnel: `cloudflared` on marvin
-(`compose/public.yaml`) keeps outbound connections open to Cloudflare, whose edge serves the name,
-terminates TLS and sends requests down the tunnel to the web app. Nothing at home is forwarded, so
-the ISP gateway (which drops inbound 443) and the double NAT don't matter, and marvin's address
-isn't published. Cloudflare sees the traffic in the clear, as it already does for mail.
+`https://triptych.purplehatstands.com` is served from marvin itself. The home router forwards 80
+and 443 to marvin, where `compose/direct.yaml` publishes `proxy` (Caddy) on marvin's LAN address.
+Caddy gets a Let's Encrypt certificate for `PUBLIC_HOST` (TLS-ALPN on 443; 80 only redirects
+`http://`), keeps it in the `caddy-data` volume and renews it itself. On 443 Caddy trusts no
+forwarded headers and sets `X-Forwarded-For` to the connection's address, which is what the rate
+limits key on. The DNS record is DNS only (grey cloud), so Cloudflare doesn't see the traffic.
 
 What the internet can reach is the web app: sign-in, invite links, the UI, calendar feeds and
 `/inbound`. It can't reach `/admin` (a Unix socket behind `tailscale serve`; the web app has no
@@ -207,38 +208,38 @@ URLs change too (new host and `SECRET_KEY`), so re-subscribe.
    `compose/public.yaml` refuses to start without it. (The Postgres password can stay: the overlay
    unpublishes its port, so only compose neighbours, which hold `DATABASE_URL` anyway, reach it.)
 
-2. **DNS**: delete any existing `triptych` record in the purplehatstands.com zone; the tunnel
-   creates its own (a proxied CNAME to `<tunnel id>.cfargotunnel.com`). Mail at
-   `@triptych.purplehatstands.com` isn't possible alongside it; use the apex for mail.
+2. **Router**: forward TCP 443 and 80 to marvin's LAN address (give marvin a DHCP reservation so
+   it keeps it). The router's WAN address must be the public one (`curl -4 ifconfig.me` on
+   marvin); the ISP gateway has to be in bridge mode, since it drops inbound 443 otherwise.
 
-3. **Tunnel** (Cloudflare dashboard → Zero Trust → Networks → Tunnels → **Create a tunnel** →
-   Cloudflared): name it `triptych`, and copy the token from the install command it shows
-   (the long string after `--token`). Under **Public hostnames** add subdomain `triptych`,
-   domain `purplehatstands.com`, service **HTTP** `proxy:8000` (the compose service name). Put the token in `/srv/triptych/.env`
-   as `TUNNEL_TOKEN=...`. It is a credential for running this tunnel and nothing else; if it
-   leaks, rotate it from the tunnel's page.
-
-4. **Edge settings** (purplehatstands.com → SSL/TLS → Edge Certificates): turn on **Always Use
-   HTTPS** and **HSTS** (max-age 6 months or more, no preload needed).
-
-5. **Switch over**: add to `/srv/triptych/.env` (keep the other lines):
+3. **Switch over**: add to `/srv/triptych/.env` (keep the other lines):
 
    ```bash
-   COMPOSE_FILE=compose.yaml:compose/ollama.yaml:compose/gpu-rocm.yaml:compose/public.yaml
+   COMPOSE_FILE=compose.yaml:compose/ollama.yaml:compose/gpu-rocm.yaml:compose/public.yaml:compose/direct.yaml
    PUBLIC_BASE_URL=https://triptych.purplehatstands.com
+   PUBLIC_HOST=triptych.purplehatstands.com
+   PUBLIC_BIND=<marvin's LAN address>
    WEBAUTHN_RP_ID=purplehatstands.com
    ADMIN_ORIGINS=https://triptych.axolotl-goblin.ts.net
    ```
 
    `compose/public.yaml` needs Docker Compose 2.24.4 or later (`docker compose version`). Then
-   redeploy (re-run the **Deploy** workflow, or `tailscale ssh deploy@marvin <sha>`). The
-   `--remove-orphans` in the deploy script is fine: `cloudflared` is part of the project now.
-   Remove the home router's 443 forward; nothing uses it.
+   redeploy (re-run the **Deploy** workflow, or `tailscale ssh deploy@marvin <sha>`).
 
-6. **Check**: the tunnel shows **Healthy** in the dashboard, `docker compose logs cloudflared`
-   shows registered connections, and `https://triptych.purplehatstands.com/login` loads.
+4. **DNS** (Cloudflare → purplehatstands.com → DNS): point `triptych` at the public address,
+   **DNS only** (grey cloud): an `A` record, or a CNAME to another DNS-only name for marvin. Mail
+   at `@triptych.purplehatstands.com` isn't possible alongside a CNAME; use the apex for mail. If
+   Caddy tried for the certificate before DNS pointed here, `docker compose restart proxy` makes
+   it ask again straight away; `docker compose logs -f proxy` shows "certificate obtained
+   successfully".
 
-7. **Passkeys**: open `https://triptych.axolotl-goblin.ts.net/admin`, create an invite for
+5. **Check**, from outside the house (phone on mobile data): `https://triptych.purplehatstands.com/login`
+   loads, and `curl -sI https://triptych.purplehatstands.com/login | grep -i strict` shows the
+   app's HSTS header. Send a plan by email to check the Email Worker reaches `/inbound`. The
+   access lines in `docker compose logs web` should show visitors' public addresses, not 172.x
+   (that would mean every visitor shares one rate limit).
+
+6. **Passkeys**: open `https://triptych.axolotl-goblin.ts.net/admin`, create an invite for
    yourself (the link now points at the public host), and register a passkey from it; it's added
    to your existing account. Delete the old ts.net passkeys from the account page afterwards.
 
@@ -246,44 +247,9 @@ Once the Email Worker posts to `https://triptych.purplehatstands.com/inbound`, t
 (`tailscale funnel status` to see what's on). Keep the ts.net `tailscale serve` for `/`, though:
 the admin pages load their CSS and scripts from it.
 
-To go back to tailnet-only, remove `:compose/public.yaml` and the lines above from `.env` and
-redeploy. Passkeys registered on the public name then stop working on the ts.net name instead.
-
-### Direct on 443
-
-Since the ISP gateway went into bridge mode, inbound 443 reaches marvin, so the public name can be
-served from marvin itself instead of the tunnel. `compose/direct.yaml` publishes `proxy` on
-marvin's LAN address, ports 80 and 443, and adds a site for `PUBLIC_HOST`. Caddy gets a Let's
-Encrypt certificate for it (TLS-ALPN on 443; 80 only redirects `http://`) and keeps it in the
-`caddy-data` volume. On 443 Caddy trusts no forwarded headers and sets `X-Forwarded-For` to the
-connection's address, so rate limits key on the visitor without Cloudflare in front.
-
-The tunnel stays running alongside, so going back is a DNS change.
-
-1. **Router**: forward TCP 443 and 80 to marvin's LAN address (give marvin a DHCP reservation so it
-   keeps it). Check the router's WAN address is the public one (`curl -4 ifconfig.me` on marvin).
-2. **`.env`**: append `:compose/direct.yaml` to `COMPOSE_FILE` (after `compose/public.yaml`) and add:
-
-   ```bash
-   PUBLIC_HOST=triptych.purplehatstands.com
-   PUBLIC_BIND=<marvin's LAN address>
-   ```
-
-   Then redeploy. Caddy can't get the certificate yet, because the name still points at
-   Cloudflare; it keeps retrying, which is harmless.
-3. **DNS** (Cloudflare → purplehatstands.com → DNS): replace the tunnel's `triptych` CNAME with an
-   `A` record to the public address, **DNS only** (grey cloud), TTL 1 min for now. Then
-   `docker compose restart proxy` so Caddy asks for the certificate straight away, and watch
-   `docker compose logs -f proxy` for "certificate obtained successfully".
-4. **Check**, from outside the house (phone on mobile data): `https://triptych.purplehatstands.com/login`
-   loads, and `curl -sI https://triptych.purplehatstands.com/login | grep -i strict` shows the
-   app's HSTS header. Sign in, and send a plan by email to check the Email Worker reaches
-   `/inbound`. The access lines in `docker compose logs web` should show visitors' public
-   addresses, not 172.x (that would mean every visitor shares one rate limit).
-
-**Rolling back**: in the tunnel's **Public hostnames**, delete and re-add `triptych` →
-`proxy:8000`; Cloudflare recreates the proxied CNAME. Leave `compose/direct.yaml` in place or
-remove it, either works.
+To go back to tailnet-only, remove `:compose/public.yaml:compose/direct.yaml` and the lines above
+from `.env` and redeploy. Passkeys registered on the public name then stop working on the ts.net
+name instead.
 
 ## Keeping originals (R2)
 
@@ -346,8 +312,8 @@ Stopping sharing stops new copies; copies already made stay.
 <a id="zero-downtime-web"></a>
 ## Zero-downtime deploys
 
-`web` has no host port. `proxy` (Caddy, in `compose.yaml`) owns loopback `:8000` and the
-`proxy:8000` name on the compose network, and passes every request to `web:8000`, which resolves
+`web` has no host port. `proxy` (Caddy, in `compose.yaml`) owns loopback `:8000` (and, with
+`compose/direct.yaml`, the public 80 and 443), and passes every request to `web:8000`, which resolves
 to every running `web` container. The deploy script runs
 [docker-rollout](https://github.com/wowu/docker-rollout): it starts a second `web` on the new
 image, waits for its healthcheck (`GET /livez`), then stops the old one. For those seconds both
@@ -374,10 +340,6 @@ locking and breaking changes.
    `install` whenever `deploy/triptych-deploy` changes.
 2. Merge. That deploy can't avoid one short gap: the old `web` holds `:8000` until it's replaced,
    so `proxy` starts a second or so after it. Every deploy after that has none.
-3. Cloudflare dashboard → Zero Trust → Networks → Tunnels → `triptych` → **Public hostnames** →
-   edit `triptych.purplehatstands.com` → service **HTTP** `proxy:8000` (was `web:8000`).
-   Until then the tunnel still reaches `web` directly, which works but can drop a request
-   mid-deploy.
 
 `tailscale serve` needs no change: `svc:triptych` still points at `127.0.0.1:8000`, now `proxy`,
 so the ts.net `/admin` page's `/static` and Funnel's `/inbound` keep working.

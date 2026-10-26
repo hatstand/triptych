@@ -1,7 +1,7 @@
 # Serving PUBLIC_HOST straight from marvin (deploy/README.md → "Direct on 443"): the router forwards
 # 80 and 443 to marvin, and proxy terminates TLS itself with a certificate from Let's Encrypt
 # (TLS-ALPN on 443, so 80 only matters for redirecting http:// visitors). Add to COMPOSE_FILE
-# after compose/public.yaml, which still unpublishes the other ports.
+# after compose/public.yaml, which unpublishes the other ports.
 #
 # PUBLIC_BIND is marvin's LAN address, not 0.0.0.0: Docker's published ports skip the host
 # firewall, and a wildcard 443 would also catch traffic meant for `tailscale serve` on the tailnet
