@@ -19,7 +19,7 @@ from triptych.models import (
     RenameTrip,
     TripRef,
 )
-from triptych.services import place_photo, reminders
+from triptych.services import eval_share, place_photo, reminders
 
 user = restate.VirtualObject("User")
 
@@ -59,18 +59,21 @@ async def reconcile(ctx: restate.ObjectContext, req: ReconcileRequest) -> db.Rec
 @user.handler()
 async def remove_reservation(ctx: restate.ObjectContext, req: RemoveReservation) -> bool:
     """Returns whether the trip still exists."""
-    exists = await ctx.run_typed(
+    removed = await ctx.run_typed(
         "remove reservation",
         db.remove_reservation,
-        restate.RunOptions[bool](),
+        restate.RunOptions[db.Removed](),
         ctx.key(),
         req.trip_id,
         req.reservation_id,
     )
-    if exists:
+    if removed.trip_exists:
         # Removing the Porto hotel from a Lisbon & Porto trip can move its destination.
         await place_photo.request(ctx, [req.trip_id])
-    return exists
+    if removed.ingest_id:
+        # A deleted reservation is one its ingest shouldn't have produced: a correction to label.
+        ctx.object_send(eval_share.copy, ctx.key(), removed.ingest_id)
+    return removed.trip_exists
 
 
 @user.handler()
@@ -89,6 +92,12 @@ async def edit_reservation(ctx: restate.ObjectContext, req: EditReservation) -> 
         await reminders.schedule(ctx, ctx.key(), filed.reservations)
         # A new city can move the trip's destination.
         await place_photo.request(ctx, filed.trip_ids)
+        # The correction is a label for the eval set, if the owner shares with it.
+        edited = next(
+            (f.reservation for f in filed.reservations if f.reservation.id == req.reservation_id), None
+        )
+        if edited and edited.source_ingest_id:
+            ctx.object_send(eval_share.copy, ctx.key(), edited.source_ingest_id)
 
 
 @user.handler()

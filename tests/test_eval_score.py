@@ -170,11 +170,14 @@ def bucket() -> Any:
         yield s3
 
 
-def put_case(s3: Any, ingest_id: str, output: dict[str, Any] | None) -> None:
+def put_case(
+    s3: Any, ingest_id: str, output: dict[str, Any] | None, corrections: list[dict[str, Any]] | None = None
+) -> None:
     case = {
         "ingest_id": ingest_id, "source": "email", "content_type": "message/rfc822", "subject": "Your flight",
         "received_at": datetime(2026, 10, 25, 12, tzinfo=UTC).isoformat(), "images": 0,
         "run": {"model": "gemma4:26b", "prompt_version": "0123456789ab", "output": output},
+        "corrections": corrections or [],
     }  # fmt: skip
     s3.put_object(Bucket="evals", Key=f"inputs/{ingest_id}/original.eml", Body=b"From: a\r\n\r\nhi")
     s3.put_object(Bucket="evals", Key=f"inputs/{ingest_id}/case.json", Body=json.dumps(case).encode())
@@ -210,6 +213,54 @@ def test_sync_downloads_cases_and_drafts_new_ones(bucket: Any, tmp_path: Path) -
     again = sync(tmp_path, bucket, "evals")
     assert (again.downloaded, again.drafted) == ([], [])
     assert read_expected(tmp_path / "cases" / "mail-1" / "expected.yaml").status == "verified"
+
+
+def two_flights() -> dict[str, Any]:
+    flight = as_extraction(smoke("01-flight-lisbon")).reservations[0]
+    back = flight.model_copy(update={"title": "Back", "start_local": "2026-11-20T18:00", "end_local": None})
+    return Extraction(is_travel_document=True, reservations=[flight, back]).model_dump(mode="json")
+
+
+def test_sync_drafts_from_the_owners_corrections(bucket: Any, tmp_path: Path) -> None:
+    put_case(bucket, "mail-1", two_flights(), [
+        {"reservation": 0, "edited": ["start_local", "end_location", "start_tz"],
+         "fields": {"start_local": "2026-11-03T10:15:00", "end_location": "Porto (OPO)",
+                    "start_tz": "Europe/Dublin"}},
+        {"reservation": 1, "deleted": True},
+        {"reservation": None, "edited": ["title"],
+         "fields": {"kind": "lodging", "title": "Hotel Avenida", "start_local": "2026-11-03T15:00:00",
+                    "end_local": None, "start_tz": "Europe/Lisbon", "city": "Lisbon", "travelers": []}},
+    ])  # fmt: skip
+
+    sync(tmp_path, bucket, "evals")
+    draft = read_expected(tmp_path / "cases" / "mail-1" / "expected.yaml")
+    flight, hotel = draft.reservations
+    assert (flight.start_local, flight.end_location, flight.end_iata) == (
+        "2026-11-03T10:15",
+        "Porto (OPO)",
+        "OPO",
+    )
+    assert flight.start_timezone == "Europe/Dublin"
+    assert (hotel.kind, hotel.title, hotel.start_timezone) == (Kind.LODGING, "Hotel Avenida", "Europe/Lisbon")
+    assert draft.status == "draft" and "corrected" in draft.tags
+    assert "deleted Back" in (draft.notes or "")
+
+
+def test_a_later_correction_redrafts_only_what_nobody_touched(bucket: Any, tmp_path: Path) -> None:
+    put_case(bucket, "mail-1", two_flights())
+    put_case(bucket, "mail-2", two_flights())
+    sync(tmp_path, bucket, "evals")
+    labelled = tmp_path / "cases" / "mail-2" / "expected.yaml"
+    labelled.write_text(labelled.read_text().replace("status: draft", "status: verified"))
+
+    deleted = [{"reservation": 1, "deleted": True}]
+    put_case(bucket, "mail-1", two_flights(), deleted)
+    put_case(bucket, "mail-2", two_flights(), deleted)
+    again = sync(tmp_path, bucket, "evals")
+    assert (again.redrafted, again.recorrected) == (["mail-1"], ["mail-2"])
+    assert len(read_expected(tmp_path / "cases" / "mail-1" / "expected.yaml").reservations) == 1
+    assert len(read_expected(labelled).reservations) == 2
+    assert sync(tmp_path, bucket, "evals").redrafted == []
 
 
 @pytest.mark.llm

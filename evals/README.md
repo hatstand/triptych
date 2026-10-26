@@ -56,8 +56,13 @@ uv run python -m evals sync     # fetch new shared cases; each gets cases/<id>/e
 uv run python -m evals check    # validate everything and list the drafts left to verify
 ```
 
-A draft is what production's model answered when the mail arrived. Check it against the original,
-fix it, and mark it verified. Only verified cases are scored.
+A draft is what production's model answered when the mail arrived, unless the owner has
+corrected it on the trip page since: editing a reservation or deleting one copies the case again
+with those corrections, and sync drafts from the owner's answer instead. Such a draft is tagged
+`corrected` and its notes say what they changed. Only the fields they touched are theirs, so check
+the rest as usual. A correction made after sync wrote the draft redrafts it if you haven't touched
+the file, and otherwise sync lists the case for another look rather than overwriting your work.
+Check each draft against the original, fix it, and mark it verified. Only verified cases are scored.
 
 ```sh
 uv run python -m evals ui   # opens http://127.0.0.1:8765/
@@ -82,8 +87,8 @@ autocomplete against `expected.schema.json`.
 
 After the prompt or the extraction schema changes, `uv run python -m evals redraft` drafts every
 unverified case again with your local model, so you correct the current answer rather than an old
-one. It only touches `status: draft` files, so verify the cases you've finished before running
-it. Drafts written in the old field names (`flight_number`, `timezone`) still load.
+one. It only touches `status: draft` files, and skips `corrected` ones, so verify the cases you've
+finished before running it. Drafts written in the old field names (`flight_number`, `timezone`) still load.
 
 - Leave a field out when the document doesn't say it. The harness counts a value there as a
   hallucination.

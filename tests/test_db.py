@@ -140,7 +140,7 @@ async def test_ownership_and_last_reservation_deletes_trip(me: str) -> None:
     rid = filed.reservations[0].reservation.id
     with pytest.raises(restate.TerminalError):
         await db.remove_reservation(await db.user_for_email("someone@else.com"), trip_id, rid)
-    assert await db.remove_reservation(me, trip_id, rid) is False
+    assert not (await db.remove_reservation(me, trip_id, rid)).trip_exists
     assert await db.trip_summaries(me) == []
     assert await db.get_trip(me, trip_id) is None
 
@@ -155,7 +155,7 @@ async def test_deleted_reservation_stays_deleted_when_its_ingest_is_filed_again(
     )
     [trip_id] = filed.trip_ids
     lisbon = next(f.reservation for f in filed.reservations if f.reservation.city == "Lisbon")
-    assert await db.remove_reservation(me, trip_id, lisbon.id) is True
+    assert (await db.remove_reservation(me, trip_id, lisbon.id)).trip_exists
 
     # A re-extraction of the same email (new ids, the hotel retitled) brings back only Porto.
     retitled = from_ingest(hotel(), "mail-1").model_copy(update={"title": "Hotel Avenida"})
@@ -406,7 +406,7 @@ async def test_applying_a_reprocess_updates_in_place_and_never_resurrects(me: st
     [trip_id] = filed.trip_ids
     stored = {f.reservation.kind: f.reservation for f in filed.reservations}
     flight_back = next(f.reservation for f in filed.reservations if f.reservation.confirmation_code == "B2")
-    assert await db.remove_reservation(me, trip_id, flight_back.id)
+    assert (await db.remove_reservation(me, trip_id, flight_back.id)).trip_exists
 
     # A better model: the hotel has an address, the return flight is back, and there's a dinner.
     run = [

@@ -151,6 +151,11 @@ def read_expected(path: Path) -> Expected:
 
 def write_expected(path: Path, expected: Expected) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(render_expected(path, expected))
+
+
+def render_expected(path: Path, expected: Expected) -> str:
+    """The YAML `write_expected` writes to `path`."""
     # Status first, and the answer explicit even where it's the default.
     data = {"status": expected.status, **expected.model_dump(mode="json", exclude_defaults=True)}
     data["is_travel_document"] = expected.is_travel_document
@@ -160,7 +165,7 @@ def write_expected(path: Path, expected: Expected) -> None:
     ]
     schema = os.path.relpath(path.parents[2] / SCHEMA_FILE, path.parent)
     header = f"# yaml-language-server: $schema={schema}\n"
-    path.write_text(header + yaml.safe_dump(data, sort_keys=False, allow_unicode=True))
+    return header + yaml.safe_dump(data, sort_keys=False, allow_unicode=True)
 
 
 def write_schema(root: Path) -> None:
