@@ -34,6 +34,7 @@ from evals.cases import (
     render_expected,
     write_expected,
 )
+from triptych import places
 from triptych.enrich import CODED
 from triptych.evalset import PREFIX, Correction
 from triptych.journeys import iata_of
@@ -92,6 +93,9 @@ def as_expected(fields: dict[str, Any]) -> dict[str, Any]:
     for name, value in fields.items():
         if name in ("start_local", "end_local") and value:
             value = value[:16]  # YYYY-MM-DDTHH:MM
+        if name in RENAMED and value not in places.timezones():
+            # The trip page takes any zone Python knows (Europe/Kiev); labels take canonical ones.
+            value = None
         out[RENAMED.get(name, name)] = value
     return {k: v for k, v in out.items() if k in ExpectedReservation.model_fields}
 
