@@ -298,6 +298,35 @@ shared words if Ollama can't embed. Each run records the examples it was shown
 pauses them by itself when they make extraction worse. While paused, extraction runs as if
 `LLM_EXAMPLES` were off.
 
+### Eval gate
+
+After every deploy, and nightly at 03:17 UTC, the **Eval gate** workflow runs
+`tailscale ssh deploy@marvin gate`: the labelled eval set, run with the deployed model and prompt
+through the Llm service's `eval` lane, so it queues behind real mail (evals/README.md → "The gate
+on marvin"). It fails, and opens or updates an issue, when extraction got worse than the last good
+run; with `LLM_EXAMPLES` on it also pauses worked examples when they made it worse. Only totals
+reach the Actions log; per-case detail stays in `/srv/triptych-evals/runs`.
+
+One-time setup on marvin, as an admin (the labels repo is private, so it's read with its own
+read-only deploy key, `~deploy/.ssh/triptych-evals`, added under triptych-evals → Settings →
+Deploy keys):
+
+```sh
+sudo -u deploy tee -a ~deploy/.ssh/config <<'CONF'
+Host github-evals
+  HostName github.com
+  User git
+  IdentityFile ~/.ssh/triptych-evals
+  IdentitiesOnly yes
+CONF
+sudo install -d -o deploy -g deploy /srv/triptych-evals
+sudo -u deploy git clone git@github-evals:hatstand/triptych-evals.git /srv/triptych-evals
+```
+
+The gate syncs the inputs with the `INPUTS_*` token and `EVALS_BUCKET` already in `.env`, and uses
+the `<sha>-evals` image Deploy pushes next to the app image. To start its baseline over, delete
+`/srv/triptych-evals/runs/gate.json`.
+
 ### Eval set sharing
 
 Accounts can opt in on the account page (Eval set) to share their originals with the extraction eval

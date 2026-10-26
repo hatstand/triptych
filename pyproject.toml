@@ -41,6 +41,10 @@ dev = [
     "squawk-cli==2.68.0",
     "playwright==1.64.1",
     "moto[s3]>=5.2.4",
+    { include-group = "evals" },
+]
+# The extraction eval harness (evals/), also in the evals image that runs the gate on marvin.
+evals = [
     "pydantic-evals>=2.61.0",
     "scipy>=1.18.1",
     "pyyaml>=6.0.3",

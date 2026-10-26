@@ -1994,6 +1994,12 @@ dev = [
     { name = "squawk-cli" },
     { name = "ty" },
 ]
+evals = [
+    { name = "pydantic-evals" },
+    { name = "pyyaml" },
+    { name = "rich" },
+    { name = "scipy" },
+]
 
 [package.metadata]
 requires-dist = [
@@ -2038,6 +2044,12 @@ dev = [
     { name = "scipy", specifier = ">=1.18.1" },
     { name = "squawk-cli", specifier = "==2.68.0" },
     { name = "ty", specifier = "==0.0.85" },
+]
+evals = [
+    { name = "pydantic-evals", specifier = ">=2.61.0" },
+    { name = "pyyaml", specifier = ">=6.0.3" },
+    { name = "rich", specifier = ">=15.0.0" },
+    { name = "scipy", specifier = ">=1.18.1" },
 ]
 
 [[package]]

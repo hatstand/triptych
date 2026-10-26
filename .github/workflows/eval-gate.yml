@@ -1,0 +1,49 @@
+name: Eval gate
+
+# Runs the extraction eval on marvin against what's deployed there (evals/README.md → "The gate on
+# marvin"): after every deploy (Deploy calls this) and every night. It fails when extraction got
+# worse than the last good run, and pauses worked examples when they made it worse; either way an
+# issue is opened. The log shows totals only; per-case detail stays on marvin.
+
+on:
+  workflow_call:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: ubuntu-26.04
+    # The same environment, and so the same main-only tailnet identity, as Deploy.
+    environment: marvin
+    # A nightly run waits for a deploy in progress rather than evaluating half of one.
+    concurrency:
+      group: ${{ github.event_name == 'schedule' && 'deploy-marvin' || format('eval-gate-{0}', github.run_id) }}
+      cancel-in-progress: false
+    timeout-minutes: 180
+    permissions:
+      id-token: write
+      issues: write
+    steps:
+      - uses: tailscale/github-action@v4
+        with:
+          oauth-client-id: ${{ vars.TS_OAUTH_CLIENT_ID }}
+          audience: ${{ vars.TS_AUDIENCE }}
+          tags: tag:ci
+          ping: marvin
+      # deploy's login shell on marvin (deploy/triptych-deploy) runs the gate for `gate`.
+      - run: tailscale ssh deploy@marvin gate
+      - if: failure()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          title="Eval gate failed"
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --state open --search "in:title \"$title\"" --json number --jq '.[0].number')
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "Failed again on $GITHUB_SHA: $RUN_URL"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "The eval gate failed on $GITHUB_SHA ($GITHUB_EVENT_NAME): $RUN_URL
+
+          The log says which check failed. If worked examples made things worse they're paused now; resume them on /admin once fixed. Per-case detail is in /srv/triptych-evals/runs on marvin."
+          fi
