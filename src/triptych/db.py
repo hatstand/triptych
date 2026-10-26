@@ -13,7 +13,7 @@ commit, so a rolled-back or retried step announces nothing it didn't do.
 import uuid
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import Any, Literal, LiteralString
 
 import restate
@@ -398,6 +398,13 @@ async def set_eval_sharing(user_id: str, share: bool) -> None:
 
 async def eval_case(ingest_id: str) -> EvalCase | None:
     """None unless the ingest has a kept original and its owner shares with the eval set."""
+    return await ingest_case(ingest_id, shared=True)
+
+
+async def ingest_case(ingest_id: str, *, shared: bool = False) -> EvalCase | None:
+    """An ingest with a kept original: the original, its current run and what its owner has from
+    it now. None without a kept original (or, if `shared`, unless its owner shares with the eval
+    set)."""
     async with connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             """
@@ -408,11 +415,11 @@ async def eval_case(ingest_id: str) -> EvalCase | None:
                    r.params, r.purpose, r.output, r.error
             FROM inbox_item i
             JOIN raw_input ri ON ri.id = i.input_id
-            JOIN eval_share s ON s.user_id = i.owner
             LEFT JOIN extraction_run r ON r.id = i.current_run_id
-            WHERE i.ingest_id = %s
+            WHERE i.ingest_id = %(id)s
+              AND (NOT %(shared)s OR EXISTS (SELECT 1 FROM eval_share s WHERE s.user_id = i.owner))
             """,
-            (ingest_id,),
+            {"id": ingest_id, "shared": shared},
         )
         row = await cur.fetchone()
         if row is None:
@@ -464,6 +471,62 @@ async def eval_case(ingest_id: str) -> EvalCase | None:
         keys={r["id"]: r["dedupe_key"] for r in stored},
         dismissals=dismissals,
     )
+
+
+# --- worked examples for extraction (examples.py) ---------------------------------------------
+
+
+class Example(BaseModel):
+    """An ingest whose reservations its owner corrected, as a worked example of reading it."""
+
+    ingest_id: str
+    owner: str
+    sender_domain: str | None
+    subject: str | None
+    text: str
+    """What the model is given (the parsed document's text)."""
+    answer: Extraction
+    """The run's answer as its owner corrected it."""
+    changes: list[str]
+    partial: bool
+    """Some corrections couldn't be checked against `text`, so the model's answer was kept there."""
+
+
+async def save_example(example: Example, settle: timedelta) -> None:
+    """Write (or rewrite) an ingest's example, first usable `settle` from now."""
+    async with connection() as conn:
+        await conn.execute(
+            """INSERT INTO extraction_example (ingest_id, owner, sender_domain, subject, text, answer,
+                   changes, partial, live_at)
+               VALUES (%(ingest_id)s, %(owner)s, %(sender_domain)s, %(subject)s, %(text)s, %(answer)s,
+                   %(changes)s, %(partial)s, now() + %(settle)s)
+               ON CONFLICT (ingest_id) DO UPDATE SET
+                   sender_domain = EXCLUDED.sender_domain, subject = EXCLUDED.subject,
+                   text = EXCLUDED.text, answer = EXCLUDED.answer, changes = EXCLUDED.changes,
+                   partial = EXCLUDED.partial, live_at = EXCLUDED.live_at, updated_at = now()""",
+            {
+                **example.model_dump(exclude={"answer"}),
+                "answer": Jsonb(example.answer.model_dump(mode="json")),
+                "settle": settle,
+            },
+        )
+
+
+async def delete_example(ingest_id: str) -> None:
+    async with connection() as conn:
+        await conn.execute("DELETE FROM extraction_example WHERE ingest_id = %s", (ingest_id,))
+
+
+async def live_examples(owner: str) -> list[Example]:
+    """A user's examples past their settle time, newest first."""
+    async with connection() as conn, conn.cursor(row_factory=class_row(Example)) as cur:
+        await cur.execute(
+            """SELECT ingest_id, owner::text, sender_domain, subject, text, answer, changes, partial
+               FROM extraction_example WHERE owner = %s AND live_at <= now()
+               ORDER BY updated_at DESC, ingest_id""",
+            (owner,),
+        )
+        return await cur.fetchall()
 
 
 async def mark_eval_copied(ingest_id: str, owner: str) -> None:
