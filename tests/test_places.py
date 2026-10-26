@@ -42,3 +42,12 @@ def test_city_timezone_with_country() -> None:
     assert places.city_timezone(None, "JP") == "Asia/Tokyo"
     assert places.city_timezone("Smalltown", "US") is None
     assert places.city_timezone("Springfield", "US") is None
+
+
+def test_an_alias_is_read_as_the_canonical_zone_it_links_to() -> None:
+    assert places.canonical_timezone("Europe/Lisbon") == "Europe/Lisbon"
+    assert places.canonical_timezone("Asia/Chongqing") == "Asia/Shanghai"
+    assert places.canonical_timezone("Europe/Kiev") == "Europe/Kyiv"
+    assert places.canonical_timezone("US/Eastern") == "America/New_York"
+    for nonsense in ("Pacific/Wellington", "", "../../etc/passwd", "/etc/passwd", "Europe"):
+        assert places.canonical_timezone(nonsense) is None, nonsense

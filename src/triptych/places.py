@@ -72,6 +72,35 @@ def timezones() -> tuple[str, ...]:
     return tuple(sorted({row[2] for row in rows}))
 
 
+def _zone_file(name: str) -> bytes | None:
+    try:
+        return importlib.resources.files("tzdata").joinpath("zoneinfo", *name.split("/")).read_bytes()
+    except (OSError, ValueError):
+        return None
+
+
+@cache
+def _canonical_by_file() -> dict[bytes, str]:
+    out: dict[bytes, str] = {}
+    for zone in timezones():
+        if (data := _zone_file(zone)) is not None:
+            out.setdefault(data, zone)
+    return out
+
+
+@cache
+def canonical_timezone(name: str) -> str | None:
+    """`name` as one of timezones(): itself, or for an alias (Asia/Chongqing, Europe/Kiev, US/Eastern)
+    the canonical zone it links to (Asia/Shanghai, Europe/Kyiv, America/New_York). tzdata ships a
+    link as a copy of its target's file, which is how it's found. None for a name that isn't a zone."""
+    if name in timezones():
+        return name
+    if not name or ".." in name or name.startswith("/"):
+        return None
+    data = _zone_file(name)
+    return _canonical_by_file().get(data) if data is not None else None
+
+
 @cache
 def _zones() -> tuple[dict[str, dict[str, frozenset[str]]], dict[str, str]]:
     """city name -> country -> zones of the places there; country -> its dominant zone."""

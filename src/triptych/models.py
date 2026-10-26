@@ -76,15 +76,15 @@ def _iata_code(description: str) -> Any:
 
 
 def _known_timezone(name: str | None) -> str | None:
-    name = (name or "").strip()
-    return name if name in places.timezones() else None
+    return places.canonical_timezone((name or "").strip())
 
 
 def _timezone(description: str) -> Any:
     """A canonical IANA zone name, or null. The schema lists the zones, so Ollama's grammar can't
-    write one that doesn't exist (Pacific/Wellington) or a placeholder; anything else read back
-    (a truncated reply, a stored run from before the list) becomes null and is filled in from the
-    city like any other missing zone."""
+    write one that doesn't exist (Pacific/Wellington) or a placeholder. Read back, an alias (a zone
+    the trip page offered, Europe/Kiev) becomes its canonical zone, and anything else (a truncated
+    reply, a stored run from before the list) becomes null and is filled in from the city like any
+    other missing zone."""
     return Annotated[
         str | None,
         AfterValidator(_known_timezone),
