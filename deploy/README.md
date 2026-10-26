@@ -282,6 +282,14 @@ To try a candidate model on real mail, `ollama pull` it and set `SHADOW_MODEL=<m
 every new ingest is then also extracted with it, and the diff shows up on /admin as batch `shadow`,
 never applied.
 
+### Worked examples
+
+When someone corrects a reservation on the trip page, the email and the answer they wanted are kept
+as an example for their account (src/triptych/examples.py). With `LLM_EXAMPLES=1` in `.env`, up to
+three of a user's own examples are shown to the model before each new document of theirs: the same
+sender's first, then any that read much the same. Each run records the examples it was shown
+(`extraction_run.examples`). Leave it off until the evals show it helps.
+
 ### Eval set sharing
 
 Accounts can opt in on the account page (Eval set) to share their originals with the extraction eval

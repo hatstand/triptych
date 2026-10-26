@@ -14,6 +14,7 @@ x-app: &app
     OLLAMA_URL: ${OLLAMA_URL:-http://ollama:11434}
     LLM_MODEL: ${LLM_MODEL:-gemma4:26b-a4b-it-qat}
     SHADOW_MODEL: ${SHADOW_MODEL:-}
+    LLM_EXAMPLES: ${LLM_EXAMPLES:-}
     LLM_NUM_CTX: ${LLM_NUM_CTX:-16384}
     LLM_CONCURRENCY: ${LLM_CONCURRENCY:-1}
     PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8000}

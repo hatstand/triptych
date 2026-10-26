@@ -16,6 +16,9 @@ class Settings:
     # A candidate model that extracts every new ingest again, recorded but never applied (Reprocess
     # "shadow" runs, compared on /admin). Unset = no shadow runs.
     shadow_model: str | None
+    # Show the model a user's own corrected documents before each new one of theirs (examples.py).
+    # Off until the evals say it helps.
+    llm_examples: bool
     llm_num_ctx: int
     llm_timeout_s: float
     public_base_url: str
@@ -75,6 +78,7 @@ def load() -> Settings:
         ollama_url=env("OLLAMA_URL", "http://localhost:11434"),
         llm_model=env("LLM_MODEL", "gemma4:26b-a4b-it-qat"),
         shadow_model=env("SHADOW_MODEL") or None,
+        llm_examples=env("LLM_EXAMPLES", "") in ("1", "true", "yes"),
         llm_num_ctx=int(env("LLM_NUM_CTX", "16384")),
         llm_timeout_s=float(env("LLM_TIMEOUT_S", "600")),
         public_base_url=public_base_url,

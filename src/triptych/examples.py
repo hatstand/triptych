@@ -3,8 +3,9 @@ email like it is read the way they would have wanted.
 
 Correcting a reservation (editing, deleting, or a reprocess that changes the run) refreshes its
 ingest's example (services/examples.py): the run's answer with the owner's corrections made to it
-(corrections.py), next to the text the model was given. Nothing reads them yet; extraction will
-show a user's own examples to the model for their later mail, and only theirs.
+(corrections.py), next to the text the model was given. With LLM_EXAMPLES on, extraction shows the
+model up to MAX_SHOWN of a user's own examples before each new document of theirs, and never
+anyone else's: those from the same sender first, then any whose words are much like it.
 
 What a correction may teach is limited, since one bad edit would otherwise be repeated on every
 later email from that sender:
@@ -18,17 +19,18 @@ later email from that sender:
   taught half done.
 """
 
+import base64
 import email
 import email.policy
 import re
 from datetime import timedelta
 from email.utils import parseaddr
 
-from triptych import corrections, db
+from triptych import corrections, db, llm
 from triptych.config import settings
 from triptych.corrections import Correction
 from triptych.inputs import InputStore, parse
-from triptych.models import RawInput
+from triptych.models import ExtractionExample, IngestRequest, LlmExtractRequest, ParsedDocument
 
 SETTLE = timedelta(minutes=10)
 MAX_TEXT = 12_000
@@ -59,9 +61,9 @@ def grounded(fixes: list[Correction], text: str) -> tuple[list[Correction], bool
     return out, partial
 
 
-def sender_domain(kept: RawInput, data: bytes) -> str | None:
+def sender_domain(content_type: str, data: bytes) -> str | None:
     """Who sent an emailed original ('iberia.com'): the examples to show first for their next one."""
-    if kept.content_type != "message/rfc822":
+    if content_type != "message/rfc822":
         return None
     sender = email.message_from_bytes(data, policy=email.policy.default).get("From", "")
     _, address = parseaddr(str(sender))
@@ -84,7 +86,7 @@ def build(case: db.EvalCase, data: bytes) -> db.Example | None:
     return db.Example(
         ingest_id=case.ingest_id,
         owner=case.input.owner,
-        sender_domain=sender_domain(case.input, data),
+        sender_domain=sender_domain(case.input.content_type, data),
         subject=doc.subject,
         text=doc.text,
         answer=answer,
@@ -106,3 +108,60 @@ async def refresh(ingest_id: str) -> bool:
         return False
     await db.save_example(example, SETTLE)
     return True
+
+
+MAX_SHOWN = 3
+SIMILAR = 0.3
+"""How alike (in words) an example from another sender must be to the document to be shown."""
+CHARS_PER_TOKEN = 3
+"""A cautious guess for mixed prose and JSON, so the examples never crowd the document out."""
+PROMPT_TOKENS = 1_500
+"""The system prompt and the turn framing."""
+IMAGE_TOKENS = 300
+
+
+def _words(subject: str | None, text: str) -> set[str]:
+    return set(re.findall(r"[^\W\d_]{3,}", f"{subject or ''} {text}".casefold()))
+
+
+def _alike(a: set[str], b: set[str]) -> float:
+    return len(a & b) / len(a | b) if a and b else 0.0
+
+
+def budget(doc: ParsedDocument) -> int:
+    """The characters the examples may take up alongside `doc` in the context window."""
+    tokens = settings.llm_num_ctx - llm.MAX_OUTPUT_TOKENS - PROMPT_TOKENS - IMAGE_TOKENS * len(doc.images_b64)
+    return tokens * CHARS_PER_TOKEN - len(doc.text) - len(doc.subject or "")
+
+
+def pick(
+    candidates: list[db.LiveExample], domain: str | None, doc: ParsedDocument, room: int
+) -> list[ExtractionExample]:
+    """Up to MAX_SHOWN of `candidates` (newest first) to show before `doc`, in at most `room`
+    characters. The same sender's come before other senders', and the most alike before the
+    rest. They're returned in showing order, so the best one comes last, nearest the document."""
+    words = _words(doc.subject, doc.text)
+    ranked: list[tuple[bool, float, db.LiveExample]] = []
+    for ex in candidates:
+        same = domain is not None and ex.sender_domain == domain
+        alike = _alike(words, _words(ex.subject, ex.text))
+        if same or alike >= SIMILAR:
+            ranked.append((not same, -alike, ex))
+    chosen: list[ExtractionExample] = []
+    for *_, ex in sorted(ranked, key=lambda r: r[:2]):
+        cost = len(ex.text) + len(ex.subject or "") + len(ex.answer.model_dump_json())
+        if cost > room:
+            continue
+        room -= cost
+        chosen.append(ExtractionExample.model_validate(ex.model_dump()))
+        if len(chosen) == MAX_SHOWN:
+            break
+    return chosen[::-1]
+
+
+async def with_examples(extract: LlmExtractRequest, ingest_id: str, req: IngestRequest) -> LlmExtractRequest:
+    """`extract` (the new ingest's extraction) with its owner's examples for it, inside `ctx.run`."""
+    doc = extract.document
+    candidates = [e for e in await db.live_examples(req.user) if e.ingest_id != ingest_id]
+    domain = sender_domain(req.content_type, base64.b64decode(req.data_b64))
+    return extract.model_copy(update={"examples": pick(candidates, domain, doc, budget(doc))})

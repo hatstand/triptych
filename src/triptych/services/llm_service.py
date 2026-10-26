@@ -90,6 +90,7 @@ async def record_run(
     purpose: ExtractionPurpose,
     output: Extraction | None,
     error: str | None,
+    examples: list[str] | None = None,
 ) -> None:
     """Record one extraction (db extraction_run), inside `ctx.run`."""
     try:
@@ -111,5 +112,6 @@ async def record_run(
             purpose=purpose,
             output=output,
             error=error,
+            examples=examples or [],
         )
     )
