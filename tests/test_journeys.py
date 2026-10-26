@@ -244,6 +244,41 @@ def test_check_in_waits_for_the_train_that_gets_you_there() -> None:
     assert "By 11:00" in html
 
 
+def test_check_in_waits_for_a_flight_landing_after_midnight() -> None:
+    # Booked from the 19th, but the flight leaves Sydney that evening and lands just after midnight.
+    flight = leg(
+        "NZ248",
+        "2026-08-19T18:55",
+        "2026-08-20T00:10",
+        "Sydney (SYD)",
+        "Wellington (WLG)",
+        ("Australia/Sydney", "Pacific/Auckland"),
+        city="Wellington",
+    )
+    stay = hotel("2026-08-19T14:00", "2026-08-24T11:00", "Pacific/Auckland", "Wellington")
+    [(first_day, first), (_, last)] = timeline([stay, flight])
+    assert first_day == flight.start_date
+    assert first == [flight, Stay(stay)]
+    assert last == [Stay(stay, checkout=True)]
+
+
+def test_check_in_waits_for_a_train_to_a_nearby_city() -> None:
+    # The hotel is in Leiden, but the train only goes as far as Rotterdam: still the way there.
+    out = hotel("2025-09-15T15:00", "2025-09-18T11:00", "Europe/Brussels", "Brussels")
+    train = leg(
+        "9567",
+        "2025-09-18T17:49",
+        "2025-09-18T19:18",
+        "Bruxelles-Midi",
+        "Rotterdam Centraal",
+        ("Europe/Brussels", "Europe/Amsterdam"),
+        kind=Kind.RAIL,
+        city="Rotterdam",
+    )
+    stay = hotel("2025-09-18T15:00", "2025-09-22T11:00", "Europe/Amsterdam", "Leiden")
+    assert timeline([out, stay, train])[1][1] == [Stay(out, checkout=True), train, Stay(stay)]
+
+
 def test_check_out_comes_before_an_early_departure() -> None:
     stay = hotel("2027-03-05T14:00", "2027-03-08T11:00", "Europe/Paris", "Paris")
     train = leg(
