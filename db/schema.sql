@@ -67,6 +67,24 @@ CREATE TABLE public.eval_share (
 
 
 --
+-- Name: extraction_example; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.extraction_example (
+    ingest_id text NOT NULL,
+    owner uuid NOT NULL,
+    sender_domain text,
+    subject text,
+    text text NOT NULL,
+    answer jsonb NOT NULL,
+    changes text[] DEFAULT '{}'::text[] NOT NULL,
+    partial boolean DEFAULT false NOT NULL,
+    live_at timestamp with time zone NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: extraction_run; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -346,6 +364,14 @@ ALTER TABLE ONLY public.eval_share
 
 
 --
+-- Name: extraction_example extraction_example_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.extraction_example
+    ADD CONSTRAINT extraction_example_pkey PRIMARY KEY (ingest_id);
+
+
+--
 -- Name: extraction_run extraction_run_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -489,6 +515,13 @@ CREATE INDEX eval_copy_owner_idx ON public.eval_copy USING btree (owner);
 
 
 --
+-- Name: extraction_example_owner_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX extraction_example_owner_idx ON public.extraction_example USING btree (owner, sender_domain);
+
+
+--
 -- Name: extraction_run_ingest_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -601,6 +634,22 @@ ALTER TABLE ONLY public.eval_copy
 
 ALTER TABLE ONLY public.eval_share
     ADD CONSTRAINT eval_share_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
+-- Name: extraction_example extraction_example_ingest_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.extraction_example
+    ADD CONSTRAINT extraction_example_ingest_id_fkey FOREIGN KEY (ingest_id) REFERENCES public.inbox_item(ingest_id) ON DELETE CASCADE;
+
+
+--
+-- Name: extraction_example extraction_example_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.extraction_example
+    ADD CONSTRAINT extraction_example_owner_fkey FOREIGN KEY (owner) REFERENCES public.app_user(id) ON DELETE CASCADE;
 
 
 --
@@ -743,4 +792,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261025140000'),
     ('20261025150000'),
     ('20261025220000'),
-    ('20261025230000');
+    ('20261025230000'),
+    ('20261026120000');

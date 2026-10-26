@@ -19,9 +19,16 @@ from triptych.models import (
     RenameTrip,
     TripRef,
 )
-from triptych.services import eval_share, place_photo, reminders
+from triptych.services import eval_share, examples, place_photo, reminders
 
 user = restate.VirtualObject("User")
+
+
+def corrected(ctx: restate.ObjectContext, ingest_id: str) -> None:
+    """The owner corrected what an ingest filed: a label for the eval set, if they share with it,
+    and a worked example for their own later mail."""
+    ctx.object_send(eval_share.copy, ctx.key(), ingest_id)
+    ctx.object_send(examples.refresh, ctx.key(), ingest_id)
 
 
 @user.handler()
@@ -53,6 +60,8 @@ async def reconcile(ctx: restate.ObjectContext, req: ReconcileRequest) -> db.Rec
     )
     await reminders.schedule(ctx, ctx.key(), done.filed.reservations)
     await place_photo.request(ctx, done.filed.trip_ids)
+    # The owner's corrections now stand against the new run's answer.
+    ctx.object_send(examples.refresh, ctx.key(), req.ingest_id)
     return done.reconciliation
 
 
@@ -71,8 +80,8 @@ async def remove_reservation(ctx: restate.ObjectContext, req: RemoveReservation)
         # Removing the Porto hotel from a Lisbon & Porto trip can move its destination.
         await place_photo.request(ctx, [req.trip_id])
     if removed.ingest_id:
-        # A deleted reservation is one its ingest shouldn't have produced: a correction to label.
-        ctx.object_send(eval_share.copy, ctx.key(), removed.ingest_id)
+        # A deleted reservation is one its ingest shouldn't have produced: a correction to learn from.
+        corrected(ctx, removed.ingest_id)
     return removed.trip_exists
 
 
@@ -92,12 +101,11 @@ async def edit_reservation(ctx: restate.ObjectContext, req: EditReservation) -> 
         await reminders.schedule(ctx, ctx.key(), filed.reservations)
         # A new city can move the trip's destination.
         await place_photo.request(ctx, filed.trip_ids)
-        # The correction is a label for the eval set, if the owner shares with it.
         edited = next(
             (f.reservation for f in filed.reservations if f.reservation.id == req.reservation_id), None
         )
         if edited and edited.source_ingest_id:
-            ctx.object_send(eval_share.copy, ctx.key(), edited.source_ingest_id)
+            corrected(ctx, edited.source_ingest_id)
 
 
 @user.handler()

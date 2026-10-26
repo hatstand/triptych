@@ -16,15 +16,13 @@ so `python -m evals sync` can draft the label from the owner's answer rather tha
 """
 
 import asyncio
-import base64
 import json
 import mimetypes
 from typing import Any, Self
 
-from triptych import corrections, db, parsing
+from triptych import corrections, db
 from triptych.config import Settings, settings
-from triptych.inputs import InputStore
-from triptych.models import IngestRequest
+from triptych.inputs import InputStore, parse
 
 PREFIX = "inputs"
 
@@ -63,16 +61,7 @@ class EvalStore:
             return False
         kept = case.input
         data = await self.inputs.load(kept)
-        doc = parsing.parse(
-            IngestRequest(
-                user=kept.owner,
-                source=kept.source,
-                filename=kept.filename,
-                content_type=kept.content_type,
-                data_b64=base64.b64encode(data).decode(),
-                received_at=kept.received_at,
-            )
-        )
+        doc = parse(kept, data)
         prefix = f"{PREFIX}/{ingest_id}/"
         original = f"original{extension(kept.content_type)}"
         await self._put(prefix + original, data, kept.content_type)

@@ -186,6 +186,11 @@ async def load_original(input_id: str) -> ParsedDocument:
         data = await store.load(kept)
     except IntegrityError as e:
         raise restate.TerminalError(str(e)) from e
+    return parse(kept, data)
+
+
+def parse(kept: RawInput, data: bytes) -> ParsedDocument:
+    """A kept original's bytes, parsed as Ingest parsed them."""
     return parsing.parse(
         IngestRequest(
             user=kept.owner,
