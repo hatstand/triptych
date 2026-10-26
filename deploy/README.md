@@ -249,6 +249,42 @@ the admin pages load their CSS and scripts from it.
 To go back to tailnet-only, remove `:compose/public.yaml` and the lines above from `.env` and
 redeploy. Passkeys registered on the public name then stop working on the ts.net name instead.
 
+### Direct on 443
+
+Since the ISP gateway went into bridge mode, inbound 443 reaches marvin, so the public name can be
+served from marvin itself instead of the tunnel. `compose/direct.yaml` publishes `proxy` on
+marvin's LAN address, ports 80 and 443, and adds a site for `PUBLIC_HOST`. Caddy gets a Let's
+Encrypt certificate for it (TLS-ALPN on 443; 80 only redirects `http://`) and keeps it in the
+`caddy-data` volume. On 443 Caddy trusts no forwarded headers and sets `X-Forwarded-For` to the
+connection's address, so rate limits key on the visitor without Cloudflare in front.
+
+The tunnel stays running alongside, so going back is a DNS change.
+
+1. **Router**: forward TCP 443 and 80 to marvin's LAN address (give marvin a DHCP reservation so it
+   keeps it). Check the router's WAN address is the public one (`curl -4 ifconfig.me` on marvin).
+2. **`.env`**: append `:compose/direct.yaml` to `COMPOSE_FILE` (after `compose/public.yaml`) and add:
+
+   ```bash
+   PUBLIC_HOST=triptych.purplehatstands.com
+   PUBLIC_BIND=<marvin's LAN address>
+   ```
+
+   Then redeploy. Caddy can't get the certificate yet, because the name still points at
+   Cloudflare; it keeps retrying, which is harmless.
+3. **DNS** (Cloudflare → purplehatstands.com → DNS): replace the tunnel's `triptych` CNAME with an
+   `A` record to the public address, **DNS only** (grey cloud), TTL 1 min for now. Then
+   `docker compose restart proxy` so Caddy asks for the certificate straight away, and watch
+   `docker compose logs -f proxy` for "certificate obtained successfully".
+4. **Check**, from outside the house (phone on mobile data): `https://triptych.purplehatstands.com/login`
+   loads, and `curl -sI https://triptych.purplehatstands.com/login | grep -i strict` shows the
+   app's HSTS header. Sign in, and send a plan by email to check the Email Worker reaches
+   `/inbound`. The access lines in `docker compose logs web` should show visitors' public
+   addresses, not 172.x (that would mean every visitor shares one rate limit).
+
+**Rolling back**: in the tunnel's **Public hostnames**, delete and re-add `triptych` →
+`proxy:8000`; Cloudflare recreates the proxied CNAME. Leave `compose/direct.yaml` in place or
+remove it, either works.
+
 ## Keeping originals (R2)
 
 Every email, upload and paste is kept, encrypted with per-user keys, in a private R2 bucket so it

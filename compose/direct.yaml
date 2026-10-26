@@ -1,0 +1,33 @@
+# Serving PUBLIC_HOST straight from marvin (deploy/README.md → "Direct on 443"): the router forwards
+# 80 and 443 to marvin, and proxy terminates TLS itself with a certificate from Let's Encrypt
+# (TLS-ALPN on 443, so 80 only matters for redirecting http:// visitors). Add to COMPOSE_FILE
+# after compose/public.yaml, which still unpublishes the other ports.
+#
+# PUBLIC_BIND is marvin's LAN address, not 0.0.0.0: Docker's published ports skip the host
+# firewall, and a wildcard 443 would also catch traffic meant for `tailscale serve` on the tailnet
+# addresses.
+
+services:
+  proxy:
+    ports:
+      - "${PUBLIC_BIND:?set PUBLIC_BIND, marvin's LAN address, in .env}:80:80"
+      - "${PUBLIC_BIND}:443:443"
+    configs:
+      - source: caddyfile
+        target: /etc/caddy/Caddyfile
+      - source: caddy-public-site
+        target: /etc/caddy/sites/public.caddy
+    volumes:
+      # The certificate and ACME account. Without it every deploy would order a new certificate
+      # and soon hit Let's Encrypt's rate limits.
+      - caddy-data:/data
+
+configs:
+  caddy-public-site:
+    content: |
+      ${PUBLIC_HOST:?set PUBLIC_HOST, e.g. triptych.purplehatstands.com, in .env} {
+        import web
+      }
+
+volumes:
+  caddy-data:
