@@ -6,6 +6,7 @@ are all in LON, and JFK and EWR are both in NYC.
 """
 
 import csv
+import importlib.resources
 from collections import Counter
 from dataclasses import dataclass
 from functools import cache
@@ -59,6 +60,16 @@ COUNTRY_DOMINANCE = 0.9
 def country_codes() -> tuple[str, ...]:
     """Every ISO 3166-1 alpha-2 code we have places in."""
     return tuple(sorted({p.country_code for p in _places().values()}))
+
+
+@cache
+def timezones() -> tuple[str, ...]:
+    """Every canonical IANA zone with a country: zone.tab from the pinned tzdata package, so the
+    list (and the extraction schema built from it) is the same on every machine. Backward-compatible
+    aliases (Asia/Calcutta, US/Eastern) and bare Etc/ offsets aren't in it."""
+    tab = importlib.resources.files("tzdata").joinpath("zoneinfo", "zone.tab").read_text()
+    rows = (line.split("\t") for line in tab.splitlines() if line and not line.startswith("#"))
+    return tuple(sorted({row[2] for row in rows}))
 
 
 @cache

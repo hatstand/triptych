@@ -16,11 +16,12 @@ import os
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Literal
+from typing import Annotated, Any, Literal
 
 import yaml
-from pydantic import AliasChoices, BaseModel, ConfigDict, Field
+from pydantic import AfterValidator, AliasChoices, BaseModel, ConfigDict, Field, WithJsonSchema
 
+from triptych import places
 from triptych.models import Extraction, IngestSource, Kind
 
 SCHEMA_FILE = "expected.schema.json"
@@ -39,6 +40,29 @@ CONTENT_TYPES = {
 }
 
 
+def _canonical_zone(name: str | None) -> str | None:
+    if name is not None and name not in places.timezones():
+        raise ValueError(f"{name} isn't a canonical IANA timezone, like Europe/Lisbon")
+    return name
+
+
+def _zone(description: str) -> Any:
+    """The zones extraction may answer with (models._timezone), so a label can't ask for one the
+    model isn't allowed to write. Editors complete them from expected.schema.json."""
+    return Annotated[
+        str | None,
+        AfterValidator(_canonical_zone),
+        WithJsonSchema(
+            {"anyOf": [{"type": "string", "enum": list(places.timezones())}, {"type": "null"}],
+             "description": description}
+        ),
+    ]  # fmt: skip
+
+
+StartZone = _zone("IANA timezone where it starts (start_city's)")
+EndZone = _zone("IANA timezone where it ends (city's)")
+
+
 class ExpectedReservation(BaseModel):
     """One reservation as it should be extracted. A field left out means it should be null."""
 
@@ -53,12 +77,11 @@ class ExpectedReservation(BaseModel):
     country_code: str | None = Field(None, description="ISO 3166 alpha-2 of city")
     start_city: str | None = Field(None, description="Transport only: the city it departs from")
     start_country_code: str | None = None
-    start_timezone: str | None = Field(None, description="IANA timezone where it starts (start_city's)")
-    end_timezone: str | None = Field(
+    start_timezone: StartZone = None
+    end_timezone: EndZone = Field(
         None,
         # Drafts written before there were two only have the city's.
         validation_alias=AliasChoices("end_timezone", "timezone"),
-        description="IANA timezone where it ends (city's)",
     )
     confirmation_code: str | None = None
     service_number: str | None = Field(

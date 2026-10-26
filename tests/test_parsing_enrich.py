@@ -300,6 +300,20 @@ def test_country_codes_are_an_enum_in_the_schema() -> None:
     assert x.country_code is None
 
 
+def test_timezones_are_canonical_iana_zones_in_the_schema() -> None:
+    """The model once wrote Pacific/Wellington, which doesn't exist (it's Pacific/Auckland)."""
+    props = Extraction.model_json_schema()["$defs"]["ExtractedReservation"]["properties"]
+    for key in ("start_timezone", "end_timezone"):
+        enum = props[key]["anyOf"][0]["enum"]
+        assert "Pacific/Auckland" in enum and "Europe/Lisbon" in enum
+        assert "Pacific/Wellington" not in enum and "US/Eastern" not in enum and "Etc/GMT+5" not in enum
+    x = ExtractedReservation(
+        kind=Kind.FLIGHT, title="t", start_local="2026-10-15T15:02",
+        start_timezone="Pacific/Wellington", end_timezone="Pacific/Auckland",
+    )  # fmt: skip
+    assert (x.start_timezone, x.end_timezone) == (None, "Pacific/Auckland")
+
+
 def test_airport_codes_are_three_letters_and_known() -> None:
     """A rail ticket's start_iata once came back as "na"."""
     props = Extraction.model_json_schema()["$defs"]["ExtractedReservation"]["properties"]
