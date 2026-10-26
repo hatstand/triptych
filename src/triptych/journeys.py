@@ -269,6 +269,14 @@ def _maybe_in(hotel: Reservation, city: str | None) -> bool:
     return " ".join(hotel.city.casefold().split()) == " ".join(city.casefold().split())
 
 
+def _leaves(hotel: Reservation, t: Reservation) -> bool:
+    """Whether transport leg `t` departs from the hotel's city, so it's a trip out, not the way in."""
+    if not hotel.city:
+        return False
+    city = " ".join(hotel.city.casefold().split())
+    return city_of(t.start_location) == city or _starts_with_city(t.start_location, city)
+
+
 def timeline(reservations: list[Reservation]) -> list[tuple[date, list[Item]]]:
     """The trip by day, in the order things happen.
 
@@ -276,8 +284,10 @@ def timeline(reservations: list[Reservation]) -> list[tuple[date, list[Item]]]:
     its first day and a check-out on its last. A hotel's times are what it allows, not when you get
     there, so a check-in sorts after any transport arriving that day (check-in from 14:00, train in
     at 18:00: the hotel comes after the train, and a flight leaving that evening and landing after
-    midnight comes before it too), and a check-out before any departing that day,
-    counting only transport to or from the hotel's city when both cities are known.
+    midnight comes before it too), unless it leaves from the hotel's city: the train to Rotterdam
+    still gets you to a hotel in Leiden, but one out of Lyon doesn't get you to a hotel there. A
+    check-out sorts before any transport departing that day, counting only transport from the
+    hotel's city when both cities are known.
     Times in different zones are compared as instants.
     """
     ordered = sorted(reservations, key=lambda r: r.start_local)
@@ -304,9 +314,7 @@ def timeline(reservations: list[Reservation]) -> list[tuple[date, list[Item]]]:
         arrivals = [
             ends(t)
             for t in transport
-            if t.end_local
-            and s.date in (t.start_date, t.end_local.date())
-            and _maybe_in(s.hotel, t.city or city_of(t.end_location))
+            if t.end_local and s.date in (t.start_date, t.end_local.date()) and not _leaves(s.hotel, t)
         ]
         return max([starts(s.hotel), *arrivals])
 
