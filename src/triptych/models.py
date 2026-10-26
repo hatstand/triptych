@@ -75,10 +75,32 @@ def _iata_code(description: str) -> Any:
     ]  # fmt: skip
 
 
+def _known_timezone(name: str | None) -> str | None:
+    name = (name or "").strip()
+    return name if name in places.timezones() else None
+
+
+def _timezone(description: str) -> Any:
+    """A canonical IANA zone name, or null. The schema lists the zones, so Ollama's grammar can't
+    write one that doesn't exist (Pacific/Wellington) or a placeholder; anything else read back
+    (a truncated reply, a stored run from before the list) becomes null and is filled in from the
+    city like any other missing zone."""
+    return Annotated[
+        str | None,
+        AfterValidator(_known_timezone),
+        WithJsonSchema(
+            {"anyOf": [{"type": "string", "enum": list(places.timezones())}, {"type": "null"}],
+             "description": description}
+        ),
+    ]  # fmt: skip
+
+
 StartIata = _iata_code("3-letter IATA code of departure airport (flights), else null")
 EndIata = _iata_code("3-letter IATA code of arrival airport (flights), else null")
 CityCountry = _country_code("ISO 3166-1 alpha-2 code of the country `city` is in, e.g. CN")
 StartCountry = _country_code("ISO 3166-1 alpha-2 code of the country `start_city` is in, e.g. GB")
+StartTimezone = _timezone("IANA timezone where it starts (start_city for transport), e.g. Europe/London")
+EndTimezone = _timezone("IANA timezone where it ends (city), e.g. Asia/Shanghai")
 
 
 def _all_keys_required(schema: dict[str, Any]) -> None:
@@ -117,14 +139,11 @@ class ExtractedReservation(BaseModel):
     country_code: CityCountry = None
     start_city: str | None = Field(None, description="City in English the transport departs from")
     start_country_code: StartCountry = None
-    start_timezone: str | None = Field(
-        None, description="IANA timezone where it starts (start_city for transport), e.g. Europe/London"
-    )
-    end_timezone: str | None = Field(
+    start_timezone: StartTimezone = None
+    end_timezone: EndTimezone = Field(
         None,
         # Extraction runs stored before there were two only have the city's, as timezone.
         validation_alias=AliasChoices("end_timezone", "timezone"),
-        description="IANA timezone where it ends (city), e.g. Asia/Shanghai",
     )
     service_number: str | None = Field(
         None,

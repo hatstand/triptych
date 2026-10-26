@@ -223,3 +223,13 @@ def test_smoke_set_against_the_local_model(tmp_path: Path) -> None:
     assert summary["errors"] == 0
     assert summary["classification"] == 1
     assert summary["fully_correct"] >= 0.6
+
+
+def test_labels_only_take_zones_extraction_can_write() -> None:
+    zone = Expected.model_json_schema()["$defs"]["ExpectedReservation"]["properties"]["end_timezone"]
+    assert "Asia/Shanghai" in zone["anyOf"][0]["enum"]
+    ExpectedReservation(kind=Kind.LODGING, start_local="2026-10-15T15:00", end_timezone="Asia/Shanghai")
+    with pytest.raises(ValueError, match="canonical IANA"):
+        ExpectedReservation(
+            kind=Kind.FLIGHT, start_local="2026-10-15T15:00", start_timezone="Pacific/Wellington"
+        )
