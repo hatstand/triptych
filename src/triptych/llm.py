@@ -1,14 +1,18 @@
-"""Thin typed client for the local Ollama server (Gemma 4 by default).
+"""Extraction and the other model calls, over the `ollama` client to the local server (Gemma 4 by
+default).
 
-Errors are raised, never swallowed: callers run these inside `ctx.run`, so Restate owns retries.
+Errors are raised, never swallowed (ollama.ResponseError, ConnectionError, LlmError): callers run
+these inside `ctx.run`, so Restate owns retries.
 """
 
 import hashlib
 import json
+from collections.abc import Sequence
 from datetime import datetime
 from typing import Any
 
 import httpx
+import ollama
 
 from triptych.config import settings
 from triptych.models import (
@@ -69,6 +73,11 @@ class LlmError(RuntimeError):
     pass
 
 
+ERRORS = (ollama.ResponseError, ConnectionError, httpx.HTTPError, LlmError)
+"""What a call here raises when Ollama couldn't answer: an error status, no connection, a timeout
+(the client's httpx raises those as they are), or an answer that's no use."""
+
+
 MAX_OUTPUT_TOKENS = 4096
 
 Think = bool | str
@@ -92,14 +101,17 @@ def prompt_version(system: str = EXTRACT_SYSTEM) -> str:
     return hashlib.sha256(f"{system}\n{schema}".encode()).hexdigest()[:12]
 
 
+def client(timeout: float = 5) -> ollama.AsyncClient:
+    return ollama.AsyncClient(host=settings.ollama_url, timeout=timeout)
+
+
+async def models() -> Sequence[ollama.ListResponse.Model]:
+    return (await client().list()).models
+
+
 async def model_digest(model: str) -> str | None:
     """Ollama's digest of `model`, which tells apart two pulls of the same tag."""
-    async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=5) as client:
-        tags = (await client.get("/api/tags")).json()
-    for m in tags.get("models", []):
-        if model in (m.get("name"), m.get("model")):
-            return m.get("digest")
-    return None
+    return next((m.digest for m in await models() if m.model == model), None)
 
 
 async def _chat(
@@ -109,24 +121,17 @@ async def _chat(
     model: str | None = None,
     think: Think = False,
 ) -> str:
-    body: dict[str, Any] = {
-        "model": model or settings.llm_model,
-        "messages": messages,
-        "stream": False,
+    # A 404 (ollama.ResponseError) usually means the model is still being pulled; Restate retries.
+    resp = await client(settings.llm_timeout_s).chat(
+        model=model or settings.llm_model,
+        messages=messages,
+        format=fmt,
+        keep_alive="30m",
         **chat_params(think),
-        "keep_alive": "30m",
-    }
-    if fmt is not None:
-        body["format"] = fmt
-    async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=settings.llm_timeout_s) as client:
-        resp = await client.post("/api/chat", json=body)
-    if resp.status_code != 200:
-        # 404 usually means the model is still being pulled; Restate will retry with backoff.
-        raise LlmError(f"ollama {resp.status_code}: {resp.text[:500]}")
-    data = resp.json()
-    content = data.get("message", {}).get("content", "")
-    if not isinstance(content, str) or not content.strip():
-        raise LlmError(f"ollama returned an empty message (done_reason={data.get('done_reason')})")
+    )
+    content = resp.message.content
+    if not content or not content.strip():
+        raise LlmError(f"ollama returned an empty message (done_reason={resp.done_reason})")
     return content
 
 
@@ -171,19 +176,14 @@ async def embed(texts: list[str]) -> list[list[float]]:
     """EMBED_MODEL's vectors for `texts`, for comparing how alike they read. Ollama cuts each
     text to the model's context (2K tokens for embeddinggemma), which keeps its opening."""
     # embeddinggemma is trained with task prompts; this is the one for symmetric similarity.
-    body = {
-        "model": settings.embed_model,
-        "input": [f"task: sentence similarity | query: {t}" for t in texts],
-        "keep_alive": "30m",
-    }
-    async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=60) as client:
-        resp = await client.post("/api/embed", json=body)
-    if resp.status_code != 200:
-        raise LlmError(f"ollama {resp.status_code}: {resp.text[:500]}")
-    vectors = resp.json().get("embeddings")
-    if not isinstance(vectors, list) or len(vectors) != len(texts):
+    resp = await client(60).embed(
+        model=settings.embed_model,
+        input=[f"task: sentence similarity | query: {t}" for t in texts],
+        keep_alive="30m",
+    )
+    if len(resp.embeddings) != len(texts):
         raise LlmError("ollama returned no embeddings")
-    return vectors
+    return [list(v) for v in resp.embeddings]
 
 
 async def locate_subject(req: LlmSubjectRequest) -> SubjectBox:
@@ -211,7 +211,5 @@ async def ask(req: LlmAskRequest) -> Answer:
 
 
 async def health() -> dict[str, Any]:
-    async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=5) as client:
-        tags = (await client.get("/api/tags")).json()
-    names = [m.get("name") for m in tags.get("models", [])]
+    names = [m.model for m in await models()]
     return {"model": settings.llm_model, "available": settings.llm_model in names, "models": names}
