@@ -4,6 +4,7 @@
 {% from "_icons.html" import icon, kind_icons as icons %}
 {% from "_photo.html" import photo_credit %}
 <script type="module" src="{{ static('dialog.ts') }}"></script>
+<script type="module" src="{{ static('photo.ts') }}"></script>
 {% set transport = ('flight', 'rail', 'ferry') %}
 {#- Arrival (or end) of r after its start, with its date when that differs and its zone when it changes. -#}
 {% macro until(start, start_tz, end, end_tz) -%}
@@ -59,7 +60,7 @@
     </div>
   </form>
   <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/delete" class="dialog-footer"
-        onsubmit="return confirm('Remove this item?')">
+        data-confirm="Remove this item?">
     <button class="danger">Remove item</button>
   </form>
 </dialog>
@@ -169,7 +170,7 @@
 <figure class="trip-photo">
   {#- The frame's shape is fixed (style.css), so the crop that keeps the subject in it is known. -#}
   <img src="/trips/{{ trip.id }}/photo?v={{ trip.photo.version }}" alt="{{ trip.destination or '' }}"
-       style="--focus: {{ trip.photo.position(5) }}; --focus-narrow: {{ trip.photo.position(2.5) }}">
+       data-focus="{{ trip.photo.position(5) }}" data-focus-narrow="{{ trip.photo.position(2.5) }}">
   <figcaption class="muted small">{{ photo_credit(trip.photo) }}</figcaption>
 </figure>
 {% endif %}
@@ -195,7 +196,7 @@
     </div>
   </form>
   <form method="post" action="/trips/{{ trip.id }}/delete" class="dialog-footer"
-        onsubmit="return confirm('Delete this trip?')">
+        data-confirm="Delete this trip?">
     <button class="danger">Delete trip</button>
   </form>
 </dialog>

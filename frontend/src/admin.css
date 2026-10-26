@@ -1,0 +1,119 @@
+/* The admin page (triptych/admin), on top of style.css. */
+.ingests {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+.ingests th,
+.ingests td {
+  text-align: left;
+  padding: 6px 8px;
+  border-top: 1px solid var(--line);
+  vertical-align: top;
+}
+.ingests th {
+  color: var(--muted);
+  font-weight: 600;
+  border-top: 0;
+}
+.counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.counts a {
+  color: inherit;
+}
+.counts .on {
+  outline: 2px solid var(--accent);
+}
+.counts .badge {
+  animation: none;
+}
+.invite-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin: 10px 0;
+}
+.invite-form input[type="email"] {
+  flex: 1;
+  min-width: 220px;
+  width: auto;
+}
+.invite-form input[type="number"] {
+  width: 4.5em;
+}
+.reprocess-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px 12px;
+  align-items: end;
+  margin: 10px 0;
+}
+.reprocess-form > label {
+  display: grid;
+  gap: 4px;
+}
+.reprocess-form fieldset {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.reprocess-form fieldset label {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.reprocess-form input[type="radio"] {
+  width: auto;
+  margin: 0;
+}
+.reprocess-form input[name="model"] {
+  width: auto;
+  flex: 1;
+  min-width: 200px;
+  max-width: 360px;
+}
+.reprocess-form select {
+  font: inherit;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--ink);
+}
+button.secondary {
+  background: transparent;
+  color: var(--ink);
+  border: 1px solid var(--line);
+}
+.diff {
+  margin: 6px 0 0;
+}
+.diff del {
+  color: var(--muted);
+}
+.diff ins {
+  text-decoration: none;
+  font-weight: 600;
+}
+.ingests form {
+  margin: 0;
+}
+.ingests .actions form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.ingests .actions button {
+  padding: 4px 10px;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}

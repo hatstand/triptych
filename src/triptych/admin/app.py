@@ -28,6 +28,7 @@ from triptych import auth, db, llm, telemetry
 from triptych.config import settings
 from triptych.models import IngestState, ReprocessRequest
 from triptych.services import reprocess
+from triptych.web import csp
 from triptych.web.assets import Assets
 
 HERE = Path(__file__).parent
@@ -51,6 +52,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[AppState]:
 
 
 app = FastAPI(title="Triptych admin", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
+app.middleware("http")(csp.content_security_policy)
 # Admin templates extend the web app's base.html; /static is served by the web app on the same host.
 templates = Jinja2Templates(directory=[HERE / "templates", HERE.parent / "web" / "templates"])
 # Jinja types globals by its own defaults' types; any value is allowed.

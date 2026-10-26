@@ -24,7 +24,7 @@
       </div>
       {% if passkeys|length > 1 %}
       <form method="post" action="/account/passkeys/{{ p.id }}/delete"
-            onsubmit="return confirm('Remove this passkey? It will stop working for Triptych.')">
+            data-confirm="Remove this passkey? It will stop working for Triptych.">
         <button class="link">Remove</button>
       </form>
       {% endif %}
@@ -48,7 +48,7 @@
       </div>
       {% if senders|length > 1 %}
       <form method="post" action="/account/senders/delete"
-            onsubmit="return confirm('Stop filing mail from this address?')">
+            data-confirm="Stop filing mail from this address?">
         <input type="hidden" name="email" value="{{ s.email }}">
         <button class="link">Remove</button>
       </form>

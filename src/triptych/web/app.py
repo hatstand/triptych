@@ -44,7 +44,7 @@ from triptych.services import assistant as assistant_svc
 from triptych.services import eval_share as eval_share_svc
 from triptych.services import ingest as ingest_svc
 from triptych.services import user as user_svc
-from triptych.web import live, ratelimit
+from triptych.web import csp, live, ratelimit
 from triptych.web.assets import STATIC, Assets, Static
 
 HERE = Path(__file__).parent
@@ -77,6 +77,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[AppState]:
 app = FastAPI(title="Triptych", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 # Built by the frontend (gitignored), so absent until then; templates still render without it.
 app.mount("/static", Static(directory=STATIC, check_dir=False), name="static")
+app.middleware("http")(csp.content_security_policy)
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["duration"] = journeys.format_duration
 templates.env.filters["tz_abbr"] = journeys.tz_abbr
@@ -133,6 +134,22 @@ async def same_origin_writes(request: Request, call_next: RequestResponseEndpoin
                 status_code=403,
             )
     return await call_next(request)
+
+
+# A year, the usual floor. No includeSubDomains: nothing is served below these hostnames, and the
+# header can only reach down, never up to purplehatstands.com. No preload, which needs both.
+HSTS = "max-age=31536000"
+
+
+@app.middleware("http")
+async def strict_transport(request: Request, call_next: RequestResponseEndpoint) -> Response:
+    """Tells browsers to only ever use HTTPS for this host, whichever one they came in on (the public
+    name or the tailnet one). TLS ends before us, so whether it's on comes from PUBLIC_BASE_URL;
+    plain-HTTP local dev gets none (browsers ignore it over HTTP anyway)."""
+    resp = await call_next(request)
+    if settings.secure_cookies:
+        resp.headers.setdefault("strict-transport-security", HSTS)
+    return resp
 
 
 @app.exception_handler(auth.AuthError)
