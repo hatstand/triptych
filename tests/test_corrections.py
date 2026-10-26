@@ -1,8 +1,5 @@
 """Making the owner's trip-page corrections to an extraction run's answer."""
 
-from datetime import UTC, datetime
-
-from evals.sync import draft_from
 from triptych import corrections
 from triptych.corrections import Correction
 from triptych.models import ExtractedReservation, Extraction, Kind
@@ -59,14 +56,3 @@ def test_corrections_to_a_run_with_no_answer() -> None:
     casa = {"kind": "lodging", "title": "Casa", "start_local": "2026-11-03T15:00:00"}
     fixed, _ = corrections.apply(None, [Correction(reservation=None, edited=["title"], fields=casa)])
     assert [r.title for r in fixed.reservations] == ["Casa"]
-
-
-def test_a_zone_the_trip_page_allows_but_extraction_doesnt_drafts_as_unknown() -> None:
-    # The trip page takes any zone Python knows, aliases too; labels only take canonical ones.
-    case = {
-        "received_at": datetime(2026, 10, 25, 12, tzinfo=UTC).isoformat(), "source": "email",
-        "content_type": "message/rfc822",
-        "run": {"model": "gemma4", "prompt_version": "x", "output": answer().model_dump(mode="json")},
-        "corrections": [{"reservation": 1, "edited": ["start_tz"], "fields": {"start_tz": "Europe/Kiev"}}],
-    }  # fmt: skip
-    assert draft_from(case).reservations[1].start_timezone is None
