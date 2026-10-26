@@ -96,17 +96,35 @@ def place_query(rs: list[Reservation]) -> str | None:
 MAX_TITLE_CITIES = 3
 
 
+def _countries(stays: list[str], rs: list[Reservation]) -> list[str] | None:
+    """The countries `stays` are in, in order, by the zone of a stay there (or of arriving there);
+    None if any stay's country is unknown."""
+    country_of: dict[str, str] = {}
+    for r in rs:
+        tz = (r.end_tz or r.start_tz) if r.kind is Kind.LODGING else r.end_tz if r.kind in TRANSPORT else None
+        if r.city and (code := places.timezone_country(tz)) and (name := places.country_name(code)):
+            country_of.setdefault(r.city, name)
+    if not all(city in country_of for city in stays):
+        return None
+    return list(dict.fromkeys(country_of[city] for city in stays))
+
+
 def trip_title(rs: list[Reservation]) -> str:
     """A name for a trip from everything in it: where you stay (else where the transport stops, else the
-    destination) and when.
-    "Lisbon, November 2026", "Lisbon & Porto, November 2026", "Tokyo, Kyoto & Osaka, March–April 2027".
-    Recomputed as reservations are added, so it grows with the itinerary until the user renames it."""
+    destination) and when. With too many places to list, it's the countries they're in if there are few
+    enough of those.
+    "Lisbon, November 2026", "Lisbon & Porto, November 2026", "Tokyo, Kyoto & Osaka, March–April 2027",
+    "Iceland, August 2025". Recomputed as reservations are added, so it grows with the itinerary until
+    the user renames it."""
     ordered = sorted(rs, key=lambda r: r.start_local)
     stays = list(dict.fromkeys(r.city for r in ordered if r.kind is Kind.LODGING and r.city))
     if not stays:
         stays = transport_stops(ordered)
     if not stays and (destination := pick_destination(ordered)):
         stays = [destination]
+    countries = _countries(stays, ordered) if len(stays) > MAX_TITLE_CITIES else None
+    if countries and len(countries) <= MAX_TITLE_CITIES:
+        stays = countries
     if len(stays) > MAX_TITLE_CITIES:
         stays = [*stays[: MAX_TITLE_CITIES - 1], f"{len(stays) - MAX_TITLE_CITIES + 1} more"]
     where = " & ".join([", ".join(stays[:-1]), stays[-1]] if len(stays) > 1 else stays) or "Trip"
