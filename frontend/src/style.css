@@ -1,31 +1,45 @@
 :root {
-  --bg: #f4f5f7;
+  --bg: #f8f4f3;
   --card: #fff;
-  --ink: #1d2330;
-  --muted: #6b7280;
-  --line: #e3e6eb;
-  --accent: #1f6feb;
+  --ink: #2b1d1c;
+  --muted: #6d5e5c;
+  --line: #ecdfdd;
+  /* Coral is the brand colour: button fills, outlines and the flight kind. It is too light for text
+     (3.1:1 on white), so links and other accent-coloured text use --link, and button labels are bold. */
+  --accent: #f55f55;
   --accent-ink: #fff;
+  --link: #c3302a;
+  --tint: #fde6e4;
   --danger: #c62828;
-  --flight: #1f6feb;
-  --lodging: #8e44ad;
-  --car: #e67e22;
-  --rail: #16a085;
-  --ferry: #0891b2;
-  --restaurant: #c0392b;
-  --activity: #d4a017;
-  --other: #7f8c8d;
+  --flight: #f55f55;
+  --lodging: #7c4fc0;
+  --car: #b85a00;
+  --rail: #0f7d6d;
+  --ferry: #0b7299;
+  --restaurant: #b8325c;
+  --activity: #956800;
+  --other: #6b7280;
   --topbar-h: 50px;
   --fade: 24px;
   --scrollbar: color-mix(in srgb, var(--muted) 45%, transparent);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #11141a;
-    --card: #1a1f28;
-    --ink: #e6e9ef;
-    --muted: #9aa3b2;
-    --line: #2a313d;
+    --bg: #171213;
+    --card: #211a1b;
+    --ink: #f3e9e8;
+    --muted: #b7a5a3;
+    --line: #3a2c2c;
+    --link: #ff8f88;
+    --tint: #3d1f1d;
+    --flight: #ff7a72;
+    --lodging: #c8a2f2;
+    --car: #f0a050;
+    --rail: #5fd0bd;
+    --ferry: #66c6ee;
+    --restaurant: #ff8fb0;
+    --activity: #eec25a;
+    --other: #a3aab5;
   }
 }
 * {
@@ -42,7 +56,7 @@ body {
   color: var(--ink);
 }
 a {
-  color: var(--accent);
+  color: var(--link);
   text-decoration: none;
 }
 h1 {
@@ -229,12 +243,14 @@ button,
   border: 0;
   background: var(--accent);
   color: var(--accent-ink);
+  font-weight: 600;
   cursor: pointer;
   display: inline-block;
 }
 .button.secondary {
   background: transparent;
   color: var(--ink);
+  font-weight: normal;
   border: 1px solid var(--line);
 }
 /* The native "Choose files" button, drawn as a secondary button inside the inset field. */
@@ -283,7 +299,7 @@ input[type="file"]:focus-visible {
   transition: color 0.15s;
 }
 .button.copy:hover {
-  color: var(--accent);
+  color: var(--link);
 }
 .button.copy:focus-visible {
   outline: 2px solid var(--accent);
@@ -296,7 +312,7 @@ input[type="file"]:focus-visible {
   display: none;
 }
 .button.copy.copied {
-  color: var(--accent);
+  color: var(--link);
 }
 .google-calendar {
   display: inline-flex;
@@ -306,7 +322,8 @@ input[type="file"]:focus-visible {
 }
 button.link {
   background: none;
-  color: var(--accent);
+  color: var(--link);
+  font-weight: inherit;
   padding: 0;
 }
 button.danger {
@@ -425,8 +442,8 @@ button.danger {
 .badge.parsing,
 .badge.extracting,
 .badge.filing {
-  background: #dbe9ff;
-  color: var(--accent);
+  background: var(--tint);
+  color: var(--link);
   animation: pulse 1.2s infinite;
 }
 @keyframes pulse {
@@ -866,7 +883,7 @@ button.danger {
   content: "Show segments ▾";
   display: block;
   margin-top: 4px;
-  color: var(--accent);
+  color: var(--link);
   font-size: 0.85rem;
 }
 .journey[open] > summary .body::after {

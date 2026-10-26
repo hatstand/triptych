@@ -40,7 +40,7 @@ main {
 }
 .filters a[aria-current="page"] {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--link);
 }
 .cases {
   display: table;

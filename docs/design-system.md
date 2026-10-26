@@ -20,42 +20,56 @@ All colours are CSS custom properties on `:root`. Use the variable, never the he
 
 | Token | Light | Dark | Use |
 | --- | --- | --- | --- |
-| `--bg` | `#f4f5f7` | `#11141a` | Page background; also input fields and the answer box, which sit "inset" in a card |
-| `--card` | `#fff` | `#1a1f28` | Cards, top bar, dialogs, drop panel |
-| `--ink` | `#1d2330` | `#e6e9ef` | Body text |
-| `--muted` | `#6b7280` | `#9aa3b2` | Secondary text: dates, labels, `<dt>`, hints |
-| `--line` | `#e3e6eb` | `#2a313d` | 1px borders, dividers, the neutral badge |
+| `--bg` | `#f8f4f3` | `#171213` | Page background; also input fields and the answer box, which sit "inset" in a card |
+| `--card` | `#fff` | `#211a1b` | Cards, top bar, dialogs, drop panel |
+| `--ink` | `#2b1d1c` | `#f3e9e8` | Body text |
+| `--muted` | `#6d5e5c` | `#b7a5a3` | Secondary text: dates, labels, `<dt>`, hints |
+| `--line` | `#ecdfdd` | `#3a2c2c` | 1px borders, dividers, the neutral badge |
+
+The neutrals are faintly warm, to sit with the coral accent.
 
 ### Actions and state
 
-| Token | Value | Use |
-| --- | --- | --- |
-| `--accent` | `#1f6feb` | Links, primary buttons, card hover border, in-progress badges, drop-zone outline |
-| `--accent-ink` | `#fff` | Text on `--accent` |
-| `--danger` | `#c62828` | Destructive buttons, errors, failed badges |
+| Token | Light | Dark | Use |
+| --- | --- | --- | --- |
+| `--accent` | `#f55f55` | same | Coral, the brand colour: primary button fills, card hover border, tab edge, focus outlines, drop-zone outline |
+| `--accent-ink` | `#fff` | same | Text on `--accent`, always bold (primary buttons are `600`) |
+| `--link` | `#c3302a` | `#ff8f88` | Links, link buttons, in-progress badge text: anything that is accent-coloured *text* |
+| `--tint` | `#fde6e4` | `#3d1f1d` | Pale coral fill behind `--link` text (in-progress badges) |
+| `--danger` | `#c62828` | same | Destructive buttons, errors, failed badges |
+
+`#f55f55` is too light for text: it is 3.2:1 on a white card, so never use `--accent` as a text
+colour; use `--link`, which is 5.6:1 light and 7.8:1 dark. White on `--accent` is 3.2:1, which
+WCAG accepts only for large or bold text, so primary button labels are bold and no other text sits
+on a coral fill.
 
 ### Reservation kinds
 
 One colour per `models.Kind`. It is the 4px left border of a timeline card and the colour of
 its icon (both via a `--kind` variable that `.segment.<kind>` sets).
 
-| Kind | Token | Value | Icon |
-| --- | --- | --- | --- |
-| flight | `--flight` | `#1f6feb` | `plane` |
-| lodging | `--lodging` | `#8e44ad` | `hotel` |
-| car | `--car` | `#e67e22` | `car` |
-| rail | `--rail` | `#16a085` | `train` |
-| ferry | `--ferry` | `#0891b2` | `ferry` |
-| restaurant | `--restaurant` | `#c0392b` | `restaurant` |
-| activity | `--activity` | `#d4a017` | `ticket` |
-| other | `--other` | `#7f8c8d` | `place` |
+| Kind | Token | Light | Dark | Icon |
+| --- | --- | --- | --- | --- |
+| flight | `--flight` | `#f55f55` | `#ff7a72` | `plane` |
+| lodging | `--lodging` | `#7c4fc0` | `#c8a2f2` | `hotel` |
+| car | `--car` | `#b85a00` | `#f0a050` | `car` |
+| rail | `--rail` | `#0f7d6d` | `#5fd0bd` | `train` |
+| ferry | `--ferry` | `#0b7299` | `#66c6ee` | `ferry` |
+| restaurant | `--restaurant` | `#b8325c` | `#ff8fb0` | `restaurant` |
+| activity | `--activity` | `#956800` | `#eec25a` | `ticket` |
+| other | `--other` | `#6b7280` | `#a3aab5` | `place` |
+
+Flight shares the brand coral, as it shared the old blue accent. Restaurant is berry rather than
+red so it stays apart from it. Every kind colour is at least 3:1 on its card in both schemes, so
+the icons read (most are over 4.5:1).
 
 `--activity` (amber) doubles as the attention colour: the Alerts card's left border uses it.
 
 ### Dark mode
 
-Automatic, from `prefers-color-scheme: dark`; there is no toggle. Only the five surface and text
-tokens change. Accent, danger, kind colours and badge colours are the same in both schemes.
+Automatic, from `prefers-color-scheme: dark`; there is no toggle. The surface and text tokens,
+`--link`, `--tint` and the kind colours change; `--accent`, `--danger` and the done, failed and
+no_travel badge colours are the same in both schemes.
 
 ## Typography
 
@@ -264,8 +278,8 @@ Draw icons at 24px or at text size; avoid other sizes so the 2px stroke stays cr
 ## Brand mark
 
 Triptych's mark is three trip cards fanned out: rail (`--rail`) and lodging (`--lodging`) behind,
-flight (`--flight`) in front with a white plane on it. It lives in one file,
-`frontend/src/brand/mark.svg`, on the same 24×24 grid as the icons. The gaps between the cards are
+flight (`--flight`, coral) in front with a white plane on it, all in their light-scheme values. It
+lives in one file, `frontend/src/brand/mark.svg`, on the same 24×24 grid as the icons. The gaps between the cards are
 cut out with masks rather than drawn in a background colour, so the one file works on light and dark
 surfaces and needs no dark variant.
 
@@ -283,13 +297,13 @@ mark, edit `mark.svg` and rebuild; nothing else holds a copy.
 
 Written down so they are decisions, not accidents:
 
-- Badge colours (`#d1f4dd`, `#146c2e`, `#fde0e0`, `#dbe9ff`, `#eceff3`) are hex values, not
-  tokens, and do not change in dark mode, where the light pills are bright against dark cards.
-- Kind colours, accent and danger are not adjusted for dark mode either.
+- Badge colours (`#d1f4dd`, `#146c2e`, `#fde0e0`, `#eceff3`) are hex values, not tokens, and do
+  not change in dark mode, where the light pills are bright against dark cards. (In-progress
+  badges use `--tint` and `--link`, which do.)
+- `--danger` is not adjusted for dark mode.
+- White labels on `--accent` are 3.2:1: enough for bold button text, not for body text.
 - No spacing or radius tokens; values are repeated literally.
 - No focus styles beyond the browser default.
-- Contrast (WCAG) misses, measured on the current values: `--accent` text on dark cards is
-  3.6:1 and `--danger` on dark cards 2.9:1 (text wants 4.5:1); `--muted` on `--bg` is 4.4:1;
-  the queued and no_travel badges are 3.8:1 and 4.2:1. As icon colours (3:1 wanted),
-  `--activity` (2.4:1) and `--car` (2.9:1) are faint on white cards, and `--lodging` (2.8:1)
-  and `--restaurant` (3.0:1) on dark ones.
+- Contrast (WCAG) misses, measured on the current values: `--danger` on dark cards is 3.0:1
+  (text wants 4.5:1). `--car` and `--other` are 4.3:1 and 4.4:1 on `--bg`, fine for icons but
+  short of 4.5:1 if ever used for text there.
