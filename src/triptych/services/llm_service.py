@@ -38,7 +38,7 @@ GPU_SCOPE = "gpu"
 
 llm_service = restate.Service("Llm")
 
-Lane = Literal["batch", "interactive", "photos", "reprocess"]
+Lane = Literal["batch", "interactive", "photos", "reprocess", "eval"]
 
 
 def limit_key(lane: Lane, user: str) -> str:
