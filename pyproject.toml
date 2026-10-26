@@ -30,6 +30,7 @@ dependencies = [
     "python-json-logger>=4.2.0",
     "tzdata>=2026.5",
     "numpy>=2.5",
+    "ollama>=0.6",
 ]
 
 [dependency-groups]

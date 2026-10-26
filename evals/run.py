@@ -22,7 +22,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import httpx
+import ollama
 from pydantic import BaseModel
 from pydantic_evals import Case as EvalCase
 from pydantic_evals import Dataset
@@ -89,7 +89,7 @@ async def answer(inputs: Inputs, variant: Variant) -> Answer:
     req = LlmExtractRequest(document=doc, received_at=inputs.received_at, model=variant.model)
     try:
         return Answer(extraction=await llm.extract(req, system=variant.system, think=variant.think))
-    except (llm.LlmError, httpx.HTTPError) as e:
+    except llm.ERRORS as e:
         return Answer(error=f"{type(e).__name__}: {e}")
 
 
@@ -131,12 +131,12 @@ def dataset(cases: list[Case]) -> Dataset[Inputs, Answer, Expected]:
 
 def pulled_models() -> set[str]:
     try:
-        tags = httpx.get(f"{settings.ollama_url}/api/tags", timeout=5).raise_for_status().json()
-    except httpx.HTTPError as e:
+        tags = ollama.Client(host=settings.ollama_url, timeout=5).list()
+    except llm.ERRORS as e:
         raise SystemExit(
             f"can't reach Ollama at {settings.ollama_url} ({e}); is `ollama serve` running?"
         ) from e
-    return {name for m in tags.get("models", []) for name in (m.get("name"), m.get("model")) if name}
+    return {m.model for m in tags.models if m.model}
 
 
 def check_models(variants: list[Variant]) -> None:
