@@ -284,3 +284,13 @@ def test_labels_only_take_zones_extraction_can_write() -> None:
         ExpectedReservation(
             kind=Kind.FLIGHT, start_local="2026-10-15T15:00", start_timezone="Pacific/Wellington"
         )
+
+
+def test_a_zone_the_trip_page_allows_but_labels_dont_drafts_as_unknown(bucket: Any, tmp_path: Path) -> None:
+    # The trip page takes any zone Python knows, aliases too; labels only take canonical ones.
+    put_case(bucket, "mail-1", two_flights(), [
+        {"reservation": 0, "edited": ["start_tz"], "fields": {"start_tz": "Europe/Kiev"}},
+    ])  # fmt: skip
+    sync(tmp_path, bucket, "evals")
+    draft = read_expected(tmp_path / "cases" / "mail-1" / "expected.yaml")
+    assert draft.reservations[0].start_timezone is None
