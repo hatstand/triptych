@@ -150,12 +150,14 @@ services:
 
 configs:
   caddyfile:
-    # Requests come from Docker's loopback proxy (`tailscale serve`) or cloudflared, both private
-    # addresses, so keep the X-Forwarded-* they set and append the hop, rather than replacing them.
+    # Requests to :8000 come from Docker's loopback proxy (`tailscale serve`) or cloudflared, both
+    # private addresses, so keep the X-Forwarded-* they set and append the hop, rather than replacing
+    # them. Any other listener (compose/direct.yaml's :443) trusts no one: its clients are the
+    # internet, so Caddy sets X-Forwarded-For to the connection's own address.
     content: |
       {
         admin off
-        servers {
+        servers :8000 {
           trusted_proxies static private_ranges
         }
         # The proxy warns "aborting with incomplete response ... context canceled" whenever a client
@@ -169,11 +171,16 @@ configs:
           level ERROR
         }
       }
-      :8000 {
+      (web) {
         reverse_proxy web:8000 {
           lb_try_duration 30s
         }
       }
+      :8000 {
+        import web
+      }
+      # Extra sites from overlays (compose/direct.yaml); none by default.
+      import /etc/caddy/sites/*.caddy
 
 volumes:
   restate-data:
