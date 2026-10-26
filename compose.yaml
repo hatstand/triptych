@@ -142,6 +142,20 @@ services:
       - ${ADMIN_SOCKET_DIR:-./run}:/run/triptych
     depends_on: *after-migrations
 
+  # The eval gate (evals/README.md → "The gate on marvin"), run by `triptych-deploy gate` after a
+  # deploy and nightly; never started by `up`. EVALS_DIR is a checkout of hatstand/triptych-evals.
+  evals:
+    <<: *app
+    image: ${TRIPTYCH_EVALS_IMAGE:-triptych-evals}
+    build: { context: ., target: evals }
+    profiles: [evals]
+    restart: "no"
+    environment:
+      <<: *app-env
+      TRIPTYCH_EVAL_DIR: /evals
+    volumes:
+      - ${EVALS_DIR:-../triptych-evals}:/evals
+
   smtp:
     <<: *app
     command: ["python", "-m", "triptych.smtp"]

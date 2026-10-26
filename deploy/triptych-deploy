@@ -1,12 +1,29 @@
 #!/bin/bash
 # Login shell for the `deploy` user on marvin (see deploy/README.md). Tailscale SSH runs
-# `<shell> -c "<command>"`; the only command accepted is the 40-hex SHA of a commit on main.
+# `<shell> -c "<command>"`; the only commands accepted are the 40-hex SHA of a commit on main, which
+# deploys it, and `gate`, which runs the eval gate against what's deployed.
 # The checkout lives in /srv/triptych next to its (untracked) .env, which sets COMPOSE_FILE.
 set -euo pipefail
 
-sha=${!#}
+cmd=${!#}
+
+if [[ $cmd == gate ]]; then
+  # One gate at a time: a deploy's and the nightly one could otherwise overlap.
+  exec 9>/tmp/triptych-gate.lock
+  flock 9
+  # Labels: a checkout of hatstand/triptych-evals, pulled with its read-only deploy key.
+  git -C /srv/triptych-evals pull --quiet --ff-only
+  cd /srv/triptych
+  TRIPTYCH_EVALS_IMAGE=ghcr.io/hatstand/triptych:$(git rev-parse HEAD)-evals
+  export TRIPTYCH_EVALS_IMAGE EVALS_DIR=/srv/triptych-evals
+  docker compose --profile evals pull --quiet evals
+  # As deploy, so what the gate writes to the checkout (inputs/, runs/) stays deploy's.
+  exec docker compose --profile evals run --rm --no-deps --user "$(id -u):$(id -g)" evals
+fi
+
+sha=$cmd
 if [[ ! $sha =~ ^[0-9a-f]{40}$ ]]; then
-  echo "usage: tailscale ssh deploy@marvin <commit sha on main>" >&2
+  echo "usage: tailscale ssh deploy@marvin <commit sha on main> | gate" >&2
   exit 2
 fi
 

@@ -2,7 +2,7 @@ name: Deploy
 
 # On every push to main: run the Python checks, build the app image into GHCR, then join the
 # tailnet as an ephemeral tag:ci node (workload identity federation, no stored secret) and tell
-# marvin to roll to it.
+# marvin to roll to it. Then run the eval gate against what was deployed (eval-gate.yml).
 # One-time setup is in deploy/README.md.
 
 on:
@@ -41,6 +41,14 @@ jobs:
             ghcr.io/${{ github.repository }}:main
           cache-from: type=gha
           cache-to: type=gha,mode=max
+      # The eval harness on top of it, for the gate below.
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: evals
+          push: true
+          tags: ghcr.io/${{ github.repository }}:${{ github.sha }}-evals
+          cache-from: type=gha
 
   deploy:
     needs: image
@@ -57,5 +65,12 @@ jobs:
           audience: ${{ vars.TS_AUDIENCE }}
           tags: tag:ci
           ping: marvin
-      # deploy's login shell on marvin is deploy/triptych-deploy, which accepts only a commit SHA.
+      # deploy's login shell on marvin is deploy/triptych-deploy, which accepts only a commit SHA (or `gate`).
       - run: tailscale ssh deploy@marvin "$GITHUB_SHA"
+
+  gate:
+    needs: deploy
+    uses: ./.github/workflows/eval-gate.yml
+    permissions:
+      id-token: write
+      issues: write
