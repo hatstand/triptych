@@ -10,7 +10,7 @@ import pytest
 
 from evals import fewshot
 from evals.cases import Expected, ExpectedReservation, expected_path, load_cases, write_expected
-from evals.run import Variant, answer
+from evals.run import Variant, answer, examples_line
 from triptych import examples, llm
 from triptych.models import Extraction, Kind, LlmExtractRequest
 
@@ -84,3 +84,20 @@ async def test_an_examples_run_records_what_each_case_was_shown(
     assert (await answer(case(root, "this"), off, pool)).examples == []
     assert [len(r.examples) for r in sent] == [1, 0]
     assert on.label.endswith("-examples") and not off.label.endswith("-examples")
+
+
+async def test_a_run_says_how_many_cases_were_shown_examples(root: Path) -> None:
+    pool = await fewshot.pool(root)
+    assert pool.size == 3  # the corrected ones with an owner: mine-before, theirs-before, mine-after
+
+    def results(shown: int | None, rows: list[list[str]]) -> dict[str, Any]:
+        meta = {"examples": shown is not None, "shown_examples": shown, "example_pool": pool.size}
+        return {"meta": meta, "cases": [{"output": {"examples": e}} for e in rows]}
+
+    assert examples_line(results(None, [[]])) is None  # examples off
+    assert (
+        examples_line(results(1, [["mine-before"], []]))
+        == "1 of 2 shown worked examples, from 3 corrected cases"
+    )
+    nothing = examples_line(results(0, [[], []]))
+    assert nothing is not None and nothing.endswith("(so examples on changed nothing)")

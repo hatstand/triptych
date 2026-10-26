@@ -221,6 +221,10 @@ async def run_variant(
         "num_ctx": settings.llm_num_ctx,
         "code_version": git_version(),
         "median_duration_s": durations[len(durations) // 2] if durations else None,
+        "example_pool": pool.size if pool and variant.examples else None,
+        "shown_examples": sum(bool((r["output"] or {}).get("examples")) for r in rows)
+        if variant.examples
+        else None,
     }
     out = root / "runs" / f"{started:%Y%m%d-%H%M%S}-{slug(variant.label)}"
     out.mkdir(parents=True)
@@ -241,6 +245,18 @@ def title(meta: dict[str, Any]) -> str:
     return f"{meta['model']} · prompt {meta['prompt_version']} · think {meta['think']}{shown}"
 
 
+def examples_line(results: dict[str, Any]) -> str | None:
+    """How many cases a run with examples on actually showed any: none, and it tested nothing."""
+    meta = results["meta"]
+    if meta.get("shown_examples") is None:
+        return None
+    line = (
+        f"{meta['shown_examples']} of {len(results['cases'])} shown worked examples, "
+        f"from {meta['example_pool']} corrected cases"
+    )
+    return line + " (so examples on changed nothing)" if not meta["shown_examples"] else line
+
+
 def summary_table(results: dict[str, Any]) -> Table:
     meta, overall = results["meta"], results["summary"]["all"]
     table = Table(title=title(meta))
@@ -257,6 +273,8 @@ def summary_table(results: dict[str, Any]) -> Table:
         f"recall {pct(overall['reservation_recall'])} · precision {pct(overall['reservation_precision'])} · "
         f"errors {overall['errors']}"
     )
+    if shown := examples_line(results):
+        table.caption += f" · {shown}"
     return table
 
 
@@ -270,6 +288,7 @@ def summary_md(results: dict[str, Any]) -> str:
         f"code {meta['code_version']}, model digest {(meta['model_digest'] or 'unknown')[:19]}. "
         f"Median {meta['median_duration_s'] or 0:.1f}s a case on this host (not comparable with marvin).",
         "",
+        *([f"{shown}.", ""] if (shown := examples_line(results)) else []),
         *(
             [
                 f"{n} partly labelled (drafts their owners corrected) count only toward the fields they set.",
@@ -325,6 +344,11 @@ def run(
 
     async def go() -> list[Path]:
         pool = await fewshot.pool(root) if any(v.examples for v in variants) else None
+        if pool is not None and not pool.size:
+            console.print(
+                "[yellow]no case is tagged `corrected` with an owner in case.json, so examples on "
+                "will show nothing (run `python -m evals sync` after correcting some in the app)[/yellow]"
+            )
         return [
             await run_variant(
                 v, cases, root, pool=pool, repeat=repeat, concurrency=concurrency, console=console

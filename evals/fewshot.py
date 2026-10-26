@@ -53,6 +53,10 @@ class Pool:
     by_owner: dict[str, list[db.LiveExample]]
     """Each owner's possible examples, newest first, as live_examples gives production's."""
 
+    @property
+    def size(self) -> int:
+        return sum(len(found) for found in self.by_owner.values())
+
     async def examples_for(self, case: Case, doc: ParsedDocument, data: bytes) -> list[ExtractionExample]:
         owner = owner_of(self.root, case.id)
         earlier = [
