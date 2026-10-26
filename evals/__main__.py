@@ -44,10 +44,11 @@ def cmd_run(args: argparse.Namespace) -> None:
     if args.case:
         found = [c for c in found if c.id in args.case]
     variants = [
-        Variant(model=m, prompt=p, think=think(t))
+        Variant(model=m, prompt=p, think=think(t), examples=e == "on")
         for m in args.model or [settings.llm_model]
         for p in args.prompt or ["current"]
         for t in args.think or ["off"]
+        for e in args.examples or ["off"]
     ]
     run(found, variants, root, repeat=args.repeat, concurrency=args.concurrency)
 
@@ -214,6 +215,13 @@ def main(argv: list[str] | None = None) -> None:
     )
     p.add_argument(
         "--think", action="append", choices=["off", "on", "low", "medium", "high"], help="default off"
+    )
+    p.add_argument(
+        "--examples",
+        action="append",
+        choices=["off", "on"],
+        help="show each case its owner's earlier corrected cases first, as LLM_EXAMPLES does (default off; "
+        "give both to compare)",
     )
     p.add_argument("--tag", action="append", default=[], help="only cases with this tag (all given)")
     p.add_argument("--case", action="append", help="only this case id")
