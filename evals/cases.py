@@ -41,9 +41,12 @@ CONTENT_TYPES = {
 
 
 def _canonical_zone(name: str | None) -> str | None:
-    if name is not None and name not in places.timezones():
-        raise ValueError(f"{name} isn't a canonical IANA timezone, like Europe/Lisbon")
-    return name
+    """An alias (Asia/Chongqing, from a label written before the list) as its canonical zone."""
+    if name is None:
+        return None
+    if (canonical := places.canonical_timezone(name)) is None:
+        raise ValueError(f"{name} isn't an IANA timezone, like Europe/Lisbon")
+    return canonical
 
 
 def _zone(description: str) -> Any:
