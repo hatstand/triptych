@@ -13,7 +13,7 @@ import boto3
 import pytest
 from moto import mock_aws
 
-from triptych import db, enrich, examples, inputs
+from triptych import db, enrich, examples, inputs, llm
 from triptych.config import settings
 from triptych.inputs import InputStore
 from triptych.models import (
@@ -216,3 +216,28 @@ async def test_the_next_mail_from_that_sender_is_shown_the_corrected_answer(
     assert (await examples.with_examples(extract, "mail-2", req)).examples == []  # another sender
     extract, req = mail(b"Iberia <offers@iberia.com>", nothing_alike)
     assert (await examples.with_examples(extract, "mail-1", req)).examples == []  # never its own
+
+
+async def test_an_examples_vector_is_kept_and_compared_with_the_new_documents(
+    store: InputStore, me: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    trip_id, by_kind = await filed(store, me)
+    await edit(me, trip_id, by_kind[Kind.FLIGHT], seat="12A")
+    ex = await example(store)
+    assert ex is not None
+    await db.save_example(ex.model_copy(update={"embedding": [1.0, 0.0]}), timedelta(0))
+    [live] = await db.live_examples(me)
+    assert live.embedding == [1.0, 0.0]
+
+    async def embed(texts: list[str]) -> list[list[float]]:
+        return [[0.8, 0.6]]  # cosine 0.8 with the example: alike in meaning, not in words
+
+    monkeypatch.setattr(llm, "embed", embed)
+    upload = IngestRequest(
+        user=me, source="upload", content_type="application/pdf", data_b64="", received_at=NOW
+    )
+    doc = ParsedDocument(subject=None, text="Boarding pass. Gate B22, seat 12A.")
+    extract = LlmExtractRequest(document=doc, received_at=NOW)
+    assert [e.ingest_id for e in (await examples.with_examples(extract, "pdf-1", upload)).examples] == [
+        "mail-1"
+    ]

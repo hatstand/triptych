@@ -80,7 +80,8 @@ CREATE TABLE public.extraction_example (
     changes text[] DEFAULT '{}'::text[] NOT NULL,
     partial boolean DEFAULT false NOT NULL,
     live_at timestamp with time zone NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    embedding real[]
 );
 
 
@@ -795,4 +796,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261025220000'),
     ('20261025230000'),
     ('20261026120000'),
-    ('20261026140000');
+    ('20261026140000'),
+    ('20261026150000');

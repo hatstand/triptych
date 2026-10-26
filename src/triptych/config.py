@@ -19,6 +19,8 @@ class Settings:
     # Show the model a user's own corrected documents before each new one of theirs (examples.py).
     # Off until the evals say it helps.
     llm_examples: bool
+    # Embeds examples and new documents to find the examples most like each (examples.py).
+    embed_model: str
     llm_num_ctx: int
     llm_timeout_s: float
     public_base_url: str
@@ -79,6 +81,7 @@ def load() -> Settings:
         llm_model=env("LLM_MODEL", "gemma4:26b-a4b-it-qat"),
         shadow_model=env("SHADOW_MODEL") or None,
         llm_examples=env("LLM_EXAMPLES", "") in ("1", "true", "yes"),
+        embed_model=env("EMBED_MODEL", "embeddinggemma:300m"),
         llm_num_ctx=int(env("LLM_NUM_CTX", "16384")),
         llm_timeout_s=float(env("LLM_TIMEOUT_S", "600")),
         public_base_url=public_base_url,
