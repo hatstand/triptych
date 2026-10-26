@@ -122,7 +122,8 @@ CREATE TABLE public.inbox_item (
     message text,
     trip_ids uuid[] DEFAULT '{}'::uuid[] NOT NULL,
     input_id uuid,
-    current_run_id uuid
+    current_run_id uuid,
+    reclassified_at timestamp with time zone
 );
 
 
@@ -797,4 +798,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261025230000'),
     ('20261026120000'),
     ('20261026140000'),
-    ('20261026150000');
+    ('20261026150000'),
+    ('20261026210000');

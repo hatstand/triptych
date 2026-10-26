@@ -79,3 +79,14 @@ async def test_the_digest_and_health_come_from_the_pulled_models(monkeypatch: py
     assert await llm.model_digest(settings.llm_model) == "sha256:abc"
     assert await llm.model_digest("qwen3.6:35b") is None
     assert (await llm.health())["available"]
+
+
+async def test_an_owners_word_that_its_a_booking_goes_with_the_document(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent = serve(monkeypatch, lambda _: chat_reply(Extraction(is_travel_document=True).model_dump_json()))
+    await llm.extract(REQ)
+    await llm.extract(REQ.model_copy(update={"owner_says_travel": True}))
+    plain, told = (body["messages"][-1]["content"] for _, body in sent)
+    assert llm.OWNER_SAYS_TRAVEL not in plain
+    assert told == plain + llm.OWNER_SAYS_TRAVEL

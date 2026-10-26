@@ -79,16 +79,21 @@ def sender_domain(content_type: str, data: bytes) -> str | None:
 def build(case: db.EvalCase, data: bytes) -> db.Example | None:
     """The ingest's example, or None when its owner corrected nothing it may teach."""
     output = case.run.output if case.run else None
-    fixes = corrections.find(case.ingest_id, output, case.reservations, case.keys, case.dismissals)
-    if not fixes:
+    fixes = corrections.find(
+        case.ingest_id, output, case.reservations, case.keys, case.dismissals,
+        reclassified=case.reclassified,
+    )  # fmt: skip
+    if not fixes and not (case.reclassified and case.reservations):
         return None
     doc = parse(case.input, data)
     if not doc.text.strip() or len(doc.text) > MAX_TEXT:
         return None
     fixes, partial = grounded(fixes, doc.text)
-    if not fixes:
+    if not fixes and not case.reclassified:
         return None
-    answer, changes, _ = corrections.apply(output, fixes)
+    answer, changes, _ = corrections.apply(output, fixes, reclassified=case.reclassified)
+    if not answer.reservations:
+        return None
     return db.Example(
         ingest_id=case.ingest_id,
         owner=case.input.owner,

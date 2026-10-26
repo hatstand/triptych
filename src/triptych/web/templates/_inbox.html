@@ -3,6 +3,10 @@
     <span class="badge {{ i.state }}">{{ i.state.replace('_', ' ') }}</span>
     <span class="label">{{ i.label }}</span>
     {% if i.message %}<div class="muted small">{{ i.message }}</div>{% endif %}
+    {% if i.reclassifiable %}
+      <form method="post" action="/inbox/{{ i.ingest_id | urlencode }}/booking">
+        <button class="link small">This is a booking</button></form>
+    {% endif %}
     {% for tid in i.trip_ids %}<a class="small" href="/trips/{{ tid }}">view trip →</a>{% endfor %}
   </div>
 {% else %}<p class="muted small">Nothing processed yet.</p>{% endfor %}

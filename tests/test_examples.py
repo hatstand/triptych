@@ -273,3 +273,62 @@ async def test_an_examples_vector_is_kept_and_compared_with_the_new_documents(
     assert [e.ingest_id for e in (await examples.with_examples(extract, "pdf-1", upload)).examples] == [
         "mail-1"
     ]
+
+
+async def test_a_no_travel_its_owner_says_is_a_booking_teaches_what_was_found(
+    store: InputStore, me: str
+) -> None:
+    await db.add_inbox_item(
+        me,
+        InboxItem(
+            ingest_id="mail-1", source="email", label="Your flight", received_at=NOW, state="no_travel"
+        ),
+    )
+    assert not (await db.inbox(me))[0].reclassifiable  # nothing kept to read again
+    kept = await store.keep(
+        me, EMAIL, ingest_id="mail-1", source="email", content_type="message/rfc822", filename=None,
+        received_at=NOW,
+    )  # fmt: skip
+
+    def run(output: Extraction, purpose: Any = "reprocess") -> str:
+        return str(uuid.uuid5(uuid.NAMESPACE_URL, output.model_dump_json() + purpose))
+
+    nothing = Extraction(is_travel_document=False)
+    for output, purpose in ((nothing, "ingest"), (TRIP, "reprocess"), (nothing, "reprocess")):
+        await db.add_extraction_run(
+            ExtractionRun(
+                id=run(output, purpose), ingest_id="mail-1", owner=me, input_id=kept.id, model="gemma4",
+                model_digest=None, prompt_version="0123456789ab", code_version="dev", params={},
+                purpose=purpose, output=output,
+            )
+        )  # fmt: skip
+    assert (await db.inbox(me))[0].reclassifiable
+    assert await example(store) is None
+
+    assert await db.mark_reclassified(me, "mail-1")
+    assert not await db.mark_reclassified(me, "mail-1")  # once
+    assert not await db.mark_reclassified(await db.user_for_email("someone@else.com"), "mail-1")
+    [item] = await db.inbox(me)
+    assert (item.reclassifiable, item.message) == (False, "Reading it again as a booking…")
+
+    def made(run_id: str) -> list[Any]:
+        return [
+            r
+            for x in TRIP.reservations
+            if (r := enrich.normalise(x, reservation_id=str(uuid.uuid4()), ingest_id="mail-1", run_id=run_id))
+        ]
+
+    await db.apply_reprocess(me, "mail-1", run(TRIP), made(run(TRIP)))
+    [item] = await db.inbox(me)
+    assert (item.state, item.message, len(item.trip_ids)) == ("done", "Read again as a booking.", 1)
+    ex = await example(store)
+    assert ex is not None
+    assert ex.answer.is_travel_document and len(ex.answer.reservations) == 2
+    assert ex.changes == ["said it's a booking"]
+    [rate] = await db.correction_rates(NOW - timedelta(days=1))
+    assert (rate.ingests, rate.corrected) == (1, 1)
+
+    # A later run that finds nothing leaves them what they have, and that's still the answer.
+    await db.apply_reprocess(me, "mail-1", run(nothing), [])
+    ex = await example(store)
+    assert ex is not None and len(ex.answer.reservations) == 2

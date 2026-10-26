@@ -13,6 +13,10 @@ Ingest starts a shadow one per new ingest when SHADOW_MODEL is set.
 
 Re-extraction runs in the same `gpu` scope as Ingest, under its own "reprocess" limit key per user,
 so a big batch takes turns with live mail instead of queueing in front of it.
+
+The owner starts one too, by saying a "no travel" ingest is a booking (the inbox's "This is a
+booking", batch OWNER_BATCH): it is extracted again with the model told so, as interactive work,
+and then copied to the eval set and made a worked example like any other correction.
 """
 
 from datetime import timedelta
@@ -28,11 +32,15 @@ from triptych.models import (
     ReprocessRequest,
     Reservation,
 )
+from triptych.services import eval_share
 from triptych.services.llm_service import GPU_SCOPE, limit_key, record_run
 from triptych.services.llm_service import extract as llm_extract
 from triptych.services.user import reconcile
 
 reprocess = restate.Workflow("Reprocess")
+
+OWNER_BATCH = "owner-says-travel"
+"""The batch of the ones owners start."""
 
 
 async def _extract(
@@ -46,21 +54,24 @@ async def _extract(
     )  # fmt: skip
     run_id = str(ctx.uuid())
     purpose = "shadow" if req.mode == "shadow" else "reprocess"
+    hint = req.owner_says_travel
     try:
         extraction = await ctx.scope(GPU_SCOPE).service_call(
             llm_extract,
-            LlmExtractRequest(document=doc, received_at=target.received_at, model=model),
-            limit_key=limit_key("reprocess", target.owner),
+            LlmExtractRequest(
+                document=doc, received_at=target.received_at, model=model, owner_says_travel=hint
+            ),
+            limit_key=limit_key("interactive" if hint else "reprocess", target.owner),
         )
     except restate.TerminalError as e:
         await ctx.run_typed(
             "record run", record_run, restate.RunOptions[None](), run_id, req.ingest_id, target.owner,
-            target.input_id, model, purpose, None, str(e)[:2000],
+            target.input_id, model, purpose, None, str(e)[:2000], None, hint,
         )  # fmt: skip
         raise
     await ctx.run_typed(
         "record run", record_run, restate.RunOptions[None](), run_id, req.ingest_id, target.owner,
-        target.input_id, model, purpose, extraction, None,
+        target.input_id, model, purpose, extraction, None, None, hint,
     )  # fmt: skip
     return run_id, extraction
 
@@ -94,6 +105,8 @@ async def run(ctx: restate.WorkflowContext, req: ReprocessRequest) -> None:
                 target.owner,
                 ReconcileRequest(ingest_id=req.ingest_id, run_id=run_id, reservations=candidates),
             )
+            if req.owner_says_travel:  # reconcile has remade its example; now its eval label
+                ctx.object_send(eval_share.copy, target.owner, req.ingest_id)
         else:
             rec = await ctx.run_typed(
                 "diff", db.preview_reprocess, restate.RunOptions[db.Reconciliation](), target.owner,
