@@ -3,11 +3,12 @@ import { Resvg } from "@resvg/resvg-js";
 import { defineConfig, type Plugin } from "vite";
 import icons from "./src/icons.json" with { type: "json" };
 
-// Each src/<name>.ts is a page script and src/style.css the stylesheet. Every output file name
+// Each src/<name>.ts is a page script and src/style.css the stylesheet; evals.ts and evals.css are the
+// local eval labelling UI's (python -m evals ui), which the app itself never loads. Every output file name
 // carries a content hash, so a deploy never meets a stale copy in a browser or Cloudflare's cache;
 // the Jinja static('<name>') helper (src/triptych/web/assets.py) finds the hashed name in Vite's
 // manifest.
-const ENTRIES = ["copy.ts", "dialog.ts", "drop.ts", "live.ts", "passkey.ts", "style.css"];
+const ENTRIES = ["copy.ts", "dialog.ts", "drop.ts", "evals.ts", "evals.css", "live.ts", "passkey.ts", "style.css"];
 
 // Triptych's icon names -> Lucide icons (lucide.dev, ISC), emitted as one <symbol> sprite that the
 // Jinja icon() macro in templates/_icons.html points <use> at. Lucide's own attributes (24px grid,

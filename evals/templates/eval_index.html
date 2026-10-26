@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% from "_icons.html" import kind_icons %}
+{% block title %}Eval cases · Triptych{% endblock %}
+{% block head %}{% include "_eval_head.html" %}{% endblock %}
+{% block content %}
+<div class="eval-list">
+  <div class="row eval-title">
+    <h1>Eval cases</h1>
+    <span class="muted small mono">{{ root }}</span>
+  </div>
+  <nav class="filters" aria-label="Filter">
+    <a href="/" {% if not status and not tag %}aria-current="page"{% endif %}>All <span class="muted">{{ total }}</span></a>
+    <a href="/?status=draft" {% if status == 'draft' %}aria-current="page"{% endif %}>To verify <span class="muted">{{ counts.draft }}</span></a>
+    <a href="/?status=verified" {% if status == 'verified' %}aria-current="page"{% endif %}>Verified <span class="muted">{{ counts.verified }}</span></a>
+    {% if counts.problem %}<a href="/?status=problem" {% if status == 'problem' %}aria-current="page"{% endif %}>Problems <span class="muted">{{ counts.problem }}</span></a>{% endif %}
+    {% for t in tags %}<a class="tag" href="/?tag={{ t | urlencode }}" {% if tag == t %}aria-current="page"{% endif %}>{{ t }}</a>{% endfor %}
+  </nav>
+  {% if not total %}
+  <div class="card"><p>No cases in <code>{{ root }}/cases</code> yet. <code>python -m evals sync</code> fetches the shared ones; <code>python -m evals add</code> adds a file of your own.</p></div>
+  {% else %}
+  <table class="cases card">
+    <thead><tr><th>Case</th><th>Status</th><th>Received</th><th>What</th><th>Reservations</th><th>Tags</th></tr></thead>
+    <tbody>
+    {% for c in cases %}
+      <tr>
+        <td><a class="mono" href="/cases/{{ c.id }}">{{ c.id }}</a></td>
+        {% if c.expected %}
+        <td><span class="badge {{ c.expected.status }}">{{ c.expected.status }}</span>{% if c.problem %} <span class="error small">{{ c.problem }}</span>{% endif %}</td>
+        <td class="nowrap">{{ c.expected.received_at.strftime('%Y-%m-%d') }}</td>
+        <td>{{ c.subject or '' }}</td>
+        <td><div class="kinds">
+          {% if not c.expected.is_travel_document %}<span class="muted">not travel</span>{% endif %}
+          {% for r in c.expected.reservations %}<span title="{{ r.title or r.kind.value }}" class="kind {{ r.kind.value }}">{{ kind_icons[r.kind.value] }}</span>{% endfor %}
+        </div></td>
+        <td class="small muted">{{ c.expected.tags | join(', ') }}</td>
+        {% else %}
+        <td colspan="5"><span class="error small">{{ c.problem }}</span></td>
+        {% endif %}
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endblock %}

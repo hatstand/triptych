@@ -1,0 +1,39 @@
+{#- The original, as received or as the model sees it. Swapped in place by its own tabs. -#}
+{% set base = '/cases/' ~ case_id %}
+<section id="source" class="eval-source card" aria-label="Original">
+  <nav class="source-tabs" hx-target="#source" hx-swap="outerHTML">
+    <button type="button" hx-get="{{ base }}/source?view=original" {% if source.view != 'text' %}aria-current="page"{% endif %}>Original</button>
+    <button type="button" hx-get="{{ base }}/source?view=text" {% if source.view == 'text' %}aria-current="page"{% endif %}>Text the model saw</button>
+    {% if source.found %}<a class="small" href="{{ base }}/original" download="{{ source.name }}">Download {{ source.name }}</a>{% endif %}
+  </nav>
+  {% if not source.found %}
+  <p class="error">No input for this case. <code>python -m evals sync</code> fetches shared ones.</p>
+  {% elif source.view == 'text' %}
+  <pre class="model-text">{{ source.text }}</pre>
+  {% for img in source.model_images %}<img class="model-image" alt="Image {{ loop.index }} the model saw" src="data:image/png;base64,{{ img }}">{% endfor %}
+  {% elif source.email %}
+  <dl class="headers">
+    {% for name, value in source.email.headers %}<dt>{{ name }}</dt><dd>{{ value }}</dd>{% endfor %}
+  </dl>
+  {% if source.email.attachments %}
+  <p class="attachments small">
+    {% for n, filename, ctype in source.email.attachments %}<a href="{{ base }}/part/{{ n }}" target="_blank" rel="noopener">{{ filename }}</a> <span class="muted">{{ ctype }}</span>{% if not loop.last %} · {% endif %}{% endfor %}
+  </p>
+  {% endif %}
+  {% if source.email.html %}
+  <iframe class="original" title="The email" sandbox="allow-popups allow-popups-to-escape-sandbox" src="{{ base }}/body{% if source.images %}?images=true{% endif %}"></iframe>
+  <p class="small muted">
+    {% if source.images %}Remote images are shown.{% else %}Remote images are blocked.
+    <button type="button" class="link" hx-get="{{ base }}/source?view=original&images=true" hx-target="#source" hx-swap="outerHTML">Load them</button>{% endif %}
+  </p>
+  {% else %}
+  <pre class="model-text">{{ source.email.text or '' }}</pre>
+  {% endif %}
+  {% elif source.content_type == 'text/plain' %}
+  <pre class="model-text">{{ source.text }}</pre>
+  {% elif source.content_type.startswith('image/') %}
+  <img class="model-image" alt="The original" src="{{ base }}/original">
+  {% else %}
+  <iframe class="original" title="The original" {% if source.content_type == 'text/html' %}sandbox{% endif %} src="{{ base }}/original"></iframe>
+  {% endif %}
+</section>
