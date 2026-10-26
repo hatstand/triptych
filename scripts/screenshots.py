@@ -26,7 +26,14 @@ from typing import LiteralString, cast
 
 import httpx
 import psycopg
-from playwright.async_api import Browser, BrowserContext, Route, ViewportSize, async_playwright
+from playwright.async_api import (
+    Browser,
+    BrowserContext,
+    ConsoleMessage,
+    Route,
+    ViewportSize,
+    async_playwright,
+)
 
 from triptych import auth, db, photos
 from triptych.config import settings
@@ -327,13 +334,22 @@ async def serve(app: str, url: str, env: dict[str, str]) -> asyncio.subprocess.P
     sys.exit(f"{app} didn't start listening on {url}")
 
 
-async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_id: str) -> None:
+async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_id: str) -> list[str]:
+    """Saves each page's screenshots, and returns whatever the Content-Security-Policy refused."""
+    refused: list[str] = []
+
+    def console(msg: ConsoleMessage) -> None:
+        if "Content Security Policy" in msg.text:
+            refused.append(f"{msg.page and msg.page.url}: {msg.text}")
+
     async def context(headers: dict[str, str] | None = None) -> BrowserContext:
-        return await browser.new_context(
+        ctx = await browser.new_context(
             viewport=VIEWPORT,
             color_scheme="dark" if scheme == "dark" else "light",
             extra_http_headers=headers,
         )
+        ctx.on("console", console)
+        return ctx
 
     # Signed out, then signed in with the seeded user's session cookie.
     anon = await context()
@@ -387,6 +403,7 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
     await page.close()
     for ctx in (anon, user, admin):
         await ctx.close()
+    return refused
 
 
 async def main() -> None:
@@ -423,14 +440,17 @@ async def main() -> None:
             browser = await p.chromium.launch(executable_path=os.environ.get("PLAYWRIGHT_CHROMIUM") or None)
             # The upcoming trip with the connecting flight.
             upcoming = min((t for t in trips if t.start_date >= date.today()), key=lambda t: t.start_date)
+            refused: list[str] = []
             for scheme in ("light", "dark"):
-                await capture(browser, args.out, scheme, session, upcoming.id)
+                refused += await capture(browser, args.out, scheme, session, upcoming.id)
             await browser.close()
     finally:
         for proc in servers:
             proc.terminate()
             await proc.wait()
     print(f"wrote {len(list(args.out.glob('*/*.png')))} screenshots to {args.out}")
+    if refused:
+        sys.exit("Content-Security-Policy violations:\n" + "\n".join(refused))
 
 
 if __name__ == "__main__":

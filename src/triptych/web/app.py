@@ -44,7 +44,7 @@ from triptych.services import assistant as assistant_svc
 from triptych.services import eval_share as eval_share_svc
 from triptych.services import ingest as ingest_svc
 from triptych.services import user as user_svc
-from triptych.web import live, ratelimit
+from triptych.web import csp, live, ratelimit
 from triptych.web.assets import STATIC, Assets, Static
 
 HERE = Path(__file__).parent
@@ -77,6 +77,7 @@ async def lifespan(_app: FastAPI) -> AsyncGenerator[AppState]:
 app = FastAPI(title="Triptych", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 # Built by the frontend (gitignored), so absent until then; templates still render without it.
 app.mount("/static", Static(directory=STATIC, check_dir=False), name="static")
+app.middleware("http")(csp.content_security_policy)
 templates = Jinja2Templates(directory=HERE / "templates")
 templates.env.filters["duration"] = journeys.format_duration
 templates.env.filters["tz_abbr"] = journeys.tz_abbr

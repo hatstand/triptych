@@ -325,6 +325,7 @@ button.danger {
   height: 72px;
   border-radius: 8px;
   object-fit: cover;
+  object-position: var(--focus, 50% 35%);
   background: var(--bg);
 }
 .trip-thumb.placeholder {
