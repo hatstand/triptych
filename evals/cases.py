@@ -106,6 +106,11 @@ class ExpectedReservation(BaseModel):
         description="Other answers that are also right, per field ({city: [New York City]}); null if "
         "leaving it out is fine too",
     )
+    owner_set: list[str] = Field(
+        default_factory=list,
+        description="Fields its owner set in the app (sync writes these). Until the case is verified, "
+        "they're all that's scored of it",
+    )
 
 
 class Expected(BaseModel):
@@ -123,6 +128,12 @@ class Expected(BaseModel):
     notes: str | None = None
     is_travel_document: bool
     reservations: list[ExpectedReservation] = Field(default_factory=list)
+
+    @property
+    def partly_labelled(self) -> bool:
+        """A draft whose owner corrected some of it in the app: those fields are right, the rest is
+        the model's unchecked answer."""
+        return self.status == "draft" and any(r.owner_set for r in self.reservations)
 
 
 @dataclass(frozen=True, slots=True)
@@ -191,13 +202,14 @@ def find_input(root: Path, case_id: str, expected: Expected, yaml_path: Path) ->
 
 
 def load_cases(root: Path, *, include_drafts: bool = False, tags: tuple[str, ...] = ()) -> list[Case]:
-    """The cases to score: verified ones (and drafts if asked) with an input on disk, carrying every
-    tag in `tags`. Raises on a case that doesn't parse, so mistakes surface instead of shrinking the set."""
+    """The cases to score: verified ones, drafts partly labelled by their owner (scored on what they
+    set), and other drafts if asked, with an input on disk and carrying every tag in `tags`. Raises on
+    a case that doesn't parse, so mistakes surface instead of shrinking the set."""
     cases = []
     for path in sorted((root / "cases").glob("*/expected.yaml")):
         case_id = path.parent.name
         expected = read_expected(path)
-        if expected.status != "verified" and not include_drafts:
+        if expected.status != "verified" and not expected.partly_labelled and not include_drafts:
             continue
         if not set(tags) <= set(expected.tags):
             continue
@@ -214,7 +226,7 @@ def draft(
     """An expected.yaml to correct, from what the model answered (no answer: an empty one)."""
     if extraction is None:
         return Expected(received_at=received_at, source=source, tags=tags, is_travel_document=False)
-    keep = set(ExpectedReservation.model_fields) - {"accept"}
+    keep = set(ExpectedReservation.model_fields) - {"accept", "owner_set"}
     return Expected(
         received_at=received_at,
         source=source,

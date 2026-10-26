@@ -13,6 +13,10 @@ doesn't matter and one bad reservation doesn't shift the rest. Each scored field
 
 Besides what the model said, it scores what the app makes of it: start_tz/end_tz after enrich.py's
 normalise and fill_timezones have run over both sides, since that's what lands in the calendar.
+
+A partly labelled case (a draft its owner corrected in the app, cases.Expected.partly_labelled) is
+scored only on what they set: those fields of the reservations they corrected, and missing one of
+those reservations. The rest is the model's own unchecked answer, so it isn't counted either way.
 """
 
 import unicodedata
@@ -75,6 +79,8 @@ class PairScore(BaseModel):
 
 
 class CaseScore(BaseModel):
+    partial: bool = False
+    """Partly labelled: only the fields its owner set are scored, and nothing about the case as a whole."""
     is_travel_document: bool
     predicted_travel: bool | None
     """None when the model gave no answer (an error)."""
@@ -93,6 +99,8 @@ class CaseScore(BaseModel):
 
     @property
     def fully_correct(self) -> bool:
+        if self.partial:
+            return self.error is None and not self.missed and all(p.fully_correct for p in self.pairs)
         return (
             self.error is None
             and self.classified
@@ -226,7 +234,7 @@ def pair(expected: list[ExpectedReservation], predicted: list[ExtractedReservati
 
 
 def as_extracted(e: ExpectedReservation) -> ExtractedReservation:
-    data = e.model_dump(exclude={"accept"})
+    data = e.model_dump(exclude={"accept", "owner_set"})
     data["title"] = e.title or e.kind.value
     return ExtractedReservation.model_validate(data)
 
@@ -242,10 +250,18 @@ def enriched(rs: list[ExtractedReservation]) -> list[Reservation | None]:
 # --- A case ----------------------------------------------------------------------------------------
 
 
+def owner_scored(e: ExpectedReservation) -> set[str]:
+    """The fields scored of a partly labelled reservation: what its owner set, and the zones the app
+    works out from the zones they set."""
+    enriched_too = {"start_timezone": "start_tz", "end_timezone": "end_tz"}
+    return set(e.owner_set) | {enriched_too[f] for f in e.owner_set if f in enriched_too}
+
+
 def score_case(expected: Expected, extraction: Extraction | None, error: str | None = None) -> CaseScore:
     want = expected.reservations if expected.is_travel_document else []
     got = extraction.reservations if extraction else []
     score = CaseScore(
+        partial=expected.partly_labelled,
         is_travel_document=expected.is_travel_document,
         predicted_travel=extraction.is_travel_document if extraction else None,
         error=error,
@@ -266,9 +282,17 @@ def score_case(expected: Expected, extraction: Extraction | None, error: str | N
             if ge is None:
                 fs.note = "start time unreadable: the app would drop it"
             fields.append(fs)
+        if score.partial:
+            scored = owner_scored(e)
+            for fs in fields:
+                if fs.field not in scored:
+                    fs.outcome, fs.note = Outcome.NA, "not set by its owner"
         score.pairs.append(PairScore(expected=i, predicted=j, title=e.title or p.title, fields=fields))
     score.missed = sorted(set(range(len(want))) - {i for i, _ in pairs})
     score.spurious = sorted(set(range(len(got))) - {j for _, j in pairs})
+    if score.partial:
+        score.missed = [i for i in score.missed if want[i].owner_set]
+        score.spurious = []
     return score
 
 
@@ -280,6 +304,8 @@ class Tally:
     """Scores over a set of cases (a run, or one tag of it)."""
 
     cases: int = 0
+    partial: int = 0
+    """Partly labelled cases, which add only their owner-set fields' outcomes."""
     classified: int = 0
     fully_correct: int = 0
     errors: int = 0
@@ -289,6 +315,10 @@ class Tally:
     fields: dict[str, Counter[Outcome]] = field(default_factory=dict)
 
     def add(self, s: CaseScore) -> None:
+        self.add_fields(s)
+        if s.partial:
+            self.partial += 1
+            return
         self.cases += 1
         self.classified += s.classified
         self.fully_correct += s.fully_correct
@@ -296,6 +326,8 @@ class Tally:
         self.expected += s.expected_count
         self.predicted += s.predicted_count
         self.paired += len(s.pairs)
+
+    def add_fields(self, s: CaseScore) -> None:
         for p in s.pairs:
             for f in p.fields:
                 self.fields.setdefault(f.field, Counter())[f.outcome] += 1
@@ -320,6 +352,7 @@ class Tally:
     def summary(self) -> dict[str, Any]:
         return {
             "cases": self.cases,
+            "partly_labelled": self.partial,
             "fully_correct": self.rate(self.fully_correct, self.cases),
             "classification": self.rate(self.classified, self.cases),
             "errors": self.errors,

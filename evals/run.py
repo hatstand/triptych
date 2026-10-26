@@ -270,6 +270,14 @@ def summary_md(results: dict[str, Any]) -> str:
         f"code {meta['code_version']}, model digest {(meta['model_digest'] or 'unknown')[:19]}. "
         f"Median {meta['median_duration_s'] or 0:.1f}s a case on this host (not comparable with marvin).",
         "",
+        *(
+            [
+                f"{n} partly labelled (drafts their owners corrected) count only toward the fields they set.",
+                "",
+            ]
+            if (n := summary["all"].get("partly_labelled"))
+            else []
+        ),
         "| slice | cases | fully correct | classification | recall | precision | errors |",
         "|---|---:|---:|---:|---:|---:|---:|",
     ]

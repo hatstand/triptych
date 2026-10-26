@@ -6,7 +6,7 @@ giving the answer the owner would have wanted: the eval set drafts labels from i
 and it is what a worked example of that ingest teaches.
 """
 
-from typing import Any
+from typing import Any, NamedTuple
 
 from pydantic import BaseModel, Field
 
@@ -87,23 +87,44 @@ def corrected(x: ExtractedReservation, c: Correction) -> ExtractedReservation:
     return fixed
 
 
-def apply(output: Extraction | None, corrections: list[Correction]) -> tuple[Extraction, list[str]]:
-    """The run's answer as the owner corrected it, and what they changed (for notes)."""
+class Applied(NamedTuple):
+    answer: Extraction
+    """The run's answer as the owner corrected it."""
+    changes: list[str]
+    """What they changed, for notes."""
+    owner_set: list[list[str]]
+    """For each of the answer's reservations, the fields the owner set (in extraction's terms)."""
+
+
+def _set_by(c: Correction, fixed: ExtractedReservation) -> list[str]:
+    fields = list(as_extracted(dict.fromkeys(c.edited)))
+    for side in ("start", "end"):
+        if f"{side}_location" in c.edited and iata_of(c.fields.get(f"{side}_location")) is not None:
+            fields.append(f"{side}_iata")
+    return [f for f in dict.fromkeys(fields) if f not in ("start_iata", "end_iata") or fixed.kind in CODED]
+
+
+def apply(output: Extraction | None, corrections: list[Correction]) -> Applied:
+    """The run's answer as the owner corrected it."""
     output = output or Extraction(is_travel_document=False, reservations=[])
     by_index = {c.reservation: c for c in corrections if c.reservation is not None}
-    kept, changed = [], []
+    kept, changed, owner_set = [], [], []
     for i, x in enumerate(output.reservations):
         name = x.title or x.kind.value
         if (c := by_index.get(i)) is None:
             kept.append(x)
+            owner_set.append([])
         elif c.deleted:
             changed.append(f"deleted {name}")
         else:
-            kept.append(corrected(x, c))
+            fixed = corrected(x, c)
+            kept.append(fixed)
+            owner_set.append(_set_by(c, fixed))
             changed.append(f"{name}: {', '.join(c.edited)}")
     for c in corrections:
         if c.reservation is None:
             added = ExtractedReservation.model_validate(as_extracted(c.fields))
             kept.append(added)
+            owner_set.append(list(as_extracted(c.fields)))  # they kept all of it
             changed.append(f"kept {added.title or added.kind.value}, which this run didn't find")
-    return output.model_copy(update={"reservations": kept}), changed
+    return Applied(output.model_copy(update={"reservations": kept}), changed, owner_set)
