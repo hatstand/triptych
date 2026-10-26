@@ -24,12 +24,12 @@ import base64
 import email
 import email.policy
 import logging
-import math
 import re
 from datetime import timedelta
 from email.utils import parseaddr
 
 import httpx
+import numpy as np
 
 from triptych import corrections, db, llm
 from triptych.config import settings
@@ -140,8 +140,8 @@ def _alike(a: set[str], b: set[str]) -> float:
 
 
 def _cosine(a: list[float], b: list[float]) -> float:
-    norms = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
-    return sum(x * y for x, y in zip(a, b, strict=True)) / norms if norms else 0.0
+    u, v = np.asarray(a), np.asarray(b)
+    return float(u @ v / (np.linalg.norm(u) * np.linalg.norm(v) or 1.0))
 
 
 async def embedding(subject: str | None, text: str) -> list[float] | None:

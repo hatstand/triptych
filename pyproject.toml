@@ -29,6 +29,7 @@ dependencies = [
     "boto3>=1.43.118",
     "python-json-logger>=4.2.0",
     "tzdata>=2026.5",
+    "numpy>=2.5",
 ]
 
 [dependency-groups]
