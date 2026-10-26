@@ -294,6 +294,10 @@ sender's first, then any that read much the same. "Much the same" is decided by 
 shared words if Ollama can't embed. Each run records the examples it was shown
 (`extraction_run.examples`). Leave it off until the evals show it helps.
 
+/admin → Corrections can pause examples without a redeploy, and resume them; the nightly eval
+pauses them by itself when they make extraction worse. While paused, extraction runs as if
+`LLM_EXAMPLES` were off.
+
 ### Eval set sharing
 
 Accounts can opt in on the account page (Eval set) to share their originals with the extraction eval

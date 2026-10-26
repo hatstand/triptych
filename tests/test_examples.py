@@ -249,6 +249,17 @@ async def test_the_next_mail_from_that_sender_is_shown_the_corrected_answer(
     extract, req = mail(b"Iberia <offers@iberia.com>", nothing_alike)
     assert (await examples.with_examples(extract, "mail-1", req)).examples == []  # never its own
 
+    # Paused (by the nightly eval, or on /admin), nothing is shown until resumed.
+    extract, req = mail(b"Iberia <offers@iberia.com>", nothing_alike)
+    await db.pause_examples("nightly eval", "fully correct fell 61% -> 50%")
+    await db.pause_examples("me@example.com", "again")
+    pause = await db.examples_pause()
+    assert pause is not None and (pause.paused_by, pause.reason) == ("me@example.com", "again")
+    assert (await examples.with_examples(extract, "mail-2", req)).examples == []
+    await db.resume_examples()
+    assert await db.examples_pause() is None
+    assert len((await examples.with_examples(extract, "mail-2", req)).examples) == 1
+
 
 async def test_an_examples_vector_is_kept_and_compared_with_the_new_documents(
     store: InputStore, me: str, monkeypatch: pytest.MonkeyPatch

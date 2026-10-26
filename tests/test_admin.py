@@ -69,7 +69,26 @@ def filters(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str | None]]:
     monkeypatch.setattr(admin.db, "admin_examples", admin_examples)
     removed_examples.clear()
     monkeypatch.setattr(admin.db, "delete_example", delete_example)
+    pauses.clear()
+
+    async def examples_pause() -> db.ExamplesPause | None:
+        return pauses[-1] if pauses else None
+
+    async def pause_examples(by: str, reason: str) -> None:
+        pauses.append(
+            db.ExamplesPause(paused_at=datetime(2026, 10, 26, 3, 0, tzinfo=UTC), paused_by=by, reason=reason)
+        )
+
+    async def resume_examples() -> None:
+        pauses.clear()
+
+    monkeypatch.setattr(admin.db, "examples_pause", examples_pause)
+    monkeypatch.setattr(admin.db, "pause_examples", pause_examples)
+    monkeypatch.setattr(admin.db, "resume_examples", resume_examples)
     yield seen
+
+
+pauses: list[db.ExamplesPause] = []
 
 
 removed_examples: list[str] = []
@@ -376,3 +395,21 @@ def test_removing_an_example_needs_our_origin(filters: list[str | None]) -> None
     )  # fmt: skip
     assert r.status_code == 403
     assert removed_examples == []
+
+
+def test_pause_and_resume_examples(filters: list[str | None], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(admin, "settings", replace(admin.settings, llm_examples=True))
+    headers = {**as_login(OWNER), "Origin": SITE}
+    r = client.post("/", data={"action": "pause_examples", "reason": "odd hotel times"}, headers=headers)
+    assert r.status_code == 200
+    assert [(p.paused_by, p.reason) for p in pauses] == [(OWNER, "odd hotel times")]
+    assert "paused" in r.text and "odd hotel times" in r.text and "Resume" in r.text
+
+    r = client.post("/", data={"action": "resume_examples"}, headers=headers)
+    assert r.status_code == 200 and pauses == []
+    assert ">Pause</button>" in r.text
+
+
+def test_examples_off_shows_no_switch(filters: list[str | None]) -> None:
+    r = client.get("/", headers=as_login(OWNER))
+    assert "LLM_EXAMPLES isn't set" in r.text and ">Pause</button>" not in r.text

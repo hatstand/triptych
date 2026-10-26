@@ -57,7 +57,24 @@
   <h2>Corrections</h2>
   <p class="muted small">How often owners edited or deleted what an ingest filed, over ingests received
     in the last {{ correction_days }} days, by the run they have now. Recent mail has had less time to be
-    corrected. Worked examples are {{ 'on' if llm_examples else 'off' }} (LLM_EXAMPLES).</p>
+    corrected.</p>
+  {% if not llm_examples %}
+  <p>Worked examples are <span class="badge no_travel">off</span> <span class="muted small">(LLM_EXAMPLES isn't set)</span></p>
+  {% elif examples_pause %}
+  <form method="post" action="#corrections">
+    <input type="hidden" name="action" value="resume_examples">
+    <p>Worked examples are <span class="badge failed">paused</span>
+      <span class="small">by {{ examples_pause.paused_by }} at <span class="mono">{{ examples_pause.paused_at.strftime('%Y-%m-%d %H:%M') }}</span>: {{ examples_pause.reason }}</span>
+      <button class="secondary">Resume</button></p>
+  </form>
+  {% else %}
+  <form method="post" action="#corrections" class="invite-form">
+    <input type="hidden" name="action" value="pause_examples">
+    <span>Worked examples are <span class="badge done">on</span></span>
+    <input name="reason" placeholder="Why pause them" aria-label="Why pause them" maxlength="500">
+    <button class="secondary">Pause</button>
+  </form>
+  {% endif %}
   {% if rates %}
   <table class="ingests">
     <tr><th>Model</th><th>Prompt</th><th>Examples</th><th>Ingests</th><th>Corrected</th><th>Edited</th><th>Deleted</th></tr>

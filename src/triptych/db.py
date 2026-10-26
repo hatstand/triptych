@@ -521,6 +521,36 @@ async def delete_example(ingest_id: str) -> None:
         await conn.execute("DELETE FROM extraction_example WHERE ingest_id = %s", (ingest_id,))
 
 
+class ExamplesPause(BaseModel):
+    paused_at: datetime
+    paused_by: str
+    """Who switched them off: the nightly eval, or an admin's Tailscale login."""
+    reason: str
+
+
+async def examples_pause() -> ExamplesPause | None:
+    """Why worked examples are off despite LLM_EXAMPLES, if they are."""
+    async with connection() as conn, conn.cursor(row_factory=class_row(ExamplesPause)) as cur:
+        await cur.execute("SELECT paused_at, paused_by, reason FROM examples_pause")
+        return await cur.fetchone()
+
+
+async def pause_examples(by: str, reason: str) -> None:
+    """Switch worked examples off until resumed. Pausing again keeps the first pause's time."""
+    async with connection() as conn:
+        await conn.execute(
+            """INSERT INTO examples_pause (paused_by, reason) VALUES (%s, %s)
+               ON CONFLICT (singleton) DO UPDATE
+                   SET paused_by = EXCLUDED.paused_by, reason = EXCLUDED.reason""",
+            (by, reason),
+        )
+
+
+async def resume_examples() -> None:
+    async with connection() as conn:
+        await conn.execute("DELETE FROM examples_pause")
+
+
 class LiveExample(Example):
     received_at: datetime
 
