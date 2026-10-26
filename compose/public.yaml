@@ -1,9 +1,7 @@
-# Serving the UI on the internet (deploy/README.md → "Public access"): a Cloudflare Tunnel from
-# marvin to Cloudflare's edge, which serves PUBLIC_HOST and passes requests to web via proxy. The
-# tunnel only makes outbound connections, so nothing at home is forwarded. Add to COMPOSE_FILE
-# after the LLM files.
+# Hardening for serving the UI on the internet (deploy/README.md → "Public access"); add to
+# COMPOSE_FILE after the LLM files, followed by compose/direct.yaml, which publishes it.
 #
-# Also takes away the host ports nothing on marvin needs, so none of them is one BIND_ADDR typo
+# Takes away the host ports nothing on marvin needs, so none of them is one BIND_ADDR typo
 # from the internet (Docker's published ports skip the host firewall). What stays, on loopback:
 # proxy :8000 for `tailscale serve` (the ts.net name: /admin and its /static, and Funnel's /inbound
 # until the Email Worker posts to the public host) and Restate :9070 for the Restate UI's Serve.
@@ -12,22 +10,11 @@
 # `!reset` / `!override` need Docker Compose 2.24.4 or later.
 
 services:
-  cloudflared:
-    image: docker.io/cloudflare/cloudflared:2026.10.3
-    restart: unless-stopped
-    # Remotely managed: the public hostname → http://proxy:8000 route lives in the Cloudflare
-    # dashboard, alongside the tunnel this token belongs to.
-    command: ["tunnel", "--no-autoupdate", "run"]
-    environment:
-      TUNNEL_TOKEN: ${TUNNEL_TOKEN:?set TUNNEL_TOKEN, the Cloudflare Tunnel token, in .env}
-    depends_on: [proxy]
-
   web:
     environment:
       # Client addresses for rate limits come from X-Forwarded-For (FORWARDED_ALLOW_IPS in
-      # compose.yaml). Cloudflare's edge appends the visitor's address after anything the visitor
-      # sent, and proxy and cloudflared are private hops that get skipped, so a forged header
-      # can't hide it.
+      # compose.yaml). On the public 443, proxy replaces whatever the visitor sent with the
+      # connection's own address, so a forged header can't hide it.
       # Refuse to come up on the internet with the development default (the repo is public).
       SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env before serving publicly}
 

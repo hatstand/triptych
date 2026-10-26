@@ -37,10 +37,10 @@ docker tag "$TRIPTYCH_IMAGE" triptych-app
 # away. `up` with no service names would recreate web too, stopping the old container before the
 # new one is up.
 not_web=$(docker compose config --services | grep -vx web)
-# proxy (and cloudflared, which depends on it) wait until after the rollout: the first deploy with
-# proxy can only take :8000 once the old web, which published it, is gone.
+# proxy waits until after the rollout: the first deploy with proxy could only take :8000 once the
+# old web, which published it, was gone.
 # shellcheck disable=SC2086  # one word per service
-docker compose up --detach --no-build $(grep -vx -e proxy -e cloudflared <<<"$not_web")
+docker compose up --detach --no-build $(grep -vx proxy <<<"$not_web")
 
 # Start a second web on the new image, wait for its healthcheck, then stop the old one. proxy
 # sends requests to whichever answers, so nothing is refused in between. Old and new code share

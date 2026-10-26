@@ -121,7 +121,7 @@ services:
   # The stable front door for web, whose containers come and go on deploys. Resolving `web` on
   # the compose network returns every running copy; Caddy dials them per request and keeps
   # retrying for a while when none answers, so a request arriving mid-swap waits instead of
-  # failing. `tailscale serve` reaches it on loopback :8000, cloudflared as proxy:8000.
+  # failing. `tailscale serve` reaches it on loopback :8000; compose/direct.yaml adds the public 443.
   proxy:
     image: docker.io/library/caddy:2.11.7-alpine
     restart: unless-stopped
@@ -150,9 +150,8 @@ services:
 
 configs:
   caddyfile:
-    # Requests to :8000 come from Docker's loopback proxy (`tailscale serve`) or cloudflared, both
-    # private addresses, so keep the X-Forwarded-* they set and append the hop, rather than replacing
-    # them. Any other listener (compose/direct.yaml's :443) trusts no one: its clients are the
+    # Requests to :8000 come from `tailscale serve` via Docker's loopback proxy, a private address,
+    # so keep the X-Forwarded-* it sets and append the hop, rather than replacing them. Any other listener (compose/direct.yaml's :443) trusts no one: its clients are the
     # internet, so Caddy sets X-Forwarded-For to the connection's own address.
     content: |
       {
