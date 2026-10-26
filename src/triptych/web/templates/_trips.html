@@ -1,11 +1,15 @@
 <h2>Upcoming trips</h2>
-{% for t in upcoming %}
-  {% include "_trip_card.html" %}
+{#- The next trip (or the one under way) gets a wide card with a bigger photo; the rest share a grid. -#}
+{% if upcoming %}
+  {% with t = upcoming[0], featured = true %}{% include "_trip_card.html" %}{% endwith %}
+  {% if upcoming | length > 1 %}
+  <div class="trip-grid">{% for t in upcoming[1:] %}{% include "_trip_card.html" %}{% endfor %}</div>
+  {% endif %}
 {% else %}
   <p class="muted">No upcoming trips yet. Forward a confirmation email or paste one on the right.</p>
-{% endfor %}
+{% endif %}
 
 {% if past %}
 <h2>Past trips</h2>
-{% for t in past %}{% include "_trip_card.html" %}{% endfor %}
+<div class="trip-grid">{% for t in past %}{% include "_trip_card.html" %}{% endfor %}</div>
 {% endif %}

@@ -18,8 +18,14 @@
   <aside class="sidebar">
     <section class="card">
       <h2>Add plans</h2>
-      <p class="muted small">Forward bookings to <code>{{ inbound_address }}</code> from
-        <a href="/account/senders">one of your addresses</a>, or:</p>
+      <p class="muted small">Forward bookings from <a href="/account/senders">one of your addresses</a> to:</p>
+      <div class="copy-field">
+        <input id="inbound-address" class="mono" readonly value="{{ inbound_address }}" aria-label="Address to forward bookings to">
+        <button type="button" class="button secondary copy" data-copy="inbound-address" title="Copy address" aria-label="Copy address">
+          {{- icon('copy') }}{{ icon('check') }}<span class="copied-label" aria-live="polite"></span>
+        </button>
+      </div>
+      <p class="muted small">Or paste or upload one:</p>
       <form method="post" action="/plans" enctype="multipart/form-data" class="stack">
         <textarea name="text" rows="6" placeholder="Paste a confirmation email…"></textarea>
         <input type="file" name="file" multiple accept=".eml,.pdf,.html,.txt,image/*">
