@@ -34,6 +34,7 @@ from triptych.web.assets import Assets
 HERE = Path(__file__).parent
 LOGIN_HEADER = "Tailscale-User-Login"
 STATES: tuple[str, ...] = get_args(IngestState)
+CORRECTION_DAYS = 30
 
 
 class AppState(TypedDict):
@@ -95,6 +96,8 @@ async def render(
     invites = await auth.pending_invites()
     batches = await db.reprocess_batches()
     items = await db.reprocess_batch(batch) if batch else []
+    rates = await db.correction_rates(datetime.now(UTC) - timedelta(days=CORRECTION_DAYS))
+    worked = await db.admin_examples()
     llm_status: dict[str, Any]
     try:
         llm_status = await llm.health()
@@ -116,6 +119,10 @@ async def render(
             "batches": batches,
             "batch": batch,
             "items": items,
+            "rates": rates,
+            "correction_days": CORRECTION_DAYS,
+            "llm_examples": settings.llm_examples,
+            "examples": worked,
             "restate_ui_url": settings.restate_ui_url,
             **extra,
         },
@@ -151,6 +158,10 @@ class ReprocessForm(BaseModel):
 
 class ApplyForm(BaseModel):
     batch: str
+
+
+class RemoveExampleForm(BaseModel):
+    ingest: str
 
 
 def new_batch() -> str:
@@ -217,6 +228,10 @@ async def post(request: Request, login: Admin) -> Response:
             case "apply":
                 batch, n = await apply_batch(rs(request), ApplyForm.model_validate(form))
                 return await render(request, login, batch=batch, started=n)
+            case "remove_example":
+                removed = RemoveExampleForm.model_validate(form).ingest
+                await db.delete_example(removed)
+                return await render(request, login, removed_example=removed)
             case "invite":
                 return await create_invite(request, login, InviteForm.model_validate(form))
             case _:

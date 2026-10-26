@@ -184,6 +184,38 @@ async def test_an_example_is_used_only_once_settled_and_only_for_its_owner(
     assert await db.live_examples(me) == []
 
 
+async def test_admin_sees_how_often_ingests_are_corrected_and_every_example(
+    store: InputStore, me: str
+) -> None:
+    trip_id, by_kind = await filed(store, me)
+    since = NOW - timedelta(days=1)
+    [rate] = await db.correction_rates(since)
+    assert (rate.model, rate.examples, rate.ingests, rate.corrected) == ("gemma4:26b-a4b-it-qat", False, 1, 0)
+
+    await edit(me, trip_id, by_kind[Kind.FLIGHT], seat="12A")
+    await db.remove_reservation(me, trip_id, by_kind[Kind.LODGING].id)
+    [rate] = await db.correction_rates(since)
+    assert (rate.ingests, rate.corrected, rate.edited, rate.deleted) == (1, 1, 1, 1)
+    assert await db.correction_rates(NOW + timedelta(days=1)) == []
+
+    ex = await example(store)
+    assert ex is not None
+    await db.save_example(ex, timedelta(0))
+    await db.add_inbox_item(
+        me, InboxItem(ingest_id="mail-2", source="email", label="Next", received_at=NOW, state="done")
+    )
+    await db.add_extraction_run(
+        ExtractionRun(
+            id=str(uuid.uuid4()), ingest_id="mail-2", owner=me, input_id=None, model="gemma4:26b-a4b-it-qat",
+            model_digest=None, prompt_version="0123456789ab", code_version="dev", params={},
+            purpose="ingest", output=TRIP, examples=["mail-1"],
+        )
+    )  # fmt: skip
+    [shown] = await db.admin_examples()
+    assert (shown.ingest_id, shown.owner, shown.shown) == ("mail-1", "me@example.com", 1)
+    assert [r.examples for r in await db.correction_rates(since)] == [False, True]
+
+
 async def test_refresh_does_nothing_where_originals_arent_kept(me: str) -> None:
     assert not await examples.refresh("mail-1")
 

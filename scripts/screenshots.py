@@ -38,6 +38,7 @@ from playwright.async_api import (
 from triptych import auth, db, photos
 from triptych.config import settings
 from triptych.models import (
+    Extraction,
     ExtractionRun,
     InboxItem,
     IngestState,
@@ -254,10 +255,12 @@ async def seed() -> str:
             trip_ids=filed.trip_ids,
         )
         await db.upsert_inbox(me, item)
-        # A recorded run, so the admin page offers to re-derive it.
+        # A recorded run, so the admin page offers to re-derive it; the later ones were shown the
+        # first one's worked example.
         run = ExtractionRun(
             id=str(uuid.uuid4()), ingest_id=ingest, owner=me, input_id=None, model="gemma4:26b",
             model_digest=None, prompt_version="v1", code_version="dev", params={}, purpose="ingest",
+            examples=["screenshot-0"] if n >= 3 else [],
         )  # fmt: skip
         await db.add_extraction_run(run)
     unfiled: list[tuple[str, IngestState, str | None]] = [
@@ -276,6 +279,16 @@ async def seed() -> str:
             message=message,
         )
         await db.upsert_inbox(me, item)
+    # A fix to the British Airways booking, kept as a worked example (admin page).
+    await db.save_example(
+        db.Example(
+            ingest_id="screenshot-0", owner=me, sender_domain="britishairways.com",
+            subject="Your British Airways booking XK4T9Q", text="(the email)",
+            answer=Extraction(is_travel_document=True, reservations=[]), changes=["BA 286 SFO→LHR: seat"],
+            partial=False,
+        ),
+        timedelta(0),
+    )  # fmt: skip
     await db.add_notification(
         me,
         Notification(

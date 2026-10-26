@@ -53,6 +53,60 @@
   {% endif %}
 </section>
 
+<section class="card" id="corrections">
+  <h2>Corrections</h2>
+  <p class="muted small">How often owners edited or deleted what an ingest filed, over ingests received
+    in the last {{ correction_days }} days, by the run they have now. Recent mail has had less time to be
+    corrected. Worked examples are {{ 'on' if llm_examples else 'off' }} (LLM_EXAMPLES).</p>
+  {% if rates %}
+  <table class="ingests">
+    <tr><th>Model</th><th>Prompt</th><th>Examples</th><th>Ingests</th><th>Corrected</th><th>Edited</th><th>Deleted</th></tr>
+    {% for r in rates %}
+    <tr>
+      <td class="mono small">{{ r.model }}</td>
+      <td class="mono small">{{ r.prompt_version }}</td>
+      <td>{{ 'shown' if r.examples else 'none' }}</td>
+      <td>{{ r.ingests }}</td>
+      <td><b>{{ '%.0f' % (100 * r.corrected / r.ingests) }}%</b> <span class="muted small">{{ r.corrected }}</span></td>
+      <td>{{ r.edited }}</td><td>{{ r.deleted }}</td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">Nothing filed in that time.</p>
+  {% endif %}
+
+  <h3>Worked examples</h3>
+  <p class="muted small">Corrected ingests shown to the model before later mail from the same owner.
+    Removing one drops it until its owner corrects that ingest again.</p>
+  {% if removed_example %}
+  <p>Removed the example from <span class="mono">{{ removed_example }}</span>.</p>
+  {% endif %}
+  {% if examples %}
+  <table class="ingests">
+    <tr><th>Item</th><th>User</th><th>Changed</th><th>Usable from</th><th>Shown</th><th></th></tr>
+    {% for e in examples %}
+    <tr>
+      <td>{{ e.label }}<div class="muted small mono">{{ e.sender_domain or '' }} {{ e.ingest_id }}</div></td>
+      <td>{{ e.owner }}</td>
+      <td class="small">{{ e.changes | join('; ') }}{% if e.partial %} <span class="badge queued">partial</span>{% endif %}</td>
+      <td class="mono">{{ e.live_at.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>{{ e.shown }}</td>
+      <td class="actions">
+        <form method="post" action="#corrections">
+          <input type="hidden" name="action" value="remove_example">
+          <input type="hidden" name="ingest" value="{{ e.ingest_id }}">
+          <button class="secondary">Remove</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted">None yet.</p>
+  {% endif %}
+</section>
+
 <section class="card" id="reprocess">
   <h2>Reprocess</h2>
   <p class="muted small">Do finished ingests again and see what changes. A dry run only records the
