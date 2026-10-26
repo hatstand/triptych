@@ -179,6 +179,15 @@
     <h1>{{ trip.name }}</h1>
     <div class="muted">{{ summary.start_date.strftime('%a %d %b') }} – {{ summary.end_date.strftime('%a %d %b %Y') }}
       {% if trip.destination %}· {{ trip.destination }}{% endif %}</div>
+    {#- What the trip holds, one count per kind: "2 flights · 1 stay". -#}
+    {% set nouns = {'flight': ('flight', 'flights'), 'lodging': ('stay', 'stays'), 'car': ('car', 'cars'),
+      'rail': ('train', 'trains'), 'ferry': ('ferry', 'ferries'), 'restaurant': ('table', 'tables'),
+      'activity': ('activity', 'activities'), 'other': ('other', 'others')} %}
+    <ul class="kind-counts">
+      {% for k in kinds %}{% set n = trip.reservations | selectattr('kind', 'equalto', k) | list | length %}{% if n %}
+      <li class="kind-count {{ k.value }}">{{ icons[k.value] }}{{ n }} {{ nouns[k.value][0 if n == 1 else 1] }}</li>
+      {%- endif %}{% endfor %}
+    </ul>
   </div>
   <div class="actions">
     <a class="button secondary" href="/trips/{{ trip.id }}/calendar.ics">Export .ics</a>

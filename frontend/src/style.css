@@ -712,25 +712,32 @@ button.danger {
   font-size: 1.05rem;
   margin: 2px 0;
 }
-.segment.flight {
+.segment.flight,
+.kind-count.flight {
   --kind: var(--flight);
 }
-.segment.lodging {
+.segment.lodging,
+.kind-count.lodging {
   --kind: var(--lodging);
 }
-.segment.car {
+.segment.car,
+.kind-count.car {
   --kind: var(--car);
 }
-.segment.rail {
+.segment.rail,
+.kind-count.rail {
   --kind: var(--rail);
 }
-.segment.ferry {
+.segment.ferry,
+.kind-count.ferry {
   --kind: var(--ferry);
 }
-.segment.restaurant {
+.segment.restaurant,
+.kind-count.restaurant {
   --kind: var(--restaurant);
 }
-.segment.activity {
+.segment.activity,
+.kind-count.activity {
   --kind: var(--activity);
 }
 .facts {
@@ -916,4 +923,78 @@ button.danger {
 }
 .layover.warning {
   border-left-color: var(--activity);
+}
+/* Trip cards after the first share a grid, two or three across. */
+.trip-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.trip-grid .trip-card {
+  margin: 0;
+}
+/* The next trip: a 3:2 photo down the left (models.Photo.position(1.5)), across the top on a phone. */
+.trip-card.featured {
+  padding: 0;
+  overflow: hidden;
+  align-items: stretch;
+}
+.trip-card.featured .trip-thumb {
+  width: 216px;
+  height: 144px;
+  border-radius: 0;
+}
+.trip-card.featured .trip-info {
+  align-self: center;
+  padding: 14px 16px 14px 0;
+}
+.trip-card.featured .trip-name {
+  font-size: 1.4rem;
+}
+@media (max-width: 520px) {
+  .trip-card.featured {
+    flex-direction: column;
+  }
+  .trip-card.featured .trip-thumb {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 5 / 2;
+    object-position: var(--focus-narrow, 50% 35%);
+  }
+  .trip-card.featured .trip-info {
+    padding: 0 16px 14px;
+  }
+}
+.when-badge {
+  display: inline-block;
+  margin-bottom: 4px;
+  padding: 2px 8px;
+  border-radius: 99px;
+  background: var(--tint);
+  color: var(--link);
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+/* The trip page's "2 flights · 1 stay" line, each count after its kind's icon. */
+.kind-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+.kind-count {
+  --kind: var(--other);
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.kind-count > svg {
+  color: var(--kind);
 }

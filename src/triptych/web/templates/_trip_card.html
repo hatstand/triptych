@@ -1,20 +1,26 @@
 {% from "_icons.html" import icon %}
 {% from "_photo.html" import photo_title %}
 {#- Drag one card onto another to merge the trips (merge.ts) -#}
-<a class="card trip-card" href="/trips/{{ t.id }}" draggable="true" data-trip-id="{{ t.id }}" data-trip-name="{{ t.name }}">
-  {% if t.photo %}
+<a class="card trip-card{{ ' featured' if featured }}" href="/trips/{{ t.id }}" draggable="true" data-trip-id="{{ t.id }}" data-trip-name="{{ t.name }}">
+  {% if t.photo and featured %}
+  {#- 3:2 beside the text, 5:2 across the top of the card on a phone (style.css) -#}
+  <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}" alt=""
+       width="216" height="144" data-focus="{{ t.photo.position(1.5) }}" data-focus-narrow="{{ t.photo.position(2.5) }}"
+       title="{{ photo_title(t.photo) }}">
+  {% elif t.photo %}
   <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}" alt="" loading="lazy"
        width="72" height="72" data-focus="{{ t.photo.position(1) }}" title="{{ photo_title(t.photo) }}">
   {% else %}
   <div class="trip-thumb placeholder">{{ icon('place') }}</div>
   {% endif %}
   <div class="trip-info">
+    {% if featured %}<span class="when-badge">{% if t.start_date > today %}Next · in {{ (t.start_date - today).days }} days{% else %}Under way{% endif %}</span>{% endif %}
     <div class="trip-dates">
       <b>{{ t.start_date.strftime('%d %b') }}</b>
       {% if t.end_date != t.start_date %}– {{ t.end_date.strftime('%d %b %Y') }}{% else %}{{ t.start_date.strftime('%Y') }}{% endif %}
     </div>
     <div class="trip-name">{{ t.name }}</div>
     <div class="muted small">{{ t.reservation_count }} item{{ 's' if t.reservation_count != 1 }}
-      {% if t.start_date > today %}· in {{ (t.start_date - today).days }} days{% elif t.end_date >= today %}· now{% endif %}</div>
+      {% if featured %}{% elif t.start_date > today %}· in {{ (t.start_date - today).days }} days{% elif t.end_date >= today %}· now{% endif %}</div>
   </div>
 </a>
