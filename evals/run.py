@@ -1,9 +1,9 @@
 """Running the golden set through a model: `python -m evals run`.
 
-Each variant (a model, a prompt, thinking on or off) runs every case through the same path an ingest
-takes, parsing.parse → llm.extract → enrich, against the Ollama at OLLAMA_URL. A run is written to
-runs/<stamp>-<model>-<prompt version>[-think]/ as results.json (everything, for `compare`) and
-summary.md (for reading).
+Each variant (a model, a prompt, thinking on or off, worked examples on or off) runs every case
+through the same path an ingest takes, parsing.parse → llm.extract → enrich, against the Ollama at
+OLLAMA_URL. A run is written to runs/<stamp>-<model>-<prompt version>[-think][-examples]/ as
+results.json (everything, for `compare`) and summary.md (for reading).
 
 The point is to pick what marvin should run, so the variants are models that fit marvin, run on
 whatever GPU is to hand. The same tag at temperature 0 answers nearly the same on CUDA as on marvin's
@@ -12,7 +12,6 @@ the host they were measured on and only compared within one.
 """
 
 import asyncio
-import base64
 import json
 import re
 import socket
@@ -30,12 +29,12 @@ from pydantic_evals.evaluators import Evaluator, EvaluatorContext
 from rich.console import Console
 from rich.table import Table
 
-from evals import score
+from evals import fewshot, score
 from evals.cases import Case, Expected
-from triptych import llm, parsing
+from triptych import llm
 from triptych.config import settings
 from triptych.llm import Think
-from triptych.models import Extraction, IngestRequest, IngestSource, LlmExtractRequest
+from triptych.models import Extraction, IngestSource, LlmExtractRequest
 
 
 class Inputs(BaseModel):
@@ -49,6 +48,8 @@ class Inputs(BaseModel):
 class Answer(BaseModel):
     extraction: Extraction | None = None
     error: str | None = None
+    examples: list[str] = []
+    """The cases shown first as worked examples (evals/fewshot.py)."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,6 +58,8 @@ class Variant:
     prompt: str
     """"current" for production's prompt, or a file holding another."""
     think: Think = False
+    examples: bool = False
+    """Show each case its owner's earlier corrected cases first, as production does with LLM_EXAMPLES."""
 
     @property
     def system(self) -> str:
@@ -69,28 +72,23 @@ class Variant:
     @property
     def label(self) -> str:
         think = "" if self.think is False else "-think" if self.think is True else f"-think-{self.think}"
-        return f"{self.model}-{self.prompt_version}{think}"
+        return f"{self.model}-{self.prompt_version}{think}{'-examples' * self.examples}"
 
 
-async def answer(inputs: Inputs, variant: Variant) -> Answer:
+async def answer(case: Case, variant: Variant, pool: fewshot.Pool | None) -> Answer:
     """What the model makes of one case. An Ollama failure is an answer too (scored as no answer),
     so one bad case doesn't stop the run."""
-    data = Path(inputs.path).read_bytes()
-    doc = parsing.parse(
-        IngestRequest(
-            user="eval",
-            source=inputs.source,
-            filename=Path(inputs.path).name,
-            content_type=inputs.content_type,
-            data_b64=base64.b64encode(data).decode(),
-            received_at=inputs.received_at,
-        )
+    doc, data = fewshot.document(case)
+    shown = await pool.examples_for(case, doc, data) if pool and variant.examples else []
+    req = LlmExtractRequest(
+        document=doc, received_at=case.expected.received_at, model=variant.model, examples=shown
     )
-    req = LlmExtractRequest(document=doc, received_at=inputs.received_at, model=variant.model)
+    ids = [e.ingest_id for e in shown]
     try:
-        return Answer(extraction=await llm.extract(req, system=variant.system, think=variant.think))
+        extraction = await llm.extract(req, system=variant.system, think=variant.think)
     except llm.ERRORS as e:
-        return Answer(error=f"{type(e).__name__}: {e}")
+        return Answer(error=f"{type(e).__name__}: {e}", examples=ids)
+    return Answer(extraction=extraction, examples=ids)
 
 
 @dataclass
@@ -141,7 +139,10 @@ def pulled_models() -> set[str]:
 
 def check_models(variants: list[Variant]) -> None:
     pulled = pulled_models()
-    missing = sorted({v.model for v in variants} - pulled)
+    wanted = {v.model for v in variants} | (
+        {settings.embed_model} if any(v.examples for v in variants) else set()
+    )
+    missing = sorted(wanted - pulled)
     if missing:
         pulls = "\n".join(f"  ollama pull {m}" for m in missing)
         raise SystemExit(f"not pulled on {settings.ollama_url}:\n{pulls}")
@@ -163,12 +164,19 @@ def slug(text: str) -> str:
 
 
 async def run_variant(
-    variant: Variant, cases: list[Case], root: Path, *, repeat: int, concurrency: int, console: Console
+    variant: Variant,
+    cases: list[Case],
+    root: Path,
+    *,
+    pool: fewshot.Pool | None,
+    repeat: int,
+    concurrency: int,
+    console: Console,
 ) -> Path:
     started = datetime.now(UTC)
     by_id = {c.id: c for c in cases}
     report = await dataset(cases).evaluate(
-        lambda inputs: answer(inputs, variant),
+        lambda inputs: answer(by_id[inputs.id], variant, pool),
         name=variant.label,
         max_concurrency=concurrency,
         repeat=repeat,
@@ -201,6 +209,8 @@ async def run_variant(
         "prompt": variant.prompt,
         "prompt_version": variant.prompt_version,
         "think": variant.think,
+        "examples": variant.examples,
+        "embed_model": settings.embed_model if variant.examples else None,
         "repeat": repeat,
         "concurrency": concurrency,
         "cases": len(cases),
@@ -226,9 +236,14 @@ def pct(x: float | None) -> str:
     return "–" if x is None else f"{x:.0%}"
 
 
+def title(meta: dict[str, Any]) -> str:
+    shown = " · examples on" if meta.get("examples") else ""
+    return f"{meta['model']} · prompt {meta['prompt_version']} · think {meta['think']}{shown}"
+
+
 def summary_table(results: dict[str, Any]) -> Table:
     meta, overall = results["meta"], results["summary"]["all"]
-    table = Table(title=f"{meta['model']} · prompt {meta['prompt_version']} · think {meta['think']}")
+    table = Table(title=title(meta))
     table.add_column("field")
     table.add_column("accuracy", justify="right")
     for o in ("near", "wrong", "missed", "hallucinated"):
@@ -249,7 +264,7 @@ def summary_md(results: dict[str, Any]) -> str:
     meta, summary = results["meta"], results["summary"]
     repeats = f", each run {meta['repeat']} times" if meta["repeat"] > 1 else ""
     lines = [
-        f"# {meta['model']} · prompt {meta['prompt_version']} · think {meta['think']}",
+        f"# {title(meta)}",
         "",
         f"{meta['cases']} cases{repeats}, on {meta['host']} ({meta['ollama_url']}), "
         f"code {meta['code_version']}, model digest {(meta['model_digest'] or 'unknown')[:19]}. "
@@ -301,8 +316,11 @@ def run(
     console = Console()
 
     async def go() -> list[Path]:
+        pool = await fewshot.pool(root) if any(v.examples for v in variants) else None
         return [
-            await run_variant(v, cases, root, repeat=repeat, concurrency=concurrency, console=console)
+            await run_variant(
+                v, cases, root, pool=pool, repeat=repeat, concurrency=concurrency, console=console
+            )
             for v in variants
         ]
 

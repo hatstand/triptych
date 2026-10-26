@@ -109,11 +109,12 @@ expected.yaml and point `input:` at them.
 uv run python -m evals run                                   # production's model and prompt
 uv run python -m evals run --model gemma4:31b --model qwen3.6:35b --think off --think on
 uv run python -m evals run --prompt prompts/terser.txt --tag rail --repeat 3
+uv run python -m evals run --examples off --examples on       # is LLM_EXAMPLES worth turning on?
 uv run python -m evals --dir evals/smoke run                 # the public smoke set
 ```
 
-Each variant, a model × prompt × think combination, writes `runs/<time>-<model>-<prompt
-version>[-think]/` with `results.json`, which holds everything, and `summary.md`, which shows rates
+Each variant, a model × prompt × think × examples combination, writes `runs/<time>-<model>-<prompt
+version>[-think][-examples]/` with `results.json`, which holds everything, and `summary.md`, which shows rates
 per tag and per field and lists every case that wasn't fully correct with the reason. The prompt
 version is the same hash production records with each extraction run, so a run lines up with the
 `extraction_run` rows it's compared against.
@@ -123,6 +124,16 @@ uv run python -m evals compare runs/<before> runs/<after>
 ```
 
 This shows how each rate and each field moved, and which cases were fixed or broke.
+
+### Worked examples
+
+`--examples on` runs each case the way production does with `LLM_EXAMPLES` on: the model first sees
+up to three of the owner's own corrected cases (src/triptych/examples.py), chosen the same way. The
+candidates are the cases tagged `corrected` that the same owner (case.json's) received before this
+one, shown with their labels as the answer. A case is never shown itself, anything later, or
+anyone else's, and local cases have no owner, so they're shown nothing. It needs `EMBED_MODEL`
+pulled (`ollama pull embeddinggemma:300m`). Each case in `results.json` lists the cases it was
+shown. Compare the off and on runs to decide whether to turn `LLM_EXAMPLES` on.
 
 ### What's scored
 

@@ -33,7 +33,8 @@ def delta(a: float | None, b: float | None) -> str:
 def name(results: dict[str, Any]) -> str:
     m = results["meta"]
     think = "" if m["think"] is False else f" think={m['think']}"
-    return f"{m['model']} {m['prompt_version']}{think}"
+    shown = " examples" if m.get("examples") else ""
+    return f"{m['model']} {m['prompt_version']}{think}{shown}"
 
 
 def fully_correct(results: dict[str, Any]) -> dict[str, bool]:
