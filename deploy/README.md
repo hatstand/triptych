@@ -287,7 +287,9 @@ never applied.
 When someone corrects a reservation on the trip page, the email and the answer they wanted are kept
 as an example for their account (src/triptych/examples.py). With `LLM_EXAMPLES=1` in `.env`, up to
 three of a user's own examples are shown to the model before each new document of theirs: the same
-sender's first, then any that read much the same. Each run records the examples it was shown
+sender's first, then any that read much the same. "Much the same" is decided by `EMBED_MODEL`
+(embeddinggemma, ~0.6 GB, pulled by `ollama-pull` and kept loaded next to `LLM_MODEL`), and by
+shared words if Ollama can't embed. Each run records the examples it was shown
 (`extraction_run.examples`). Leave it off until the evals show it helps.
 
 ### Eval set sharing

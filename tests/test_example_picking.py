@@ -1,11 +1,15 @@
 """Choosing which of a user's worked examples to show the model before a document, and showing them."""
 
+import functools
+import json
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 import pytest
 
 from triptych import db, examples, llm
+from triptych.config import settings
 from triptych.models import ExtractedReservation, Extraction, Kind, LlmExtractRequest, ParsedDocument
 
 NOW = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
@@ -78,3 +82,42 @@ async def test_examples_are_shown_as_earlier_turns(monkeypatch: pytest.MonkeyPat
     assert FLIGHT in sent[1]["content"] and "Document received: 2026-10-26" in sent[1]["content"]
     assert Extraction.model_validate_json(sent[2]["content"]) == ANSWER
     assert DOC.text in sent[3]["content"]
+
+
+def with_vector(ex: db.LiveExample, vector: list[float]) -> db.LiveExample:
+    return ex.model_copy(update={"embedding": vector})
+
+
+def test_examples_with_vectors_are_compared_by_meaning() -> None:
+    newest_first = [
+        with_vector(candidate("near", "ryanair.com", "Table for two at eight"), [0.9, 0.1]),
+        with_vector(candidate("far", "taberna.pt", FLIGHT), [0.0, 1.0]),
+        candidate("no-vector", "renfe.com", FLIGHT),
+    ]
+    shown = examples.pick(newest_first, None, DOC, room=10_000, vector=[1.0, 0.0])
+    # "far" shares DOC's words but not its meaning; "no-vector" is compared by its words
+    assert [e.ingest_id for e in shown] == ["no-vector", "near"]
+    without = examples.pick(newest_first, None, DOC, room=10_000)  # no vector for the document
+    assert [e.ingest_id for e in without] == ["no-vector", "far"]  # so words for all
+
+
+@pytest.mark.anyio
+async def test_an_embedding_asks_for_similarity_and_is_none_when_ollama_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sent: list[dict[str, Any]] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        sent.append(json.loads(request.content))
+        if len(sent) > 1:
+            return httpx.Response(404, text="model not found")
+        return httpx.Response(200, json={"embeddings": [[0.6, 0.8]]})
+
+    client = httpx.AsyncClient
+    monkeypatch.setattr(
+        httpx, "AsyncClient", functools.partial(client, transport=httpx.MockTransport(handle))
+    )
+    assert await examples.embedding("Your flight", "Madrid to Lisbon") == [0.6, 0.8]
+    assert sent[0]["model"] == settings.embed_model
+    assert sent[0]["input"] == ["task: sentence similarity | query: Your flight\nMadrid to Lisbon"]
+    assert await examples.embedding(None, "Madrid to Lisbon") is None

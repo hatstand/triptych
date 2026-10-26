@@ -167,6 +167,25 @@ async def extract(
         raise LlmError(f"invalid extraction JSON: {e}; raw={raw[:300]!r}") from e
 
 
+async def embed(texts: list[str]) -> list[list[float]]:
+    """EMBED_MODEL's vectors for `texts`, for comparing how alike they read. Ollama cuts each
+    text to the model's context (2K tokens for embeddinggemma), which keeps its opening."""
+    # embeddinggemma is trained with task prompts; this is the one for symmetric similarity.
+    body = {
+        "model": settings.embed_model,
+        "input": [f"task: sentence similarity | query: {t}" for t in texts],
+        "keep_alive": "30m",
+    }
+    async with httpx.AsyncClient(base_url=settings.ollama_url, timeout=60) as client:
+        resp = await client.post("/api/embed", json=body)
+    if resp.status_code != 200:
+        raise LlmError(f"ollama {resp.status_code}: {resp.text[:500]}")
+    vectors = resp.json().get("embeddings")
+    if not isinstance(vectors, list) or len(vectors) != len(texts):
+        raise LlmError("ollama returned no embeddings")
+    return vectors
+
+
 async def locate_subject(req: LlmSubjectRequest) -> SubjectBox:
     raw = await _chat(
         [

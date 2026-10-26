@@ -491,6 +491,8 @@ class Example(BaseModel):
     changes: list[str]
     partial: bool
     """Some corrections couldn't be checked against `text`, so the model's answer was kept there."""
+    embedding: list[float] | None = None
+    """EMBED_MODEL's vector for the subject and text, when there is one."""
 
 
 async def save_example(example: Example, settle: timedelta) -> None:
@@ -498,13 +500,14 @@ async def save_example(example: Example, settle: timedelta) -> None:
     async with connection() as conn:
         await conn.execute(
             """INSERT INTO extraction_example (ingest_id, owner, sender_domain, subject, text, answer,
-                   changes, partial, live_at)
+                   changes, partial, embedding, live_at)
                VALUES (%(ingest_id)s, %(owner)s, %(sender_domain)s, %(subject)s, %(text)s, %(answer)s,
-                   %(changes)s, %(partial)s, now() + %(settle)s)
+                   %(changes)s, %(partial)s, %(embedding)s, now() + %(settle)s)
                ON CONFLICT (ingest_id) DO UPDATE SET
                    sender_domain = EXCLUDED.sender_domain, subject = EXCLUDED.subject,
                    text = EXCLUDED.text, answer = EXCLUDED.answer, changes = EXCLUDED.changes,
-                   partial = EXCLUDED.partial, live_at = EXCLUDED.live_at, updated_at = now()""",
+                   partial = EXCLUDED.partial, embedding = EXCLUDED.embedding, live_at = EXCLUDED.live_at,
+                   updated_at = now()""",
             {
                 **example.model_dump(exclude={"answer"}),
                 "answer": Jsonb(example.answer.model_dump(mode="json")),
@@ -527,7 +530,7 @@ async def live_examples(owner: str) -> list[LiveExample]:
     async with connection() as conn, conn.cursor(row_factory=class_row(LiveExample)) as cur:
         await cur.execute(
             """SELECT e.ingest_id, e.owner::text, sender_domain, subject, text, answer, changes, partial,
-                      i.received_at
+                      embedding, i.received_at
                FROM extraction_example e JOIN inbox_item i USING (ingest_id)
                WHERE e.owner = %s AND live_at <= now()
                ORDER BY updated_at DESC, e.ingest_id""",

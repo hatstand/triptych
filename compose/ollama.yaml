@@ -6,9 +6,9 @@ services:
     ports: ["${BIND_ADDR:-127.0.0.1}:11434:11434"]
     environment:
       # Sized for a 32 GB Strix Halo running a ~16 GB model next to the rest of the stack:
-      # one model resident, one generation at a time (Restate's `gpu` scope queues the rest),
-      # 16K context with a q8 KV cache keeps the cache to a few GB.
-      OLLAMA_MAX_LOADED_MODELS: "1"
+      # LLM_MODEL and the small EMBED_MODEL (~0.6 GB) resident, one generation at a time (Restate's
+      # `gpu` scope queues the rest), 16K context with a q8 KV cache keeps the cache to a few GB.
+      OLLAMA_MAX_LOADED_MODELS: "2"
       OLLAMA_NUM_PARALLEL: ${LLM_CONCURRENCY:-1}
       OLLAMA_CONTEXT_LENGTH: ${LLM_NUM_CTX:-16384}
       OLLAMA_FLASH_ATTENTION: "1"
@@ -31,7 +31,9 @@ services:
     image: docker.io/ollama/ollama:${OLLAMA_TAG:-0.40.9-rocm}
     environment:
       OLLAMA_HOST: http://ollama:11434
-    entrypoint: ["ollama", "pull", "${LLM_MODEL:-gemma4:26b-a4b-it-qat}"]
+      LLM_MODEL: ${LLM_MODEL:-gemma4:26b-a4b-it-qat}
+      EMBED_MODEL: ${EMBED_MODEL:-embeddinggemma:300m}
+    entrypoint: ["/bin/sh", "-c", "ollama pull \"$$LLM_MODEL\" && ollama pull \"$$EMBED_MODEL\""]
     depends_on:
       ollama: { condition: service_healthy }
     restart: "no"

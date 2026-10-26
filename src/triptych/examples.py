@@ -5,7 +5,8 @@ Correcting a reservation (editing, deleting, or a reprocess that changes the run
 ingest's example (services/examples.py): the run's answer with the owner's corrections made to it
 (corrections.py), next to the text the model was given. With LLM_EXAMPLES on, extraction shows the
 model up to MAX_SHOWN of a user's own examples before each new document of theirs, and never
-anyone else's: those from the same sender first, then any whose words are much like it.
+anyone else's: those from the same sender first, then any that read much like it (EMBED_MODEL's
+vectors, or their words where there's no vector).
 
 What a correction may teach is limited, since one bad edit would otherwise be repeated on every
 later email from that sender:
@@ -22,15 +23,21 @@ later email from that sender:
 import base64
 import email
 import email.policy
+import logging
+import math
 import re
 from datetime import timedelta
 from email.utils import parseaddr
+
+import httpx
 
 from triptych import corrections, db, llm
 from triptych.config import settings
 from triptych.corrections import Correction
 from triptych.inputs import InputStore, parse
 from triptych.models import ExtractionExample, IngestRequest, LlmExtractRequest, ParsedDocument
+
+log = logging.getLogger("triptych.examples")
 
 SETTLE = timedelta(minutes=10)
 MAX_TEXT = 12_000
@@ -106,13 +113,17 @@ async def refresh(ingest_id: str) -> bool:
     if example is None:
         await db.delete_example(ingest_id)
         return False
+    example.embedding = await embedding(example.subject, example.text)
     await db.save_example(example, SETTLE)
     return True
 
 
 MAX_SHOWN = 3
 SIMILAR = 0.3
-"""How alike (in words) an example from another sender must be to the document to be shown."""
+"""How alike in words (Jaccard) an example from another sender must be to the document to be shown,
+when either has no vector."""
+SIMILAR_MEANING = 0.6
+"""How alike in meaning (cosine of their vectors) they must be otherwise."""
 CHARS_PER_TOKEN = 3
 """A cautious guess for mixed prose and JSON, so the examples never crowd the document out."""
 PROMPT_TOKENS = 1_500
@@ -128,6 +139,22 @@ def _alike(a: set[str], b: set[str]) -> float:
     return len(a & b) / len(a | b) if a and b else 0.0
 
 
+def _cosine(a: list[float], b: list[float]) -> float:
+    norms = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
+    return sum(x * y for x, y in zip(a, b, strict=True)) / norms if norms else 0.0
+
+
+async def embedding(subject: str | None, text: str) -> list[float] | None:
+    """EMBED_MODEL's vector for a document, or None if Ollama couldn't give one: an example or a
+    document without one is compared by its words instead."""
+    try:
+        [vector] = await llm.embed([f"{subject or ''}\n{text}"])
+    except (httpx.HTTPError, llm.LlmError) as e:
+        log.warning("no embedding: %s", e)
+        return None
+    return vector
+
+
 def budget(doc: ParsedDocument) -> int:
     """The characters the examples may take up alongside `doc` in the context window."""
     tokens = settings.llm_num_ctx - llm.MAX_OUTPUT_TOKENS - PROMPT_TOKENS - IMAGE_TOKENS * len(doc.images_b64)
@@ -135,17 +162,29 @@ def budget(doc: ParsedDocument) -> int:
 
 
 def pick(
-    candidates: list[db.LiveExample], domain: str | None, doc: ParsedDocument, room: int
+    candidates: list[db.LiveExample],
+    domain: str | None,
+    doc: ParsedDocument,
+    *,
+    room: int,
+    vector: list[float] | None = None,
 ) -> list[ExtractionExample]:
-    """Up to MAX_SHOWN of `candidates` (newest first) to show before `doc`, in at most `room`
-    characters. The same sender's come before other senders', and the most alike before the
-    rest. They're returned in showing order, so the best one comes last, nearest the document."""
+    """Up to MAX_SHOWN of `candidates` (newest first) to show before `doc`, whose vector is
+    `vector`, in at most `room` characters. The same sender's come before other senders', and the
+    most alike before the rest (a cosine is usually well above a Jaccard, so those compared by
+    meaning tend to come first). They're returned in showing order, so the best one comes last,
+    nearest the document."""
     words = _words(doc.subject, doc.text)
     ranked: list[tuple[bool, float, db.LiveExample]] = []
     for ex in candidates:
         same = domain is not None and ex.sender_domain == domain
-        alike = _alike(words, _words(ex.subject, ex.text))
-        if same or alike >= SIMILAR:
+        if vector and ex.embedding:
+            alike = _cosine(vector, ex.embedding)
+            enough = alike >= SIMILAR_MEANING
+        else:
+            alike = _alike(words, _words(ex.subject, ex.text))
+            enough = alike >= SIMILAR
+        if same or enough:
             ranked.append((not same, -alike, ex))
     chosen: list[ExtractionExample] = []
     for *_, ex in sorted(ranked, key=lambda r: r[:2]):
@@ -163,5 +202,10 @@ async def with_examples(extract: LlmExtractRequest, ingest_id: str, req: IngestR
     """`extract` (the new ingest's extraction) with its owner's examples for it, inside `ctx.run`."""
     doc = extract.document
     candidates = [e for e in await db.live_examples(req.user) if e.ingest_id != ingest_id]
+    if not candidates:
+        return extract
     domain = sender_domain(req.content_type, base64.b64decode(req.data_b64))
-    return extract.model_copy(update={"examples": pick(candidates, domain, doc, budget(doc))})
+    vector = await embedding(doc.subject, doc.text) if any(e.embedding for e in candidates) else None
+    return extract.model_copy(
+        update={"examples": pick(candidates, domain, doc, room=budget(doc), vector=vector)}
+    )
