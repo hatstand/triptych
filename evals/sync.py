@@ -26,7 +26,6 @@ from botocore.config import Config
 
 from evals.cases import (
     Expected,
-    ExpectedReservation,
     draft,
     ensure_layout,
     expected_path,
@@ -34,10 +33,9 @@ from evals.cases import (
     render_expected,
     write_expected,
 )
-from triptych import places
-from triptych.enrich import CODED
-from triptych.evalset import PREFIX, Correction
-from triptych.journeys import iata_of
+from triptych import corrections
+from triptych.corrections import Correction
+from triptych.evalset import PREFIX
 from triptych.models import Extraction
 
 
@@ -83,71 +81,20 @@ def tags_for(case: dict[str, Any]) -> list[str]:
     return tags
 
 
-# The trip page's field names (ReservationFields) where expected.yaml's differ.
-RENAMED = {"start_tz": "start_timezone", "end_tz": "end_timezone"}
-
-
-def as_expected(fields: dict[str, Any]) -> dict[str, Any]:
-    """Reservation fields as the owner set them, in expected.yaml's terms."""
-    out = {}
-    for name, value in fields.items():
-        if name in ("start_local", "end_local") and value:
-            value = value[:16]  # YYYY-MM-DDTHH:MM
-        if name in RENAMED and value not in places.timezones():
-            # The trip page takes any zone Python knows (Europe/Kiev); labels take canonical ones.
-            value = None
-        out[RENAMED.get(name, name)] = value
-    return {k: v for k, v in out.items() if k in ExpectedReservation.model_fields}
-
-
-def corrected(r: ExpectedReservation, c: Correction) -> ExpectedReservation:
-    fixed = ExpectedReservation.model_validate({**r.model_dump(), **as_expected(c.fields)})
-    # A location the owner corrected to 'Paris (CDG)' corrects the airport too.
-    for side in ("start", "end"):
-        if (code := iata_of(c.fields.get(f"{side}_location"))) is not None:
-            setattr(fixed, f"{side}_iata", code)
-    if fixed.kind not in CODED:
-        fixed.start_iata = fixed.end_iata = None
-    return fixed
-
-
-def apply(expected: Expected, corrections: list[Correction]) -> list[str]:
-    """Make the owner's corrections to a draft of the run's answer. Returns what they changed, for
-    its notes."""
-    by_index = {c.reservation: c for c in corrections if c.reservation is not None}
-    kept, changed = [], []
-    for i, r in enumerate(expected.reservations):
-        name = r.title or r.kind.value
-        if (c := by_index.get(i)) is None:
-            kept.append(r)
-        elif c.deleted:
-            changed.append(f"deleted {name}")
-        else:
-            kept.append(corrected(r, c))
-            changed.append(f"{name}: {', '.join(c.edited)}")
-    for c in corrections:
-        if c.reservation is None:
-            added = ExpectedReservation.model_validate(as_expected(c.fields))
-            kept.append(added)
-            changed.append(f"kept {added.title or added.kind.value}, which this run didn't find")
-    expected.reservations = kept
-    return changed
-
-
 def draft_from(case: dict[str, Any]) -> Expected:
     run = case.get("run") or {}
-    output = run.get("output")
+    output = Extraction.model_validate(run["output"]) if run.get("output") else None
+    changed: list[str] = []
+    if fixes := [Correction.model_validate(c) for c in case.get("corrections") or []]:
+        output, changed = corrections.apply(output, fixes)
+    tags = tags_for(case) + ["corrected"] * bool(fixes)
     expected = draft(
-        Extraction.model_validate(output) if output else None,
-        datetime.fromisoformat(case["received_at"]),
-        case.get("source") or "upload",
-        tags_for(case),
+        output, datetime.fromisoformat(case["received_at"]), case.get("source") or "upload", tags
     )
     filed = f"{run.get('model')} (prompt {run.get('prompt_version')})" if run else "nothing (no run)"
     notes = [case.get("subject") or case.get("label") or "", f"Draft from what {filed} answered."]
-    if corrections := [Correction.model_validate(c) for c in case.get("corrections") or []]:
-        expected.tags.append("corrected")
-        notes.append(f"Corrected in the app: {'; '.join(apply(expected, corrections))}.")
+    if fixes:
+        notes.append(f"Corrected in the app: {'; '.join(changed)}.")
     expected.notes = "\n".join(notes).strip()
     return expected
 
