@@ -28,7 +28,6 @@ import re
 from datetime import timedelta
 from email.utils import parseaddr
 
-import httpx
 import numpy as np
 
 from triptych import corrections, db, llm
@@ -149,7 +148,7 @@ async def embedding(subject: str | None, text: str) -> list[float] | None:
     document without one is compared by its words instead."""
     try:
         [vector] = await llm.embed([f"{subject or ''}\n{text}"])
-    except (httpx.HTTPError, llm.LlmError) as e:
+    except llm.ERRORS as e:
         log.warning("no embedding: %s", e)
         return None
     return vector
