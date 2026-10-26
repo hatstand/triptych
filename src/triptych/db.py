@@ -875,6 +875,36 @@ async def rename_trip(owner: str, trip_id: str, name: str) -> None:
             await _changed(conn, owner)
 
 
+async def merge_trips(owner: str, trip_id: str, into: str) -> None:
+    """Move everything in `trip_id` into `into` and delete it: the owner dropped one trip on another.
+    `into` keeps its id and its name if its owner renamed it, else takes the other's name if that
+    was renamed, else is retitled for everything now in it.
+
+    Nothing needs remembering for the merge to last. Filing never moves a filed reservation, and
+    reprocessing updates them in place, so they stay in `into`; and new bookings in or near either
+    trip's dates overlap the merged one, so they're filed into it too.
+
+    Safe to re-run: once `trip_id` is gone there's nothing to merge."""
+    if trip_id == into:
+        raise restate.TerminalError("can't merge a trip into itself", status_code=400)
+    async with connection() as conn, conn.transaction():
+        await _owned(conn, owner, into)
+        cur = await conn.execute(
+            "SELECT 1 FROM trip WHERE id = %s AND owner = %s FOR UPDATE", (trip_id, owner)
+        )
+        if await cur.fetchone() is None:
+            return
+        await conn.execute(
+            """UPDATE trip t SET name = s.name, name_edited = true FROM trip s
+               WHERE t.id = %s AND s.id = %s AND s.name_edited AND NOT t.name_edited""",
+            (into, trip_id),
+        )
+        await _merge_trip(conn, trip_id, into)
+        await _fill_timezones(conn, into)
+        await _retitle(conn, into)
+        await _changed(conn, owner)
+
+
 async def edit_reservation(
     owner: str, trip_id: str, reservation_id: str, fields: ReservationFields
 ) -> Filed | None:

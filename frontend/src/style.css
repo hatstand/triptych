@@ -363,6 +363,18 @@ button.danger {
 .trip-card:hover {
   border-color: var(--accent);
 }
+/* Dragging a trip to merge it into another (merge.ts): the others are where it can go. */
+.trip-card.dragging {
+  opacity: 0.5;
+}
+.merging .trip-card:not(.dragging) {
+  border-style: dashed;
+}
+.trip-card.drop-target {
+  border-color: var(--accent);
+  border-style: solid;
+  background: color-mix(in srgb, var(--accent) 8%, var(--card));
+}
 .trip-name {
   font-size: 1.15rem;
   font-weight: 600;
@@ -452,6 +464,16 @@ button.danger {
   margin-top: 16px;
   padding-top: 14px;
   border-top: 1px solid var(--line);
+}
+.merge-question {
+  margin: 0 0 8px;
+}
+.merge-field {
+  display: flex;
+  gap: 8px;
+}
+.merge-field select {
+  min-width: 0;
 }
 /* A dialog with a form of labelled fields, two to a row where there's room. */
 .dialog.wide {

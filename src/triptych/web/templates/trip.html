@@ -195,6 +195,21 @@
       <button>Rename</button>
     </div>
   </form>
+  {#- The same merge as dropping this trip's card on another on the home page, without a mouse. -#}
+  {% if others %}
+  <form method="post" action="/trips/{{ trip.id }}/merge" class="dialog-footer stack"
+        data-confirm="Move everything in this trip into the one you chose? This trip is then deleted.">
+    <label for="merge-into" class="muted small">Merge into another trip</label>
+    <div class="merge-field">
+      <select id="merge-into" name="into" required>
+        {% for o in others %}
+        <option value="{{ o.id }}">{{ o.name }} ({{ o.start_date.strftime('%-d %b %Y') }})</option>
+        {% endfor %}
+      </select>
+      <button class="button secondary">Merge</button>
+    </div>
+  </form>
+  {% endif %}
   <form method="post" action="/trips/{{ trip.id }}/delete" class="dialog-footer"
         data-confirm="Delete this trip?">
     <button class="danger">Delete trip</button>

@@ -1,6 +1,7 @@
 {% from "_icons.html" import icon %}
 {% from "_photo.html" import photo_title %}
-<a class="card trip-card" href="/trips/{{ t.id }}">
+{#- Drag one card onto another to merge the trips (merge.ts) -#}
+<a class="card trip-card" href="/trips/{{ t.id }}" draggable="true" data-trip-id="{{ t.id }}" data-trip-name="{{ t.name }}">
   {% if t.photo %}
   <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}" alt="" loading="lazy"
        width="72" height="72" data-focus="{{ t.photo.position(1) }}" title="{{ photo_title(t.photo) }}">

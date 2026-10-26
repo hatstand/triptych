@@ -11,7 +11,15 @@ from fastapi.testclient import TestClient
 
 from triptych import db, enrich
 from triptych.auth import Me
-from triptych.models import EditReservation, InboxItem, Kind, Reservation, ReservationFields, Trip
+from triptych.models import (
+    EditReservation,
+    InboxItem,
+    Kind,
+    Reservation,
+    ReservationFields,
+    Trip,
+    TripSummary,
+)
 from triptych.web import app as web
 from triptych.web import ratelimit
 
@@ -227,7 +235,11 @@ def test_each_reservation_has_an_edit_dialog(client: TestClient, monkeypatch: py
     async def get_trip(owner: str, trip_id: str) -> Trip:
         return Trip(id=trip_id, owner=owner, name="Lisbon", reservations=rs)
 
+    async def trip_summaries(owner: str) -> list[TripSummary]:
+        return []
+
     monkeypatch.setattr(web.db, "get_trip", get_trip)
+    monkeypatch.setattr(web.db, "trip_summaries", trip_summaries)
     html = client.get("/trips/t1").text
     for r in rs:
         assert f'commandfor="edit-{r.id}" command="show-modal"' in html
