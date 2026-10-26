@@ -1354,6 +1354,71 @@ async def recent_ingests(state: str | None = None, limit: int = 100) -> list[Adm
         return await cur.fetchall()
 
 
+class CorrectionRate(BaseModel):
+    """How often owners corrected what one model and prompt filed, with or without worked examples."""
+
+    model: str
+    prompt_version: str
+    examples: bool
+    """The runs were shown worked examples (LLM_EXAMPLES)."""
+    ingests: int
+    corrected: int
+    """Ingests with a reservation the owner edited or deleted."""
+    edited: int
+    deleted: int
+
+
+async def correction_rates(since: datetime) -> list[CorrectionRate]:
+    """Over ingests received since `since` that filed something, by the run they have now."""
+    async with connection() as conn, conn.cursor(row_factory=class_row(CorrectionRate)) as cur:
+        await cur.execute(
+            """SELECT r.model, r.prompt_version, cardinality(r.examples) > 0 AS examples,
+                      count(*)::int AS ingests,
+                      count(*) FILTER (WHERE c.edited OR c.deleted)::int AS corrected,
+                      count(*) FILTER (WHERE c.edited)::int AS edited,
+                      count(*) FILTER (WHERE c.deleted)::int AS deleted
+               FROM inbox_item i JOIN extraction_run r ON r.id = i.current_run_id
+               CROSS JOIN LATERAL (SELECT
+                   EXISTS (SELECT 1 FROM reservation x
+                           WHERE x.source_ingest_id = i.ingest_id AND x.edited_fields <> '{}') AS edited,
+                   EXISTS (SELECT 1 FROM dismissed_reservation d WHERE d.ingest_id = i.ingest_id) AS deleted
+               ) c
+               WHERE i.state = 'done' AND i.received_at >= %s
+               GROUP BY 1, 2, 3 ORDER BY max(i.received_at) DESC, 3""",
+            (since,),
+        )
+        return await cur.fetchall()
+
+
+class AdminExample(BaseModel):
+    ingest_id: str
+    owner: str
+    """The owner's primary address (their user id if they have none)."""
+    label: str
+    sender_domain: str | None
+    changes: list[str]
+    partial: bool
+    live_at: datetime
+    shown: int
+    """Extraction runs it was shown to."""
+
+
+async def admin_examples(limit: int = 50) -> list[AdminExample]:
+    """Everyone's worked examples, the most recently corrected first."""
+    async with connection() as conn, conn.cursor(row_factory=class_row(AdminExample)) as cur:
+        await cur.execute(
+            """SELECT e.ingest_id, i.label, e.sender_domain, e.changes, e.partial, e.live_at,
+                      coalesce((SELECT email FROM user_email u WHERE u.user_id = e.owner
+                                ORDER BY created_at, email LIMIT 1), e.owner::text) AS owner,
+                      (SELECT count(*)::int FROM extraction_run r
+                       WHERE e.ingest_id = ANY(r.examples)) AS shown
+               FROM extraction_example e JOIN inbox_item i USING (ingest_id)
+               ORDER BY e.updated_at DESC, e.ingest_id LIMIT %s""",
+            (limit,),
+        )
+        return await cur.fetchall()
+
+
 class ReprocessCandidate(BaseModel):
     ingest_id: str
     owner: str

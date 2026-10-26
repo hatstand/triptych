@@ -65,7 +65,42 @@ def filters(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str | None]]:
     monkeypatch.setattr(admin.llm, "health", health)
     monkeypatch.setattr(admin.db, "reprocess_batches", reprocess_batches)
     monkeypatch.setattr(admin.db, "reprocess_batch", reprocess_batch)
+    monkeypatch.setattr(admin.db, "correction_rates", correction_rates)
+    monkeypatch.setattr(admin.db, "admin_examples", admin_examples)
+    removed_examples.clear()
+    monkeypatch.setattr(admin.db, "delete_example", delete_example)
     yield seen
+
+
+removed_examples: list[str] = []
+
+
+async def correction_rates(since: datetime) -> list[db.CorrectionRate]:
+    return [
+        db.CorrectionRate(
+            model="gemma4:31b", prompt_version="0123456789ab", examples=True, ingests=8, corrected=1,
+            edited=1, deleted=0,
+        ),
+        db.CorrectionRate(
+            model="gemma4:31b", prompt_version="0123456789ab", examples=False, ingests=4, corrected=2,
+            edited=1, deleted=1,
+        ),
+    ]  # fmt: skip
+
+
+async def admin_examples(limit: int = 50) -> list[db.AdminExample]:
+    return [
+        db.AdminExample(
+            ingest_id="mail-7", owner="you@example.com", label="Your Iberia flight",
+            sender_domain="iberia.com",
+            changes=["IB 3106: confirmation code"], partial=False,
+            live_at=datetime(2026, 10, 25, 12, 10, tzinfo=UTC), shown=3,
+        )
+    ]  # fmt: skip
+
+
+async def delete_example(ingest_id: str) -> None:
+    removed_examples.append(ingest_id)
 
 
 async def reprocess_batches(limit: int = 20) -> list[db.ReprocessBatch]:
@@ -317,3 +352,27 @@ def test_reprocess_one_ingest(
     # Each go is its own batch, so the workflow key is fresh and Apply on it re-derives just this one.
     client.post("/", data=data, headers={**as_login(OWNER), "Origin": SITE})
     assert restate_client.sent[0].batch_id != restate_client.sent[1].batch_id
+
+
+def test_dashboard_shows_correction_rates_and_examples(filters: list[str | None]) -> None:
+    r = client.get("/", headers=as_login(OWNER))
+    assert r.status_code == 200
+    assert "<b>12%</b>" in r.text and "<b>50%</b>" in r.text  # 1 of 8 with examples, 2 of 4 without
+    assert "Your Iberia flight" in r.text and "IB 3106: confirmation code" in r.text
+
+
+def test_remove_an_example(filters: list[str | None]) -> None:
+    headers = {**as_login(OWNER), "Origin": SITE}
+    r = client.post("/", data={"action": "remove_example", "ingest": "mail-7"}, headers=headers)
+    assert r.status_code == 200
+    assert removed_examples == ["mail-7"]
+    assert "Removed the example from" in r.text
+
+
+def test_removing_an_example_needs_our_origin(filters: list[str | None]) -> None:
+    r = client.post(
+        "/", data={"action": "remove_example", "ingest": "mail-7"},
+        headers={**as_login(OWNER), "Origin": "https://evil.example"},
+    )  # fmt: skip
+    assert r.status_code == 403
+    assert removed_examples == []
