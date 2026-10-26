@@ -275,7 +275,8 @@ def timeline(reservations: list[Reservation]) -> list[tuple[date, list[Item]]]:
     Each run of connecting transport segments is one Journey, and each hotel stay is a check-in on
     its first day and a check-out on its last. A hotel's times are what it allows, not when you get
     there, so a check-in sorts after any transport arriving that day (check-in from 14:00, train in
-    at 18:00: the hotel comes after the train), and a check-out before any departing that day,
+    at 18:00: the hotel comes after the train, and a flight leaving that evening and landing after
+    midnight comes before it too), and a check-out before any departing that day,
     counting only transport to or from the hotel's city when both cities are known.
     Times in different zones are compared as instants.
     """
@@ -304,7 +305,7 @@ def timeline(reservations: list[Reservation]) -> list[tuple[date, list[Item]]]:
             ends(t)
             for t in transport
             if t.end_local
-            and t.end_local.date() == s.date
+            and s.date in (t.start_date, t.end_local.date())
             and _maybe_in(s.hotel, t.city or city_of(t.end_location))
         ]
         return max([starts(s.hotel), *arrivals])
