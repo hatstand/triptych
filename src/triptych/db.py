@@ -877,8 +877,8 @@ async def rename_trip(owner: str, trip_id: str, name: str) -> None:
 
 async def merge_trips(owner: str, trip_id: str, into: str) -> None:
     """Move everything in `trip_id` into `into` and delete it: the owner dropped one trip on another.
-    `into` keeps its id and its name if its owner renamed it, else takes the other's name if that
-    was renamed, else is retitled for everything now in it.
+    `into` keeps its id and is retitled for everything now in it, even if either trip was renamed:
+    neither name describes the merged trip. It can be renamed again afterwards.
 
     Nothing needs remembering for the merge to last. Filing never moves a filed reservation, and
     reprocessing updates them in place, so they stay in `into`; and new bookings in or near either
@@ -894,11 +894,7 @@ async def merge_trips(owner: str, trip_id: str, into: str) -> None:
         )
         if await cur.fetchone() is None:
             return
-        await conn.execute(
-            """UPDATE trip t SET name = s.name, name_edited = true FROM trip s
-               WHERE t.id = %s AND s.id = %s AND s.name_edited AND NOT t.name_edited""",
-            (into, trip_id),
-        )
+        await conn.execute("UPDATE trip SET name_edited = false WHERE id = %s", (into,))
         await _merge_trip(conn, trip_id, into)
         await _fill_timezones(conn, into)
         await _retitle(conn, into)

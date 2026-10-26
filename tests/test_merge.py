@@ -79,18 +79,18 @@ async def test_merging_moves_everything_and_retitles(me: str) -> None:
 
 @needs_db
 @pytest.mark.anyio
-async def test_a_renamed_trip_keeps_its_name_whichever_way_its_merged(me: str) -> None:
+async def test_merging_retitles_even_renamed_trips(me: str) -> None:
     lisbon_trip, porto_trip = await two_trips(me)
-    await db.rename_trip(me, porto_trip, "Portugal with Sam")
+    await db.rename_trip(me, lisbon_trip, "Lisbon with Sam")
+    await db.rename_trip(me, porto_trip, "Porto with Ana")
     await db.merge_trips(me, porto_trip, lisbon_trip)
     [summary] = await db.trip_summaries(me)
-    assert (summary.id, summary.name) == (lisbon_trip, "Portugal with Sam")
+    assert (summary.id, summary.name) == (lisbon_trip, "Lisbon & Porto, November 2026")
 
-    # Now that it's named, later bookings don't retitle it.
-    await db.file_reservations(
-        me, "mail-dinner", [res(Kind.RESTAURANT, "2026-11-21T20:00", None, "Porto", "D1", "mail-dinner")]
-    )
-    assert [s.name for s in await db.trip_summaries(me)] == ["Portugal with Sam"]
+    # Its title follows the itinerary again until it's renamed.
+    faro = res(Kind.LODGING, "2026-11-23T15:00", "2026-11-24T11:00", "Faro", "H3", "mail-faro")
+    await db.file_reservations(me, "mail-faro", [faro])
+    assert [s.name for s in await db.trip_summaries(me)] == ["Lisbon, Porto & Faro, November 2026"]
 
 
 @needs_db
