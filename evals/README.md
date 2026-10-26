@@ -138,6 +138,11 @@ This shows how each rate and each field moved, and which cases were fixed or bro
   year.
 - **start_tz / end_tz** are scored after `enrich.normalise` and `fill_timezones` run over both sides.
   A wrong model timezone that the places data overrides doesn't hurt the calendar, and this shows it.
+- A **partly labelled** case, a `corrected` draft, is scored before anyone verifies it, but only on
+  what its owner set in the app: those fields (each reservation's `owner_set`, which sync writes) and
+  whether a reservation they corrected was found at all. The rest of the draft is the model's own
+  answer, so it counts neither way, and the case stays out of the per-case rates. Verifying it
+  scores all of it.
 
 ### Speed
 

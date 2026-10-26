@@ -88,7 +88,7 @@ def build(case: db.EvalCase, data: bytes) -> db.Example | None:
     fixes, partial = grounded(fixes, doc.text)
     if not fixes:
         return None
-    answer, changes = corrections.apply(output, fixes)
+    answer, changes, _ = corrections.apply(output, fixes)
     return db.Example(
         ingest_id=case.ingest_id,
         owner=case.input.owner,

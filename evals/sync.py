@@ -26,6 +26,7 @@ from botocore.config import Config
 
 from evals.cases import (
     Expected,
+    ExpectedReservation,
     draft,
     ensure_layout,
     expected_path,
@@ -85,12 +86,16 @@ def draft_from(case: dict[str, Any]) -> Expected:
     run = case.get("run") or {}
     output = Extraction.model_validate(run["output"]) if run.get("output") else None
     changed: list[str] = []
+    owner_set: list[list[str]] = []
     if fixes := [Correction.model_validate(c) for c in case.get("corrections") or []]:
-        output, changed = corrections.apply(output, fixes)
+        output, changed, owner_set = corrections.apply(output, fixes)
     tags = tags_for(case) + ["corrected"] * bool(fixes)
     expected = draft(
         output, datetime.fromisoformat(case["received_at"]), case.get("source") or "upload", tags
     )
+    if fixes:
+        for r, fields in zip(expected.reservations, owner_set, strict=True):
+            r.owner_set = [f for f in fields if f in ExpectedReservation.model_fields]
     filed = f"{run.get('model')} (prompt {run.get('prompt_version')})" if run else "nothing (no run)"
     notes = [case.get("subject") or case.get("label") or "", f"Draft from what {filed} answered."]
     if fixes:
@@ -133,10 +138,26 @@ def sync(root: Path, s3: Any, bucket: str) -> Synced:
             done.drafted.append(case_id)
         elif before is not None and before.get("corrections") != case.get("corrections"):
             # Redraft only what sync wrote and nobody has touched since.
-            ours = render_expected(path, draft_from(before))
-            if read_expected(path).status == "draft" and path.read_text() == ours:
+            if untouched(path, before):
                 write_expected(path, draft_from(case))
                 done.redrafted.append(case_id)
             else:
                 done.recorrected.append(case_id)
+        elif case.get("corrections") and untouched(path, case, before_owner_set=True):
+            write_expected(path, draft_from(case))  # a draft from before sync wrote owner_set
+            done.redrafted.append(case_id)
     return done
+
+
+def untouched(path: Path, case: dict[str, Any], *, before_owner_set: bool = False) -> bool:
+    """Whether `path` is still the draft sync wrote from `case`, or with `before_owner_set` the one an
+    older sync did, without its owner-set fields."""
+    if read_expected(path).status != "draft":
+        return False
+    expected = draft_from(case)
+    if before_owner_set:
+        if not any(r.owner_set for r in expected.reservations):
+            return False  # nothing it would add
+        for r in expected.reservations:
+            r.owner_set = []
+    return path.read_text() == render_expected(path, expected)

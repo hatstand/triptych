@@ -51,6 +51,8 @@
   <fieldset class="reservation {{ r.kind }}">
     <legend>{{ i + 1 }}. {{ r.title or r.kind or 'New reservation' }}</legend>
     <button type="button" class="link remove" hx-post="{{ base }}/form" hx-target="#case-form" hx-swap="outerHTML" name="op" value="remove:{{ i }}">Remove</button>
+    <input type="hidden" name="r{{ i }}.owner_set" value="{{ r.owner_set }}">
+    {% if r.owner_set %}<p class="small muted">Its owner set {{ r.owner_set }} in the app.</p>{% endif %}
     <div class="fields">
       {% set name = 'r' ~ i ~ '.kind' %}
       <label class="field{% if form.errors.get(name) %} invalid{% endif %}">

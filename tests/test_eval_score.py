@@ -244,6 +244,54 @@ def test_sync_drafts_from_the_owners_corrections(bucket: Any, tmp_path: Path) ->
     assert (hotel.kind, hotel.title, hotel.start_timezone) == (Kind.LODGING, "Hotel Avenida", "Europe/Lisbon")
     assert draft.status == "draft" and "corrected" in draft.tags
     assert "deleted Back" in (draft.notes or "")
+    assert flight.owner_set == ["start_local", "end_location", "start_timezone", "end_iata"]
+    assert set(hotel.owner_set) >= {"kind", "title", "start_local", "start_timezone", "city"}
+    assert draft.partly_labelled and [c.id for c in load_cases(tmp_path)] == ["mail-1"]
+
+
+def test_a_partly_labelled_draft_is_scored_on_what_its_owner_set() -> None:
+    flight, back = (ExpectedReservation.model_validate(r) for r in two_flights()["reservations"])
+    flight.owner_set = ["start_local", "start_timezone"]
+    expected = Expected(
+        received_at=datetime(2026, 10, 25, tzinfo=UTC), is_travel_document=True, reservations=[flight, back]
+    )
+    assert expected.partly_labelled
+    model = score.as_extracted(flight)
+    unchecked_wrong = model.model_copy(update={"city": "Porto", "confirmation_code": "ZZZ"})
+    s = score.score_case(expected, Extraction(is_travel_document=True, reservations=[unchecked_wrong]))
+    assert s.partial and s.fully_correct  # the return flight's missing, and city is the model's own
+    [p] = s.pairs
+    assert {f.field for f in p.fields if f.outcome != Outcome.NA} == {
+        "start_local",
+        "start_timezone",
+        "start_tz",
+    }
+
+    late = model.model_copy(update={"start_local": "2026-11-03T11:00"})
+    s = score.score_case(expected, Extraction(is_travel_document=True, reservations=[late]))
+    assert not s.fully_correct
+    totals = score.tally([(["corrected"], s)])["all"].summary()
+    assert (totals["cases"], totals["partly_labelled"], totals["fields"]["start_local"]["accuracy"]) == (
+        0,
+        1,
+        0,
+    )
+    assert "city" not in totals["fields"] or totals["fields"]["city"].get("wrong", 0) == 0
+
+
+def test_sync_adds_what_the_owner_set_to_an_older_draft(bucket: Any, tmp_path: Path) -> None:
+    put_case(bucket, "mail-1", two_flights(), [
+        {"reservation": 0, "edited": ["seat"], "fields": {"seat": "12A"}},
+    ])  # fmt: skip
+    sync(tmp_path, bucket, "evals")
+    path = tmp_path / "cases" / "mail-1" / "expected.yaml"
+    older = read_expected(path)
+    older.reservations[0].owner_set = []
+    write_expected(path, older)  # as a sync from before owner_set wrote it
+
+    assert sync(tmp_path, bucket, "evals").redrafted == ["mail-1"]
+    assert read_expected(path).reservations[0].owner_set == ["seat"]
+    assert sync(tmp_path, bucket, "evals").redrafted == []
 
 
 def test_a_later_correction_redrafts_only_what_nobody_touched(bucket: Any, tmp_path: Path) -> None:

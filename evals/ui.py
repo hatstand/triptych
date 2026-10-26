@@ -68,7 +68,7 @@ SCORED = (
 the left, where it ends on the right."""
 REFERENCE = ("title", "provider", "start_location", "end_location", "address", "seat", "travelers", "notes")
 """Shown in reports only; tucked away in the form."""
-RESERVATION_FIELDS = (*SCORED, "accept", *REFERENCE)
+RESERVATION_FIELDS = (*SCORED, "accept", *REFERENCE, "owner_set")
 TIMES = ("start_local", "end_local")
 ZONES = ("start_timezone", "end_timezone")
 REMOTE_IMAGES = "https: http:"
@@ -106,6 +106,7 @@ def reservation_form(r: ExpectedReservation) -> dict[str, str]:
     values = {f: "" if (v := getattr(r, f)) is None else str(v) for f in RESERVATION_FIELDS}
     values["kind"] = r.kind.value
     values["travelers"] = "\n".join(r.travelers)
+    values["owner_set"] = ", ".join(r.owner_set)
     values["accept"] = yaml.safe_dump(r.accept, default_flow_style=True, allow_unicode=True).strip()
     if not r.accept:
         values["accept"] = ""
@@ -165,9 +166,12 @@ class Form:
         reservations: list[dict[str, Any]] = []
         for i, r in enumerate(self.reservations):
             data: dict[str, Any] = {
-                f: v.strip() for f, v in r.items() if f not in ("travelers", "accept") and v.strip()
+                f: v.strip()
+                for f, v in r.items()
+                if f not in ("travelers", "accept", "owner_set") and v.strip()
             }
             data["travelers"] = [t.strip() for t in r["travelers"].splitlines() if t.strip()]
+            data["owner_set"] = [f.strip() for f in r["owner_set"].split(",") if f.strip()]
             if r["accept"].strip():
                 try:
                     data["accept"] = yaml.safe_load(r["accept"])
