@@ -9,6 +9,10 @@ inbox_item, extraction_run and the hand-checked labels kept in the private evals
     inputs/<ingest id>/parsed.txt       the text the model was given
     inputs/<ingest id>/case.json        what it was and the run that filed it, the draft to label;
                                         written last, so a case without it is incomplete
+
+case.json also carries the owner's corrections: what they edited on or deleted from the trip page
+of the reservations that run made. Editing or deleting one copies its case again (services/user.py),
+so `python -m evals sync` can draft the label from the owner's answer rather than the model's.
 """
 
 import asyncio
@@ -17,10 +21,12 @@ import json
 import mimetypes
 from typing import Any, Self
 
-from triptych import db, parsing
+from pydantic import BaseModel, Field
+
+from triptych import db, enrich, parsing
 from triptych.config import Settings, settings
 from triptych.inputs import InputStore
-from triptych.models import IngestRequest
+from triptych.models import IngestRequest, ReservationFields
 
 PREFIX = "inputs"
 
@@ -29,6 +35,45 @@ EXTENSIONS = {"message/rfc822": ".eml", "text/plain": ".txt", "text/html": ".htm
 
 def extension(content_type: str) -> str:
     return EXTENSIONS.get(content_type) or mimetypes.guess_extension(content_type) or ".bin"
+
+
+class Correction(BaseModel):
+    """What the owner changed about one reservation from the ingest's run (case.json corrections)."""
+
+    reservation: int | None
+    """Its index in the run's output reservations; None for one of theirs the run doesn't have (an
+    earlier run's, say), which `fields` then gives in full."""
+    deleted: bool = False
+    edited: list[str] = Field(default_factory=list)
+    """The fields they corrected (ReservationFields names)."""
+    fields: dict[str, Any] = Field(default_factory=dict)
+    """Those fields as they set them."""
+
+
+def corrections(case: db.EvalCase) -> list[Correction]:
+    """The owner's edits and deletions, against the run's answer. Its reservations are paired with
+    what the owner has the way a reprocess pairs them (db.pair_up)."""
+    output = case.run.output if case.run else None
+    made = [
+        (i, r)
+        for i, x in enumerate(output.reservations if output else [])
+        if (r := enrich.normalise(x, reservation_id=f"run-{i}", ingest_id=case.ingest_id)) is not None
+    ]
+    match = db.pair_up(case.reservations, [r for _, r in made], case.keys)
+    out = []
+    for j, (i, made_r) in enumerate(made):
+        if (r := match.get(j)) is not None:
+            if r.edited_fields:
+                fields = r.model_dump(mode="json", include=set(r.edited_fields))
+                out.append(Correction(reservation=i, edited=r.edited_fields, fields=fields))
+        elif any(db.dismissed(made_r, d) for d in case.dismissals):
+            out.append(Correction(reservation=i, deleted=True))
+    paired = {r.id for r in match.values()}
+    for r in case.reservations:
+        if r.id not in paired and r.edited_fields:
+            fields = r.model_dump(mode="json", include=set(ReservationFields.model_fields))
+            out.append(Correction(reservation=None, edited=r.edited_fields, fields=fields))
+    return out
 
 
 class EvalStore:
@@ -89,6 +134,7 @@ class EvalStore:
             "run": case.run.model_dump(mode="json", exclude={"ingest_id", "owner", "input_id"})
             if case.run
             else None,
+            "corrections": [c.model_dump(mode="json") for c in corrections(case)],
         }
         await self._put(prefix + "case.json", json.dumps(meta, indent=2).encode(), "application/json")
         await db.mark_eval_copied(ingest_id, kept.owner)

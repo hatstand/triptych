@@ -355,6 +355,12 @@ class EvalCase(BaseModel):
     state: str
     input: RawInput
     run: ExtractionRun | None
+    reservations: list[Reservation] = Field(default_factory=list)
+    """What the owner has from it now, corrections and all."""
+    keys: dict[str, str] = Field(default_factory=dict)
+    """Their stored dedupe keys, by id (what `pair_up` matches the run's answer with)."""
+    dismissals: list["Dismissal"] = Field(default_factory=list)
+    """The ones the owner deleted."""
 
 
 class EvalSharing(BaseModel):
@@ -409,8 +415,16 @@ async def eval_case(ingest_id: str) -> EvalCase | None:
             (ingest_id,),
         )
         row = await cur.fetchone()
-    if row is None:
-        return None
+        if row is None:
+            return None
+        await cur.execute(
+            f"""SELECT {RESERVATION_COLUMNS}, dedupe_key FROM reservation
+                WHERE trip_id IN (SELECT id FROM trip WHERE owner = %s) AND source_ingest_id = %s
+                ORDER BY start_local, id""",
+            (row["owner"], ingest_id),
+        )
+        stored = await cur.fetchall()
+        dismissals = await _dismissals(conn, row["owner"], ingest_id)
     kept = RawInput(
         id=row["input_id"],
         owner=row["owner"],
@@ -438,7 +452,18 @@ async def eval_case(ingest_id: str) -> EvalCase | None:
             output=row["output"],
             error=row["error"],
         )
-    return EvalCase(ingest_id=ingest_id, label=row["label"], state=row["state"], input=kept, run=run)
+    return EvalCase(
+        ingest_id=ingest_id,
+        label=row["label"],
+        state=row["state"],
+        input=kept,
+        run=run,
+        reservations=[
+            Reservation.model_validate({k: v for k, v in r.items() if k != "dedupe_key"}) for r in stored
+        ],
+        keys={r["id"]: r["dedupe_key"] for r in stored},
+        dismissals=dismissals,
+    )
 
 
 async def mark_eval_copied(ingest_id: str, owner: str) -> None:
@@ -638,20 +663,13 @@ def reclassified(c: Reservation, e: Reservation) -> bool:
     return not (c.confirmation_code and e.confirmation_code) or c.confirmation_code == e.confirmation_code
 
 
-def reconcile(
-    current: list[Reservation],
-    candidates: list[Reservation],
-    gone: list[Dismissal],
-    taken: set[str],
-    keys: dict[str, str] | None = None,
-) -> Reconciliation:
-    """Match a run's reservations (`candidates`) to the ingest's `current` ones, one to one: the
-    exact key first, then the looser rules `dismissed` uses, then the same departure under another
-    kind (`reclassified`). `taken` is the dedupe key of every
-    reservation the user has. `keys` are the current ones' stored dedupe keys, which are what their
-    extraction said even where the owner has corrected them since. A match keeps every field its
-    owner corrected."""
-    keys = keys or {}
+def pair_up(
+    current: list[Reservation], candidates: list[Reservation], keys: dict[str, str]
+) -> dict[int, Reservation]:
+    """Which of the `current` reservations each of a run's `candidates` (by index) is, one to one:
+    the exact key first, then the looser rules `dismissed` uses, then the same departure under
+    another kind (`reclassified`). `keys` are the current ones' stored dedupe keys, which are what
+    their extraction said even where the owner has corrected them since."""
     free = list(current)
     match: dict[int, Reservation] = {}
 
@@ -666,8 +684,22 @@ def reconcile(
     pair(lambda c, e: dedupe_key(c) in (keys.get(e.id), dedupe_key(e)))
     pair(lambda c, e: dismissed(c, _as_dismissal(e)))
     pair(reclassified)
+    return match
 
-    out = Reconciliation(missing=free)
+
+def reconcile(
+    current: list[Reservation],
+    candidates: list[Reservation],
+    gone: list[Dismissal],
+    taken: set[str],
+    keys: dict[str, str] | None = None,
+) -> Reconciliation:
+    """Match a run's reservations (`candidates`) to the ingest's `current` ones (`pair_up`, which
+    `keys` is for). `taken` is the dedupe key of every reservation the user has. A match keeps every
+    field its owner corrected."""
+    match = pair_up(current, candidates, keys or {})
+    paired = {e.id for e in match.values()}
+    out = Reconciliation(missing=[e for e in current if e.id not in paired])
     taken = taken | {dedupe_key(candidates[i]) for i in match}
     for i, c in enumerate(candidates):
         if (e := match.get(i)) is not None:
@@ -845,24 +877,33 @@ async def _owned(conn: AsyncConnection, owner: str, trip_id: str) -> None:
         raise restate.TerminalError("trip not found", status_code=404)
 
 
-async def remove_reservation(owner: str, trip_id: str, reservation_id: str) -> bool:
-    """Returns whether the trip still exists (it's deleted along with its last reservation)."""
+class Removed(BaseModel):
+    trip_exists: bool
+    """False when the trip went with its last reservation."""
+    ingest_id: str | None
+    """Where the reservation came from (None for one already gone)."""
+
+
+async def remove_reservation(owner: str, trip_id: str, reservation_id: str) -> Removed:
     async with connection() as conn, conn.transaction():
         await _owned(conn, owner, trip_id)
         await conn.execute(
             DISMISS + " AND r.id = %s AND r.trip_id = %s ON CONFLICT DO NOTHING",
             (owner, reservation_id, trip_id),
         )
-        await conn.execute(
-            "DELETE FROM reservation WHERE id = %s AND trip_id = %s", (reservation_id, trip_id)
+        cur = await conn.execute(
+            "DELETE FROM reservation WHERE id = %s AND trip_id = %s RETURNING source_ingest_id",
+            (reservation_id, trip_id),
         )
+        gone = await cur.fetchone()
+        ingest_id = gone[0] if gone else None
         await _changed(conn, owner)
         cur = await conn.execute("SELECT 1 FROM reservation WHERE trip_id = %s LIMIT 1", (trip_id,))
         if await cur.fetchone() is None:
             await conn.execute("DELETE FROM trip WHERE id = %s", (trip_id,))
-            return False
+            return Removed(trip_exists=False, ingest_id=ingest_id)
         await _retitle(conn, trip_id)
-        return True
+        return Removed(trip_exists=True, ingest_id=ingest_id)
 
 
 async def rename_trip(owner: str, trip_id: str, name: str) -> None:

@@ -4,6 +4,8 @@ everything they have, and the copy of each new ingest never race over the same c
 
     share_all  (on opting in)     every ingest with a kept original that isn't copied yet
     copy       (Ingest, at end)   one ingest, if its owner shares
+               (User, on an edit  again, with the owner's corrections
+                or a delete)
 
 Copies are best effort: one that keeps failing (R2 down for half an hour) is skipped and logged,
 and the next share_all picks it up again.

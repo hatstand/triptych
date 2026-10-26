@@ -60,6 +60,10 @@ def cmd_sync(args: argparse.Namespace) -> None:
     print(f"{len(done.downloaded)} downloaded, {len(done.drafted)} new drafts")
     for case_id in done.drafted:
         print(f"  draft: cases/{case_id}/expected.yaml")
+    for case_id in done.redrafted:
+        print(f"  redrafted with its owner's corrections: cases/{case_id}/expected.yaml")
+    for case_id in done.recorrected:
+        print(f"  corrected in the app since you edited it, have a look: cases/{case_id}/expected.yaml")
     if done.incomplete:
         print(f"skipped {len(done.incomplete)} still being copied: {', '.join(done.incomplete)}")
 
@@ -160,6 +164,9 @@ def cmd_redraft(args: argparse.Namespace) -> None:
         for path in sorted((root / "cases").glob("*/expected.yaml")):
             case_id, expected = path.parent.name, read_expected(path)
             if expected.status != "draft" or (args.case and case_id not in args.case):
+                continue
+            if "corrected" in expected.tags:
+                print(f"{case_id}: kept, as its owner corrected it in the app")
                 continue
             found = golden.find_input(root, case_id, expected, path)
             if found is None:

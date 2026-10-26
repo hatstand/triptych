@@ -14,12 +14,19 @@ import httpx
 import pytest
 from moto import mock_aws
 
-from triptych import db, evalset, inputs
+from triptych import db, enrich, evalset, inputs
 from triptych.auth import Me
 from triptych.config import settings
 from triptych.evalset import EvalStore
 from triptych.inputs import InputStore
-from triptych.models import Extraction, ExtractionRun, InboxItem
+from triptych.models import (
+    ExtractedReservation,
+    Extraction,
+    ExtractionRun,
+    InboxItem,
+    Kind,
+    ReservationFields,
+)
 from triptych.web import app as web
 from triptych.web import ratelimit
 
@@ -65,7 +72,9 @@ async def me(database: str) -> str:
     return await db.user_for_email("me@example.com")
 
 
-async def ingest(store: InputStore, owner: str, ingest_id: str, data: bytes = EMAIL) -> None:
+async def ingest(
+    store: InputStore, owner: str, ingest_id: str, data: bytes = EMAIL, output: Extraction | None = None
+) -> None:
     """An ingest as Ingest leaves it: in the inbox, original kept, run recorded."""
     await db.add_inbox_item(
         owner,
@@ -87,7 +96,7 @@ async def ingest(store: InputStore, owner: str, ingest_id: str, data: bytes = EM
             code_version="dev",
             params={"think": False},
             purpose="ingest",
-            output=Extraction(is_travel_document=False, reservations=[]),
+            output=output or Extraction(is_travel_document=False, reservations=[]),
         )
     )
 
@@ -110,6 +119,58 @@ async def test_shared_ingest_is_copied_in_plaintext_with_its_run(store: EvalStor
     assert case["run"]["model"] == "gemma4:26b-a4b-it-qat"
     assert case["run"]["output"] == {"is_travel_document": False, "reservations": []}
     assert await db.uncopied_eval_ingests(me) == []
+
+
+TRIP = Extraction(
+    is_travel_document=True,
+    reservations=[
+        ExtractedReservation(
+            kind=Kind.FLIGHT, title="BA 500 LHR→LIS", confirmation_code="ABC123", service_number="BA 500",
+            start_local="2026-11-03T09:00", end_local="2026-11-03T11:45", start_iata="LHR", end_iata="LIS",
+            city="Lisbon", country_code="PT",
+        ),
+        ExtractedReservation(
+            kind=Kind.LODGING, title="Hotel Avenida", confirmation_code="H1", start_local="2026-11-03T15:00",
+            end_local="2026-11-06T11:00", city="Lisbon", country_code="PT",
+        ),
+        ExtractedReservation(kind=Kind.OTHER, title="Unparseable", start_local="sometime"),
+    ],
+)  # fmt: skip
+
+
+async def test_corrections_on_the_trip_page_are_copied_as_the_owners_answer(
+    store: EvalStore, s3: Any, me: str
+) -> None:
+    await ingest(store.inputs, me, "mail-1", output=TRIP)
+    await db.set_eval_sharing(me, True)
+    made = [
+        r
+        for x in TRIP.reservations
+        if (r := enrich.normalise(x, reservation_id=str(uuid.uuid4()), ingest_id="mail-1")) is not None
+    ]
+    [trip_id] = (await db.file_reservations(me, "mail-1", made)).trip_ids
+    flight, hotel = made
+
+    def case() -> dict[str, Any]:
+        return json.loads(s3.get_object(Bucket=EVALS, Key="inputs/mail-1/case.json")["Body"].read())
+
+    assert await store.copy("mail-1")
+    assert case()["corrections"] == []
+
+    # The flight left later than the email said, from another seat, and the hotel was cancelled.
+    fix = ReservationFields.model_validate(
+        flight.model_dump() | {"start_local": datetime(2026, 11, 3, 10, 15), "seat": "12A"}
+    )
+    await db.edit_reservation(me, trip_id, flight.id, fix)
+    removed = await db.remove_reservation(me, trip_id, hotel.id)
+    assert removed.ingest_id == "mail-1"
+
+    assert await store.copy("mail-1")
+    assert case()["corrections"] == [
+        {"reservation": 0, "deleted": False, "edited": ["seat", "start_local"],
+         "fields": {"seat": "12A", "start_local": "2026-11-03T10:15:00"}},
+        {"reservation": 1, "deleted": True, "edited": [], "fields": {}},
+    ]  # fmt: skip
 
 
 async def test_nothing_is_copied_unless_the_owner_shares(store: EvalStore, s3: Any, me: str) -> None:
