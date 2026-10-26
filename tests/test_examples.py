@@ -11,6 +11,7 @@ from typing import Any
 
 import boto3
 import pytest
+import restate
 from moto import mock_aws
 
 from triptych import db, enrich, examples, inputs, llm
@@ -332,3 +333,32 @@ async def test_a_no_travel_its_owner_says_is_a_booking_teaches_what_was_found(
     await db.apply_reprocess(me, "mail-1", run(nothing), [])
     ex = await example(store)
     assert ex is not None and len(ex.answer.reservations) == 2
+
+
+async def test_one_added_by_hand_from_an_email_is_what_that_email_missed(store: InputStore, me: str) -> None:
+    trip_id, _ = await filed(store, me)
+    assert [s.ingest_id for s in await db.trip_sources(me, trip_id)] == ["mail-1"]
+    back = ReservationFields(
+        kind=Kind.FLIGHT, title="IB 3107 LIS→MAD", start_local=datetime(2026, 11, 7, 18, 0),
+        start_location="Lisbon (LIS)", end_location="Madrid (MAD)", service_number="IB 3107",
+    )  # fmt: skip
+    added = str(uuid.uuid4())
+    stored = await db.add_reservation(me, trip_id, added, "mail-1", back)
+    assert await db.add_reservation(me, trip_id, added, "mail-1", back) == stored  # a retry adds it once
+    [r] = [f.reservation for f in stored.reservations if f.reservation.id == added]
+    assert r.source_ingest_id == "mail-1" and r.start_tz == "Europe/Lisbon"  # filled from the trip
+    assert set(r.edited_fields) == {"kind", "title", "start_local", "start_location", "end_location",
+                                    "service_number"}  # fmt: skip
+
+    ex = await example(store)
+    assert ex is not None
+    assert [x.title for x in ex.answer.reservations][-1] == "IB 3107 LIS→MAD"
+    assert ex.changes == ["kept IB 3107 LIS→MAD, which this run didn't find"]
+
+    with pytest.raises(restate.TerminalError):  # the same booking again
+        await db.add_reservation(me, trip_id, str(uuid.uuid4()), None, back)
+    with pytest.raises(restate.TerminalError):  # someone else's email
+        await db.add_reservation(me, trip_id, str(uuid.uuid4()), "not-mine", back)
+    other = await db.user_for_email("someone@else.com")
+    with pytest.raises(restate.TerminalError):  # someone else's trip
+        await db.add_reservation(other, trip_id, str(uuid.uuid4()), None, back)

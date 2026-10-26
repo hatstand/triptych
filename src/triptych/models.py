@@ -432,6 +432,15 @@ class EditReservation(BaseModel):
     fields: ReservationFields
 
 
+class AddReservation(BaseModel):
+    trip_id: str
+    reservation_id: str
+    """Chosen by whoever asks, so a retried request adds it once."""
+    ingest_id: str | None
+    """The ingest (an email of theirs) it was in, which missed it; None if none did."""
+    fields: ReservationFields
+
+
 class RenameTrip(BaseModel):
     trip_id: str
     name: str

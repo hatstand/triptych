@@ -238,9 +238,17 @@ def test_each_reservation_has_an_edit_dialog(client: TestClient, monkeypatch: py
     async def trip_summaries(owner: str) -> list[TripSummary]:
         return []
 
+    async def trip_sources(owner: str, trip_id: str) -> list[db.TripSource]:
+        return [db.TripSource(ingest_id="mail-1", label="Your Iberia flight")]
+
     monkeypatch.setattr(web.db, "get_trip", get_trip)
     monkeypatch.setattr(web.db, "trip_summaries", trip_summaries)
+    monkeypatch.setattr(web.db, "trip_sources", trip_sources)
     html = client.get("/trips/t1").text
+    # Something extraction missed can be added, saying which email it was in.
+    assert 'commandfor="add-reservation" command="show-modal"' in html
+    assert 'action="/trips/t1/reservations"' in html
+    assert '<option value="mail-1">Your Iberia flight</option>' in html
     for r in rs:
         assert f'commandfor="edit-{r.id}" command="show-modal"' in html
         assert f'action="/trips/t1/reservations/{r.id}/edit"' in html

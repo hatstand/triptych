@@ -27,6 +27,7 @@ from starlette.middleware.base import RequestResponseEndpoint
 from triptych import auth, db, enrich, ical, inbound, journeys, llm, senders, telemetry
 from triptych.config import settings
 from triptych.models import (
+    AddReservation,
     Answer,
     AskTrip,
     EditReservation,
@@ -496,6 +497,7 @@ async def add_plans(
 async def trip_page(request: Request, trip_id: str, me: User) -> Response:
     t = await load_trip(me.id, trip_id)
     others = [s for s in await db.trip_summaries(me.id) if s.id != trip_id]
+    sources = await db.trip_sources(me.id, trip_id)
     return templates.TemplateResponse(
         request,
         "trip.html",
@@ -505,6 +507,7 @@ async def trip_page(request: Request, trip_id: str, me: User) -> Response:
             "summary": t.summary(),
             "days": journeys.timeline(t.reservations),
             "others": others,
+            "sources": sources,
         },
     )
 
@@ -593,6 +596,23 @@ class ReservationForm(ReservationFields):
         if start is not None and end is not None and end < start:
             raise ValueError("it ends before it starts")
         return self
+
+
+class AddReservationForm(ReservationForm):
+    ingest_id: str | None = None
+    """Which of the trip's emails it was in ("" for none)."""
+
+
+@app.post("/trips/{trip_id}/reservations")
+async def reservation_add(
+    trip_id: str, me: User, client: Client, form: Annotated[AddReservationForm, Form()]
+) -> Response:
+    fields = ReservationFields.model_validate(form.model_dump(exclude={"ingest_id"}))
+    req = AddReservation(
+        trip_id=trip_id, reservation_id=str(uuid.uuid4()), ingest_id=form.ingest_id, fields=fields
+    )
+    await client.object_call(user_svc.add_reservation, me.id, req)
+    return RedirectResponse(f"/trips/{trip_id}", status_code=303)
 
 
 @app.post("/trips/{trip_id}/reservations/{reservation_id}/edit")

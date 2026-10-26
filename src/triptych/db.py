@@ -1060,6 +1060,77 @@ async def edit_reservation(
         return await _stored(conn, [trip_id])
 
 
+async def add_reservation(
+    owner: str, trip_id: str, reservation_id: str, ingest_id: str | None, fields: ReservationFields
+) -> Filed:
+    """One the owner adds by hand, from the ingest (an email of theirs) it was in, if they say. Its
+    fields are all theirs, so a reprocess that finds it later leaves it as they set it, and their
+    ingest's answer gains it (corrections.find): a correction like an edit. Returns the trip as
+    stored, for its reminders."""
+    set_by_owner = [f for f in EDITABLE if getattr(fields, f) not in (None, [], "")]
+    r = Reservation(
+        **fields.model_dump(), id=reservation_id, source_ingest_id=ingest_id, edited_fields=set_by_owner
+    )
+    async with connection() as conn, conn.transaction():
+        await _owned(conn, owner, trip_id)
+        if ingest_id is not None:
+            cur = await conn.execute(
+                "SELECT 1 FROM inbox_item WHERE ingest_id = %s AND owner = %s", (ingest_id, owner)
+            )
+            if await cur.fetchone() is None:
+                raise restate.TerminalError("ingest not found", status_code=404)
+        cur = await conn.execute(
+            """
+            INSERT INTO reservation (id, trip_id, kind, title, provider, confirmation_code, start_local,
+                start_tz, end_local, end_tz, start_location, end_location, address, city, service_number,
+                seat, travelers, notes, source_ingest_id, dedupe_key, edited_fields)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT DO NOTHING
+            """,
+            (
+                r.id, trip_id, r.kind.value, r.title, r.provider, r.confirmation_code, r.start_local,
+                r.start_tz, r.end_local, r.end_tz, r.start_location, r.end_location, r.address, r.city,
+                r.service_number, r.seat, r.travelers, r.notes, ingest_id, dedupe_key(r), r.edited_fields,
+            ),
+        )  # fmt: skip
+        if cur.rowcount == 0:
+            # Its id is the request's, so this is Restate retrying a write that went through, unless
+            # the trip has the same booking already.
+            cur = await conn.execute("SELECT 1 FROM reservation WHERE id = %s", (r.id,))
+            if await cur.fetchone() is None:
+                raise restate.TerminalError("that's already in this trip", status_code=409)
+        if ingest_id is not None:
+            await conn.execute(
+                """UPDATE inbox_item SET trip_ids = array_append(trip_ids, %(trip)s::uuid)
+                   WHERE ingest_id = %(ingest)s AND NOT %(trip)s::uuid = ANY(trip_ids)""",
+                {"trip": trip_id, "ingest": ingest_id},
+            )
+        await _fill_timezones(conn, trip_id)
+        await _retitle(conn, trip_id)
+        await _changed(conn, owner)
+        return await _stored(conn, [trip_id])
+
+
+class TripSource(BaseModel):
+    ingest_id: str
+    label: str
+
+
+async def trip_sources(owner: str, trip_id: str) -> list[TripSource]:
+    """The ingests the trip's reservations came from, most recent first: where one added by hand
+    may have been missed."""
+    async with connection() as conn, conn.cursor(row_factory=class_row(TripSource)) as cur:
+        await cur.execute(
+            """SELECT i.ingest_id, i.label FROM inbox_item i
+               WHERE i.owner = %(owner)s AND EXISTS (
+                   SELECT 1 FROM reservation r JOIN trip t ON t.id = r.trip_id
+                   WHERE r.source_ingest_id = i.ingest_id AND t.id = %(trip)s AND t.owner = %(owner)s)
+               ORDER BY i.received_at DESC""",
+            {"owner": owner, "trip": trip_id},
+        )
+        return await cur.fetchall()
+
+
 async def delete_trip(owner: str, trip_id: str) -> None:
     async with connection() as conn, conn.transaction():
         await conn.execute(DISMISS + " AND r.trip_id = %s ON CONFLICT DO NOTHING", (owner, trip_id))

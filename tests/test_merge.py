@@ -178,8 +178,12 @@ def test_the_trip_page_offers_the_other_trips_to_merge_into(
     async def trip_summaries(owner: str) -> list[TripSummary]:
         return [summary("t1", "Lisbon"), summary("t2", "Porto")]
 
+    async def trip_sources(owner: str, trip_id: str) -> list[Any]:
+        return []
+
     monkeypatch.setattr(web.db, "get_trip", get_trip)
     monkeypatch.setattr(web.db, "trip_summaries", trip_summaries)
+    monkeypatch.setattr(web.db, "trip_sources", trip_sources)
     html = client.get("/trips/t1").text
     assert 'action="/trips/t1/merge"' in html
     assert '<option value="t2">Porto (13 Nov 2026)</option>' in html
