@@ -1,8 +1,12 @@
 import base64
+import io
 from datetime import UTC, datetime
+from email.message import EmailMessage
 from pathlib import Path
 
+import pillow_heif
 import pytest
+from PIL import Image
 
 from triptych import enrich, parsing
 from triptych.ical import calendar
@@ -487,3 +491,54 @@ def test_fill_timezones_places_a_city_by_its_country() -> None:
     )  # fmt: skip
     enrich.fill_timezones([hotel])
     assert hotel.start_tz == hotel.end_tz == "Europe/Paris"
+
+
+def heic() -> bytes:
+    """A small HEIC, like an iPhone photo."""
+    buf = io.BytesIO()
+    pillow_heif.from_pillow(Image.new("RGB", (64, 48), "red")).save(buf, format="HEIF")
+    return buf.getvalue()
+
+
+@pytest.mark.parametrize("content_type", ["image/heic", "application/octet-stream"])
+def test_uploaded_heic_reaches_the_model_as_jpeg(content_type: str) -> None:
+    req = IngestRequest(
+        user="me@example.com",
+        source="upload",
+        filename="IMG_0001.HEIC",
+        content_type=content_type,
+        data_b64=base64.b64encode(heic()).decode(),
+        received_at=datetime(2026, 10, 23, tzinfo=UTC),
+    )
+    [image] = parsing.parse(req).images_b64
+    with Image.open(io.BytesIO(base64.b64decode(image))) as jpeg:
+        assert (jpeg.format, jpeg.size) == ("JPEG", (64, 48))
+
+
+def test_heic_attachment_reaches_the_model_as_jpeg() -> None:
+    msg = EmailMessage()
+    msg["Subject"] = "Boarding pass"
+    msg.set_content("See attached.")
+    msg.add_attachment(heic(), maintype="image", subtype="heic", filename="pass.heic")
+    req = IngestRequest(
+        user="me@example.com",
+        source="email",
+        data_b64=base64.b64encode(msg.as_bytes()).decode(),
+        received_at=datetime(2026, 10, 23, tzinfo=UTC),
+    )
+    [image] = parsing.parse(req).images_b64
+    assert base64.b64decode(image).startswith(b"\xff\xd8")  # JPEG
+
+
+def test_other_images_go_to_the_model_as_they_are() -> None:
+    buf = io.BytesIO()
+    Image.new("RGB", (8, 8)).save(buf, format="PNG")
+    data_b64 = base64.b64encode(buf.getvalue()).decode()
+    req = IngestRequest(
+        user="me@example.com",
+        source="upload",
+        content_type="image/png",
+        data_b64=data_b64,
+        received_at=datetime(2026, 10, 23, tzinfo=UTC),
+    )
+    assert parsing.parse(req).images_b64 == [data_b64]

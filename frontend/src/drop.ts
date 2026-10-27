@@ -2,7 +2,7 @@
 // /plans, the same endpoint as the "Add plans" form. The new items show up in the home page's inbox by
 // themselves (see index.html), so from anywhere else we go there.
 
-const ACCEPT = /\.(eml|pdf|html?|txt)$/i;
+const ACCEPT = /\.(eml|pdf|html?|txt|heic|heif)$/i; // .heic can come with no type
 const MAX_BYTES = 15 * 1024 * 1024; // keep in step with MAX_UPLOAD in web/app.py
 const SKIPPED_KEY = "triptych-drop-skipped";
 

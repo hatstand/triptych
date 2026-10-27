@@ -31,6 +31,7 @@ dependencies = [
     "tzdata>=2026.5",
     "numpy>=2.5",
     "ollama>=0.6",
+    "pillow-heif>=1.8.1",
 ]
 
 [dependency-groups]
