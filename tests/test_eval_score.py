@@ -73,6 +73,8 @@ def test_drafts_from_before_the_schema_change_still_load() -> None:
         ("city", "Lisbon", "Porto", Outcome.WRONG),
         ("confirmation_code", "QZ7K2M", "qz7k 2m", Outcome.CORRECT),
         ("service_number", "AQ 236", "AQ236", Outcome.CORRECT),
+        ("service_number", "BA 168", "BA0168", Outcome.CORRECT),
+        ("service_number", "BA 168", "BA 1680", Outcome.WRONG),
         ("confirmation_code", "QZ7K2M", None, Outcome.MISSED),
         ("confirmation_code", None, "QZ7K2M", Outcome.HALLUCINATED),
         ("seat", None, "", Outcome.NA),

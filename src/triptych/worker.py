@@ -62,6 +62,13 @@ async def fill_timezones() -> None:
         log.exception("couldn't fill in missing timezones")
 
 
+async def canonicalise_flight_numbers() -> None:
+    try:
+        await db.canonicalise_flight_numbers()
+    except Exception:
+        log.exception("couldn't canonicalise flight numbers")
+
+
 async def fill_countries() -> None:
     try:
         await db.fill_countries()
@@ -93,6 +100,7 @@ async def start_up() -> None:
     if await register():
         await fill_timezones()
         await fill_countries()
+        await canonicalise_flight_numbers()
         await retitle_trips()
         await request_photos()
 

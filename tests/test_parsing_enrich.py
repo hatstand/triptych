@@ -2,6 +2,8 @@ import base64
 from datetime import UTC, datetime
 from pathlib import Path
 
+import pytest
+
 from triptych import enrich, parsing
 from triptych.ical import calendar
 from triptych.models import (
@@ -59,6 +61,28 @@ def test_normalise_flight_uses_airport_timezones() -> None:
     assert (r.start_tz, r.end_tz) == ("America/Los_Angeles", "Europe/Lisbon")
     assert (r.city, r.country_code) == ("Lisbon", "PT")
     assert enrich.to_utc(r.start_local, r.start_tz) == datetime(2026, 11, 12, 23, 40, tzinfo=UTC)
+
+
+@pytest.mark.parametrize(
+    ("sent", "written"),
+    [("BA0168", "BA 168"), ("VN 050", "VN 50"), ("ba-168", "BA 168"), ("U2 8888", "U2 8888"),
+     ("3U8888", "3U 8888"), ("BAW168", "BAW 168"), ("9024", "9024"),
+     ("Alfa Pendular 121", "Alfa Pendular 121")],
+)  # fmt: skip
+def test_flight_numbers_are_written_one_way(sent: str, written: str) -> None:
+    assert enrich.flight_number(sent) == written
+
+
+def test_normalise_canonicalises_only_flight_numbers() -> None:
+    flight = ExtractedReservation(kind=Kind.FLIGHT, title="VN 50", start_local="2026-11-12T15:40",
+                                  service_number="VN 050")  # fmt: skip
+    train = ExtractedReservation(kind=Kind.RAIL, title="G324", start_local="2026-11-12T15:40",
+                                 service_number="G324")  # fmt: skip
+    assert [
+        r.service_number
+        for x in (flight, train)
+        if (r := enrich.normalise(x, reservation_id="r", ingest_id="i"))
+    ] == ["VN 50", "G324"]
 
 
 def test_normalise_keeps_the_country() -> None:

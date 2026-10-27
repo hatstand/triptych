@@ -1,5 +1,6 @@
 """Deterministic clean-up of LLM output: parse times, resolve airports to cities and timezones."""
 
+import re
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -10,6 +11,17 @@ from triptych.models import ExtractedReservation, Kind, Reservation
 TRANSPORT = (Kind.FLIGHT, Kind.RAIL, Kind.FERRY)
 CODED = (Kind.FLIGHT, Kind.RAIL)
 """Transport whose ends can have IATA codes. Ports have none, so a ferry's are never looked up."""
+
+FLIGHT_NUMBER = re.compile(r"([A-Z]{3}|[A-Z]{2}|[A-Z]\d|\d[A-Z])[\s-]*0*(\d{1,4}[A-Z]?)")
+"""An airline's code (IATA, two characters with a letter in them, or ICAO, three letters) and the
+flight's number, however they're spaced or padded."""
+
+
+def flight_number(text: str) -> str:
+    """The way we write a flight number: 'BA 168', whether it was sent as 'BA0168', 'ba168' or
+    'BA-168'. Anything that doesn't look like one is left as it was."""
+    m = FLIGHT_NUMBER.fullmatch(text.strip().upper())
+    return f"{m[1]} {m[2]}" if m else text.strip()
 
 
 def valid_tz(name: str | None) -> str | None:
@@ -94,7 +106,9 @@ def normalise(
         address=x.address,
         city=city,
         country_code=country_code,
-        service_number=x.service_number,
+        service_number=flight_number(x.service_number)
+        if x.kind is Kind.FLIGHT and x.service_number
+        else x.service_number,
         seat=x.seat,
         travelers=x.travelers,
         notes=x.notes,
