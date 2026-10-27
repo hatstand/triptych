@@ -62,6 +62,13 @@ async def fill_timezones() -> None:
         log.exception("couldn't fill in missing timezones")
 
 
+async def fill_countries() -> None:
+    try:
+        await db.fill_countries()
+    except Exception:
+        log.exception("couldn't fill in countries")
+
+
 async def retitle_trips() -> None:
     try:
         await db.retitle_trips()
@@ -85,6 +92,7 @@ async def request_photos() -> None:
 async def start_up() -> None:
     if await register():
         await fill_timezones()
+        await fill_countries()
         await retitle_trips()
         await request_photos()
 

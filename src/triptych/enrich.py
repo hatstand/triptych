@@ -52,7 +52,7 @@ def normalise(
     # hotel in Asia/Hong_Kong); the model's own guesses are the fallback.
     city_tz = places.city_timezone(x.city, x.country_code)
     start_tz, end_tz = valid_tz(x.start_timezone), city_tz or valid_tz(x.end_timezone)
-    city = x.city
+    city, country_code = x.city, x.country_code
     start_location, end_location = x.start_location, x.end_location
 
     if x.kind in TRANSPORT:
@@ -69,6 +69,7 @@ def normalise(
             end_tz = valid_tz(arr.timezone) or end_tz
             end_location = f"{arr.city} ({arr.iata})"
             city = arr.city
+            country_code = arr.country_code
     else:
         # Anything else happens in its city; failing that, if the model gave one zone, it's both.
         start_tz = city_tz or start_tz or end_tz
@@ -92,6 +93,7 @@ def normalise(
         end_location=end_location,
         address=x.address,
         city=city,
+        country_code=country_code,
         service_number=x.service_number,
         seat=x.seat,
         travelers=x.travelers,

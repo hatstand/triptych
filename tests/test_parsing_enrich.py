@@ -57,8 +57,17 @@ def test_normalise_flight_uses_airport_timezones() -> None:
     r = enrich.normalise(x, reservation_id="r1", ingest_id="i1")
     assert r is not None
     assert (r.start_tz, r.end_tz) == ("America/Los_Angeles", "Europe/Lisbon")
-    assert r.city == "Lisbon"
+    assert (r.city, r.country_code) == ("Lisbon", "PT")
     assert enrich.to_utc(r.start_local, r.start_tz) == datetime(2026, 11, 12, 23, 40, tzinfo=UTC)
+
+
+def test_normalise_keeps_the_country() -> None:
+    x = ExtractedReservation(
+        kind=Kind.LODGING, title="Puffin Hostel", start_local="2025-08-15T15:00", city="Vik i Myrdal",
+        country_code="IS",
+    )  # fmt: skip
+    r = enrich.normalise(x, reservation_id="r1", ingest_id="i1")
+    assert r is not None and r.country_code == "IS"
 
 
 def test_flight_reads_airport_codes_from_its_locations() -> None:

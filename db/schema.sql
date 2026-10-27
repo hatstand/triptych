@@ -258,6 +258,7 @@ CREATE TABLE public.reservation (
     source_run_id uuid,
     service_number text,
     edited_fields text[] DEFAULT '{}'::text[] NOT NULL,
+    country_code text,
     CONSTRAINT reservation_kind_check CHECK ((kind = ANY (ARRAY['flight'::text, 'lodging'::text, 'car'::text, 'rail'::text, 'ferry'::text, 'restaurant'::text, 'activity'::text, 'other'::text])))
 );
 
@@ -799,4 +800,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261026120000'),
     ('20261026140000'),
     ('20261026150000'),
-    ('20261026210000');
+    ('20261026210000'),
+    ('20261027110000');

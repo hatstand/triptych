@@ -201,6 +201,9 @@ class ReservationFields(BaseModel):
 
 class Reservation(ReservationFields):
     id: str
+    country_code: str | None = None
+    """The ISO 3166-1 alpha-2 code of the country `city` is in, if known. Not the owner's to correct
+    (a corrected city clears it)."""
     source_ingest_id: str | None = None
     source_run_id: str | None = None
     """The extraction run (db extraction_run) this came from."""

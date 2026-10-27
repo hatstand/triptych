@@ -73,19 +73,6 @@ def timezones() -> tuple[str, ...]:
 
 
 @cache
-def _zone_countries() -> dict[str, str]:
-    tab = importlib.resources.files("tzdata").joinpath("zoneinfo", "zone.tab").read_text()
-    rows = (line.split("\t") for line in tab.splitlines() if line and not line.startswith("#"))
-    return {row[2]: row[0] for row in rows}
-
-
-def timezone_country(name: str | None) -> str | None:
-    """The ISO 3166-1 alpha-2 code of the country a zone (or an alias of one) is in, per zone.tab."""
-    zone = canonical_timezone(name) if name else None
-    return _zone_countries().get(zone) if zone else None
-
-
-@cache
 def country_name(code: str) -> str | None:
     """A country's English name ("Iceland", "United Kingdom"), if we have places in it."""
     return next((p.country for p in _places().values() if p.country_code == code), None)

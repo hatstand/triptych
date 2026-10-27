@@ -53,12 +53,7 @@ def test_an_alias_is_read_as_the_canonical_zone_it_links_to() -> None:
         assert places.canonical_timezone(nonsense) is None, nonsense
 
 
-def test_timezone_country_and_country_name() -> None:
-    assert places.timezone_country("Atlantic/Reykjavik") == "IS"
-    assert places.timezone_country("Asia/Chongqing") == "CN"
-    assert places.timezone_country("Europe/Copenhagen") == "DK"
-    for nothing in (None, "", "Etc/UTC", "Europe"):
-        assert places.timezone_country(nothing) is None, nothing
+def test_country_name() -> None:
     assert places.country_name("IS") == "Iceland"
     assert places.country_name("GB") == "United Kingdom"
     assert places.country_name("XX") is None
