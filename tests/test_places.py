@@ -57,3 +57,16 @@ def test_country_name() -> None:
     assert places.country_name("IS") == "Iceland"
     assert places.country_name("GB") == "United Kingdom"
     assert places.country_name("XX") is None
+
+
+def test_city_timezone_ignores_accents() -> None:
+    assert places.city_timezone("Reykjavik") == places.city_timezone("Reykjavík") == "Atlantic/Reykjavik"
+    assert places.city_timezone("Malaga") == "Europe/Madrid"
+    assert places.city_timezone("Izmir") == "Europe/Istanbul"
+    assert places.city_timezone("Sao Paulo") == "America/Sao_Paulo"
+
+
+def test_a_zone_belongs_to_its_countries() -> None:
+    assert places.zone_in_country("Atlantic/Reykjavik", "is")
+    assert not places.zone_in_country("Atlantic/South_Georgia", "IS")
+    assert places.zone_in_country("Atlantic/South_Georgia", None)

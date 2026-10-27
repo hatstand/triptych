@@ -456,3 +456,34 @@ def test_ferry_without_timezone_departs_where_the_flight_arrived() -> None:
     rs = [r for x in (flight, ferry) if (r := enrich.normalise(x, reservation_id=x.title, ingest_id="i"))]
     enrich.fill_timezones(rs)
     assert (rs[1].start_tz, rs[1].end_tz) == ("Europe/Athens", "Europe/Athens")
+
+
+def test_a_zone_from_the_wrong_country_is_not_the_models_to_give() -> None:
+    # Somewhere neither our places data nor its country's zones place (the US has many), so the
+    # model's zone is all there is: unless it's another country's.
+    def lodge(zone: str) -> Reservation | None:
+        x = ExtractedReservation(
+            kind=Kind.LODGING, title="Motel", start_local="2026-12-01T15:00", city="Smalltown",
+            country_code="US", end_timezone=zone,
+        )  # fmt: skip
+        return enrich.normalise(x, reservation_id="r", ingest_id="i")
+
+    kept, dropped = lodge("America/Denver"), lodge("Atlantic/South_Georgia")
+    assert kept is not None and kept.start_tz == kept.end_tz == "America/Denver"
+    assert dropped is not None and dropped.start_tz is dropped.end_tz is None  # fill_timezones' to find
+    ferry = ExtractedReservation(
+        kind=Kind.FERRY, title="Ferry", start_local="2026-12-03T09:00", start_city="Smalltown",
+        start_country_code="US", start_timezone="Europe/London", city="Smalltown", country_code="US",
+        end_timezone="America/Chicago",
+    )  # fmt: skip
+    r = enrich.normalise(ferry, reservation_id="f", ingest_id="i")
+    assert r is not None and (r.start_tz, r.end_tz) == (None, "America/Chicago")  # where it lands
+
+
+def test_fill_timezones_places_a_city_by_its_country() -> None:
+    hotel = Reservation(
+        id="h", kind=Kind.LODGING, title="Hotel", start_local=datetime(2026, 12, 1, 15), city="Paris",
+        country_code="FR", start_tz="America/Chicago", end_tz="America/Chicago",
+    )  # fmt: skip
+    enrich.fill_timezones([hotel])
+    assert hotel.start_tz == hotel.end_tz == "Europe/Paris"
