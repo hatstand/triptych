@@ -40,7 +40,9 @@ from triptych.models import (
     RenameTrip,
     ReprocessRequest,
     ReservationFields,
+    Role,
     Trip,
+    TripAccess,
     TripRef,
 )
 from triptych.services import assistant as assistant_svc
@@ -206,8 +208,26 @@ def feed_token(user_id: str) -> str:
     return hmac.new(settings.secret_key.encode(), user_id.encode(), hashlib.sha256).hexdigest()[:32]
 
 
-async def load_trip(owner: str, trip_id: str) -> Trip:
-    t = await db.get_trip(owner, trip_id)
+def trip_access(need: Role) -> Any:
+    """The dependency every /trips/{trip_id} route takes: the caller's access to the trip, if it
+    allows `need`. Anything less is a 404, the same as no such trip, so ids say nothing."""
+
+    async def check(trip_id: str, me: User) -> TripAccess:
+        access = await db.trip_access(me.id, trip_id)
+        if access is None or not access.role.allows(need):
+            raise HTTPException(404, "trip not found")
+        return access
+
+    return Depends(check)
+
+
+CanView = Annotated[TripAccess, trip_access(Role.VIEW)]
+CanEdit = Annotated[TripAccess, trip_access(Role.EDIT)]
+Owns = Annotated[TripAccess, trip_access(Role.OWNER)]
+
+
+async def load_trip(access: TripAccess) -> Trip:
+    t = await db.get_trip(access.owner, access.trip_id)
     if t is None:
         raise HTTPException(404, "trip not found")
     return t
@@ -494,10 +514,12 @@ async def add_plans(
 
 
 @app.get("/trips/{trip_id}", response_class=HTMLResponse)
-async def trip_page(request: Request, trip_id: str, me: User) -> Response:
-    t = await load_trip(me.id, trip_id)
-    others = [s for s in await db.trip_summaries(me.id) if s.id != trip_id]
-    sources = await db.trip_sources(me.id, trip_id)
+async def trip_page(request: Request, trip_id: str, me: User, access: CanView) -> Response:
+    t = await load_trip(access)
+    owns = access.role is Role.OWNER
+    # Other trips to merge into and the emails a booking came from are the owner's alone.
+    others = [s for s in await db.trip_summaries(me.id) if s.id != trip_id] if owns else []
+    sources = await db.trip_sources(access.owner, trip_id) if owns else []
     return templates.TemplateResponse(
         request,
         "trip.html",
@@ -513,10 +535,10 @@ async def trip_page(request: Request, trip_id: str, me: User) -> Response:
 
 
 @app.get("/trips/{trip_id}/photo")
-async def trip_photo(trip_id: str, me: User) -> Response:
+async def trip_photo(trip_id: str, access: CanView) -> Response:
     """The trip's destination photo. Pages link it with the photo's version in the query string, so
     a new photo is a new URL and this one can be cached for good."""
-    photo = await db.trip_photo(me.id, trip_id)
+    photo = await db.trip_photo(access.owner, trip_id)
     if photo is None:
         raise HTTPException(404)
     image, content_type = photo
@@ -527,11 +549,11 @@ async def trip_photo(trip_id: str, me: User) -> Response:
 
 @app.post("/trips/{trip_id}/ask", response_class=HTMLResponse, dependencies=[per_user(ratelimit.ASK, "ask")])
 async def trip_ask(
-    request: Request, trip_id: str, me: User, client: Client, question: Annotated[str, Form()]
+    request: Request, trip_id: str, me: User, access: Owns, client: Client, question: Annotated[str, Form()]
 ) -> Response:
-    t = await load_trip(me.id, trip_id)
+    t = await load_trip(access)
     answer: Answer = await client.service_call(
-        assistant_svc.ask, AskTrip(owner=me.id, trip_id=trip_id, question=question)
+        assistant_svc.ask, AskTrip(owner=access.owner, trip_id=trip_id, question=question)
     )
     return templates.TemplateResponse(
         request,
@@ -548,14 +570,21 @@ async def trip_ask(
 
 
 @app.post("/trips/{trip_id}/rename")
-async def trip_rename(trip_id: str, me: User, client: Client, name: Annotated[str, Form()]) -> Response:
-    await client.object_call(user_svc.rename_trip, me.id, RenameTrip(trip_id=trip_id, name=name))
+async def trip_rename(
+    trip_id: str, access: CanEdit, client: Client, name: Annotated[str, Form()]
+) -> Response:
+    await client.object_call(user_svc.rename_trip, access.owner, RenameTrip(trip_id=trip_id, name=name))
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)
 
 
 @app.post("/trips/{trip_id}/merge")
-async def trip_merge(trip_id: str, me: User, client: Client, into: Annotated[str, Form()]) -> Response:
-    await client.object_call(user_svc.merge_trips, me.id, MergeTrips(trip_id=trip_id, into=into))
+async def trip_merge(
+    trip_id: str, me: User, access: Owns, client: Client, into: Annotated[str, Form()]
+) -> Response:
+    target = await db.trip_access(me.id, into)
+    if target is None or target.role is not Role.OWNER:
+        raise HTTPException(404, "trip not found")
+    await client.object_call(user_svc.merge_trips, access.owner, MergeTrips(trip_id=trip_id, into=into))
     return RedirectResponse(f"/trips/{into}", status_code=303)
 
 
@@ -605,39 +634,45 @@ class AddReservationForm(ReservationForm):
 
 @app.post("/trips/{trip_id}/reservations")
 async def reservation_add(
-    trip_id: str, me: User, client: Client, form: Annotated[AddReservationForm, Form()]
+    trip_id: str, access: CanEdit, client: Client, form: Annotated[AddReservationForm, Form()]
 ) -> Response:
     fields = ReservationFields.model_validate(form.model_dump(exclude={"ingest_id"}))
     req = AddReservation(
         trip_id=trip_id, reservation_id=str(uuid.uuid4()), ingest_id=form.ingest_id, fields=fields
     )
-    await client.object_call(user_svc.add_reservation, me.id, req)
+    await client.object_call(user_svc.add_reservation, access.owner, req)
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)
 
 
 @app.post("/trips/{trip_id}/reservations/{reservation_id}/edit")
 async def reservation_edit(
-    trip_id: str, reservation_id: str, me: User, client: Client, form: Annotated[ReservationForm, Form()]
+    trip_id: str,
+    reservation_id: str,
+    access: CanEdit,
+    client: Client,
+    form: Annotated[ReservationForm, Form()],
 ) -> Response:
     fields = ReservationFields.model_validate(form.model_dump())
     await client.object_call(
         user_svc.edit_reservation,
-        me.id,
+        access.owner,
         EditReservation(trip_id=trip_id, reservation_id=reservation_id, fields=fields),
     )
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)
 
 
 @app.post("/trips/{trip_id}/delete")
-async def trip_delete(trip_id: str, me: User, client: Client) -> Response:
-    await client.object_call(user_svc.delete_trip, me.id, TripRef(trip_id=trip_id))
+async def trip_delete(trip_id: str, access: Owns, client: Client) -> Response:
+    await client.object_call(user_svc.delete_trip, access.owner, TripRef(trip_id=trip_id))
     return RedirectResponse("/", status_code=303)
 
 
 @app.post("/trips/{trip_id}/reservations/{reservation_id}/delete")
-async def reservation_delete(trip_id: str, reservation_id: str, me: User, client: Client) -> Response:
+async def reservation_delete(trip_id: str, reservation_id: str, access: CanEdit, client: Client) -> Response:
     still_exists = await client.object_call(
-        user_svc.remove_reservation, me.id, RemoveReservation(trip_id=trip_id, reservation_id=reservation_id)
+        user_svc.remove_reservation,
+        access.owner,
+        RemoveReservation(trip_id=trip_id, reservation_id=reservation_id),
     )
     return RedirectResponse(f"/trips/{trip_id}" if still_exists else "/", status_code=303)
 
@@ -739,8 +774,8 @@ def ics(body: bytes, filename: str) -> Response:
 
 
 @app.get("/trips/{trip_id}/calendar.ics")
-async def trip_ics(trip_id: str, me: User) -> Response:
-    t = await load_trip(me.id, trip_id)
+async def trip_ics(trip_id: str, access: CanView) -> Response:
+    t = await load_trip(access)
     return ics(ical.calendar([t], t.name), f"{trip_id}.ics")
 
 
@@ -760,8 +795,8 @@ async def api_overview(me: User) -> Overview:
 
 
 @app.get("/api/trips/{trip_id}")
-async def api_trip(trip_id: str, me: User) -> Trip:
-    return await load_trip(me.id, trip_id)
+async def api_trip(trip_id: str, access: CanView) -> Trip:
+    return await load_trip(access)
 
 
 @app.get("/livez")
