@@ -90,7 +90,7 @@ async def changes(url: str) -> AsyncGenerator[str | None]:
 RESERVATION_COLUMNS = """
     id::text, kind, title, provider, confirmation_code, start_local, start_tz, end_local, end_tz,
     start_location, end_location, address, city, service_number, seat, travelers, notes,
-    source_ingest_id, source_run_id::text, edited_fields
+    source_ingest_id, source_run_id::text, edited_fields, country_code
 """
 
 # What a reservation's owner can correct on the trip page (ReservationFields).
@@ -105,6 +105,10 @@ UNLESS_EDITED = ",\n".join(
     f"{f} = CASE WHEN '{f}' = ANY(reservation.edited_fields) THEN reservation.{f} ELSE EXCLUDED.{f} END"
     for f in EDITABLE
     if f != "kind"
+) + (
+    # A city its owner corrected may be in another country than the one extraction gave.
+    ",\ncountry_code = CASE WHEN 'city' = ANY(reservation.edited_fields) THEN reservation.country_code"
+    " ELSE EXCLUDED.country_code END"
 )
 
 # A trip's photo credit (columns named photo_*), from the place_photo row for its place if that has an
@@ -169,8 +173,8 @@ async def _upsert_reservation(conn: AsyncConnection, trip_id: str, r: Reservatio
         f"""
         INSERT INTO reservation (id, trip_id, kind, title, provider, confirmation_code, start_local,
             start_tz, end_local, end_tz, start_location, end_location, address, city, service_number,
-            seat, travelers, notes, source_ingest_id, source_run_id, dedupe_key)
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            seat, travelers, notes, source_ingest_id, source_run_id, dedupe_key, country_code)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         ON CONFLICT (trip_id, dedupe_key) DO UPDATE SET
             -- keep the existing id: it keys this segment's scheduled reminders (see reminders.py)
             {UNLESS_EDITED},
@@ -180,7 +184,7 @@ async def _upsert_reservation(conn: AsyncConnection, trip_id: str, r: Reservatio
             r.id, trip_id, r.kind.value, r.title, r.provider, r.confirmation_code, r.start_local,
             r.start_tz, r.end_local, r.end_tz, r.start_location, r.end_location, r.address, r.city,
             r.service_number, r.seat, r.travelers, r.notes, r.source_ingest_id, r.source_run_id,
-            dedupe_key(r),
+            dedupe_key(r), r.country_code,
         ),
     )  # fmt: skip
 
@@ -860,6 +864,7 @@ async def apply_reprocess(
                     start_local = %s, start_tz = %s, end_local = %s, end_tz = %s,
                     start_location = %s, end_location = %s, address = %s, city = %s,
                     service_number = %s, seat = %s, travelers = %s, notes = %s, source_run_id = %s,
+                    country_code = CASE WHEN 'city' = ANY(a.edited_fields) THEN a.country_code ELSE %s END,
                     -- A corrected one keeps the key its owner's edits were made against.
                     dedupe_key = CASE WHEN a.edited_fields = '{}' THEN %s ELSE a.dedupe_key END
                 WHERE a.id = %s AND (a.edited_fields <> '{}' OR NOT EXISTS (SELECT 1 FROM reservation b
@@ -868,7 +873,8 @@ async def apply_reprocess(
                 """,
                 (u.kind.value, u.title, u.provider, u.confirmation_code, u.start_local, u.start_tz,
                  u.end_local, u.end_tz, u.start_location, u.end_location, u.address, u.city, u.service_number,
-                 u.seat, u.travelers, u.notes, run_id, dedupe_key(u), u.id, dedupe_key(u)),
+                 u.seat, u.travelers, u.notes, run_id, u.country_code, dedupe_key(u), u.id,
+                 dedupe_key(u)),
             )  # fmt: skip
             if (row := await cur.fetchone()) is not None and row[0] not in touched:
                 touched.append(row[0])
@@ -1048,8 +1054,13 @@ async def edit_reservation(
         values = fields.model_dump(include=set(changed))
         if "kind" in values:
             values["kind"] = fields.kind.value
+        setting: list[LiteralString] = list(changed)
+        if "city" in changed:
+            # Extraction's country was the old city's; the trip page doesn't ask for one.
+            setting.append("country_code")
+            values["country_code"] = None
         await conn.execute(
-            f"""UPDATE reservation SET {", ".join(f"{f} = %({f})s" for f in changed)},
+            f"""UPDATE reservation SET {", ".join(f"{f} = %({f})s" for f in setting)},
                     edited_fields = %(edited)s
                 WHERE id = %(id)s""",
             {**values, "edited": sorted({*r.edited_fields, *changed}), "id": reservation_id},
@@ -1293,6 +1304,41 @@ async def refill_timezones() -> None:
         cur = await conn.execute("SELECT id::text FROM trip")
         for (trip_id,) in await cur.fetchall():
             await _fill_timezones(conn, trip_id)
+
+
+async def fill_countries() -> None:
+    """Give reservations filed before they had a country_code the one their extraction run gave,
+    paired with the run's answer the way a reprocess pairs them. Leaves cities their owners corrected
+    without one. Not under the User object: it only does what filing would have."""
+    async with connection() as conn, conn.transaction():
+        async with conn.cursor(row_factory=class_row(Reservation)) as cur:
+            await cur.execute(
+                f"""SELECT {RESERVATION_COLUMNS} FROM reservation
+                    WHERE country_code IS NULL AND source_run_id IS NOT NULL
+                      AND NOT 'city' = ANY(edited_fields)"""
+            )
+            todo = await cur.fetchall()
+        cur = await conn.execute(
+            "SELECT id::text, dedupe_key FROM reservation WHERE id = ANY(%s::uuid[])", ([r.id for r in todo],)
+        )
+        keys = dict(await cur.fetchall())
+        by_run: dict[str, list[Reservation]] = {}
+        for r in todo:
+            by_run.setdefault(r.source_run_id or "", []).append(r)
+        for run_id, current in by_run.items():
+            cur = await conn.execute("SELECT output FROM extraction_run WHERE id = %s", (run_id,))
+            if (row := await cur.fetchone()) is None or row[0] is None:
+                continue
+            made = [
+                r
+                for i, x in enumerate(Extraction.model_validate(row[0]).reservations)
+                if (r := enrich.normalise(x, reservation_id=f"run-{i}", ingest_id="")) is not None
+            ]
+            for i, r in pair_up(current, made, keys).items():
+                if made[i].country_code:
+                    await conn.execute(
+                        "UPDATE reservation SET country_code = %s WHERE id = %s", (made[i].country_code, r.id)
+                    )
 
 
 async def retitle_trips() -> None:

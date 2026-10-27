@@ -51,3 +51,9 @@ def test_an_alias_is_read_as_the_canonical_zone_it_links_to() -> None:
     assert places.canonical_timezone("US/Eastern") == "America/New_York"
     for nonsense in ("Pacific/Wellington", "", "../../etc/passwd", "/etc/passwd", "Europe"):
         assert places.canonical_timezone(nonsense) is None, nonsense
+
+
+def test_country_name() -> None:
+    assert places.country_name("IS") == "Iceland"
+    assert places.country_name("GB") == "United Kingdom"
+    assert places.country_name("XX") is None

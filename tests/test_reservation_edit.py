@@ -13,6 +13,9 @@ from triptych import db, enrich
 from triptych.auth import Me
 from triptych.models import (
     EditReservation,
+    ExtractedReservation,
+    Extraction,
+    ExtractionRun,
     InboxItem,
     Kind,
     Reservation,
@@ -39,7 +42,7 @@ def hotel() -> Reservation:
     return Reservation(
         id=str(uuid.uuid4()), kind=Kind.LODGING, title="Hotel Avenida", confirmation_code="H1",
         start_local=datetime(2026, 11, 13, 15, 0), end_local=datetime(2026, 11, 14, 11, 0),
-        city="Lisbon", source_ingest_id="mail-1",
+        city="Lisbon", country_code="PT", source_ingest_id="mail-1",
     )  # fmt: skip
 
 
@@ -143,6 +146,47 @@ async def test_reprocessing_keeps_the_corrections_and_finds_the_corrected_one(me
     # Applying the same run again still finds it.
     again = await db.apply_reprocess(me, "mail-1", str(uuid.uuid4()), run)
     assert again.reconciliation.added == [] and again.reconciliation.changes == []
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_a_corrected_city_drops_the_extracted_country(me: str) -> None:
+    [trip_id] = (await db.file_reservations(me, "mail-1", [hotel()])).trip_ids
+    r = (await stored(me, trip_id))[Kind.LODGING]
+    assert r.country_code == "PT"
+    await db.edit_reservation(me, trip_id, r.id, corrected(r, city="Vigo"))
+    r = (await stored(me, trip_id))[Kind.LODGING]
+    assert (r.city, r.country_code, r.edited_fields) == ("Vigo", None, ["city"])
+    # Filing the booking again doesn't bring the old city's country back.
+    await db.file_reservations(me, "mail-2", [hotel().model_copy(update={"source_ingest_id": "mail-2"})])
+    assert (await stored(me, trip_id))[Kind.LODGING].country_code is None
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_countries_are_filled_in_from_the_run(me: str) -> None:
+    await db.upsert_inbox(
+        me,
+        InboxItem(ingest_id="mail-1", source="email", label="x", received_at=datetime.now(UTC), state="done"),
+    )
+    extracted = ExtractedReservation(
+        kind=Kind.LODGING, title="Hotel Avenida", confirmation_code="H1", start_local="2026-11-13T15:00",
+        end_local="2026-11-14T11:00", city="Lisbon", country_code="PT",
+    )  # fmt: skip
+    output = Extraction(is_travel_document=True, reservations=[extracted])
+    run_id = str(uuid.uuid4())
+    await db.add_extraction_run(
+        ExtractionRun(
+            id=run_id, ingest_id="mail-1", owner=me, input_id=None, model="m", model_digest=None,
+            prompt_version="p", code_version="dev", params={}, purpose="ingest", output=output,
+        )
+    )  # fmt: skip
+    # Filed before reservations kept their country.
+    old = hotel().model_copy(update={"country_code": None, "source_run_id": run_id})
+    [trip_id] = (await db.file_reservations(me, "mail-1", [old])).trip_ids
+    assert (await stored(me, trip_id))[Kind.LODGING].country_code is None
+    await db.fill_countries()
+    assert (await stored(me, trip_id))[Kind.LODGING].country_code == "PT"
 
 
 def test_fill_timezones_leaves_what_the_owner_set() -> None:

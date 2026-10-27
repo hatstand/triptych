@@ -72,6 +72,12 @@ def timezones() -> tuple[str, ...]:
     return tuple(sorted({row[2] for row in rows}))
 
 
+@cache
+def country_name(code: str) -> str | None:
+    """A country's English name ("Iceland", "United Kingdom"), if we have places in it."""
+    return next((p.country for p in _places().values() if p.country_code == code), None)
+
+
 def _zone_file(name: str) -> bytes | None:
     try:
         return importlib.resources.files("tzdata").joinpath("zoneinfo", *name.split("/")).read_bytes()

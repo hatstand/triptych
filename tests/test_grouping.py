@@ -123,6 +123,32 @@ def test_trip_title_caps_cities_and_spans_years() -> None:
     assert trip_title([res(Kind.ACTIVITY, "2026-12-20T10:00")]) == "Trip, December 2026"
 
 
+def stay(day: int, city: str, country: str | None) -> Reservation:
+    return res(Kind.LODGING, f"2025-08-{day}T15:00", f"2025-08-{day + 1}T11:00", city).model_copy(
+        update={"country_code": country}
+    )
+
+
+def test_trip_with_many_stops_is_named_by_country() -> None:
+    ferry = res(Kind.FERRY, "2025-08-12T11:30", "2025-08-14T08:30", "Seydisfjordur").model_copy(
+        update={"start_location": "Hirtshals", "country_code": "IS"}
+    )
+    iceland = [
+        stay(day, city, "IS")
+        for day, city in ((15, "Vik i Myrdal"), (16, "Selfoss"), (17, "Borgarnes"), (18, "Akureyri"))
+    ]
+    assert trip_title([ferry, *iceland]) == "Iceland, August 2025"
+    # A few cities are still named, however many countries they're in.
+    assert trip_title(iceland[:3]) == "Vik i Myrdal, Selfoss & Borgarnes, August 2025"
+    iberia = [stay(20, "Madrid", "ES"), stay(22, "Seville", "ES")]
+    assert trip_title([*iceland[:2], *iberia]) == "Iceland & Spain, August 2025"
+    # Too many countries, or a stay in an unknown one, and it lists cities as before.
+    many = [*iceland[:1], *iberia, stay(24, "Lisbon", "PT"), stay(26, "Paris", "FR")]
+    assert trip_title(many) == "Vik i Myrdal, Madrid & 3 more, August 2025"
+    unknown = [*iceland[:3], stay(24, "Somewhere", None)]
+    assert trip_title(unknown) == "Vik i Myrdal, Selfoss & 2 more, August 2025"
+
+
 def leg(start: str, end: str, origin: str, city: str) -> Reservation:
     return res(Kind.FLIGHT, start, end, city).model_copy(update={"start_location": origin})
 
