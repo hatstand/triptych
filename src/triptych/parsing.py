@@ -7,6 +7,7 @@ import io
 import re
 from email.message import EmailMessage
 
+import pillow_heif
 from bs4 import BeautifulSoup
 from pypdf import PdfReader
 
@@ -16,6 +17,22 @@ MAX_TEXT_CHARS = 30_000
 MAX_IMAGES = 4
 # Below this many characters of extractable text we assume a PDF is a scan and rasterise it.
 SCANNED_PDF_THRESHOLD = 200
+# ISO-BMFF brands of HEIF stills (iPhone photos), at bytes 8-12 after "ftyp" at 4-8. The model can't
+# read HEIF, so these are sent as JPEG instead.
+HEIF_BRANDS = {b"heic", b"heix", b"heim", b"heis", b"hevc", b"hevx", b"mif1", b"msf1"}
+
+
+def _is_heif(data: bytes) -> bool:
+    return data[4:8] == b"ftyp" and data[8:12] in HEIF_BRANDS
+
+
+def _image_b64(data: bytes) -> str:
+    """An image as the model gets it: as it is, unless it's HEIF, which becomes a JPEG."""
+    if _is_heif(data):
+        buf = io.BytesIO()
+        pillow_heif.open_heif(data).to_pillow().convert("RGB").save(buf, format="JPEG", quality=90)
+        data = buf.getvalue()
+    return base64.b64encode(data).decode()
 
 
 def html_to_text(html: str) -> str:
@@ -67,8 +84,8 @@ def _parse_email(raw: bytes) -> ParsedDocument:
             t, imgs = pdf_to_parts(payload)
             texts.append(f"--- attachment {part.get_filename() or ''} ---\n{t}")
             images.extend(imgs)
-        elif ctype.startswith("image/"):
-            images.append(base64.b64encode(payload).decode())
+        elif ctype.startswith("image/") or _is_heif(payload):
+            images.append(_image_b64(payload))
         elif ctype == "message/rfc822":
             # A forwarded-as-attachment email.
             inner = _parse_email(payload)
@@ -100,8 +117,8 @@ def parse(req: IngestRequest) -> ParsedDocument:
     elif ctype == "application/pdf" or name.endswith(".pdf"):
         text, images = pdf_to_parts(data)
         doc = ParsedDocument(subject=req.subject, text=text, images_b64=images)
-    elif ctype.startswith("image/"):
-        doc = ParsedDocument(subject=req.subject, text="", images_b64=[req.data_b64])
+    elif ctype.startswith("image/") or _is_heif(data):  # a .heic can come as application/octet-stream
+        doc = ParsedDocument(subject=req.subject, text="", images_b64=[_image_b64(data)])
     else:
         text = data.decode("utf-8", "replace")
         if ctype == "text/html" or "<html" in text[:500].lower():
