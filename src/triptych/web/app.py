@@ -568,8 +568,10 @@ async def trip_ask(
 
 
 @app.post("/trips/{trip_id}/links", dependencies=[per_user(ratelimit.SHARE_MANAGE, "share")])
-async def link_create(access: Owns, label: Annotated[str, Form()] = "") -> Response:
-    await sharing.create_link(access.owner, access.trip_id, label[:100])
+async def link_create(
+    access: Owns, label: Annotated[str, Form()] = "", expire: Annotated[bool, Form()] = False
+) -> Response:
+    await sharing.create_link(access.owner, access.trip_id, label[:100], expire_after_trip=expire)
     return RedirectResponse(f"/trips/{access.trip_id}#share", status_code=303)
 
 
@@ -617,6 +619,19 @@ async def shared_page(request: Request, token: str) -> Response:
         "days": journeys.timeline(shown.reservations),
     }
     return templates.TemplateResponse(request, "trip.html", context, headers=LINK_HEADERS)
+
+
+@app.get("/s/{token}/calendar.ics", dependencies=[per_client(ratelimit.SHARE_VIEW, "share-view")])
+async def shared_ics(token: str) -> Response:
+    """The shared trip as a calendar to download or subscribe to, as redacted as its page. It goes
+    quiet when the link is revoked or expires."""
+    found = await linked_trip(token)
+    t = await db.get_trip(found.owner, found.trip_id)
+    if t is None:
+        raise HTTPException(404)
+    resp = ics(ical.calendar([sharing.shared_view(t)], t.name), "trip.ics")
+    resp.headers.update(LINK_HEADERS)
+    return resp
 
 
 @app.get("/s/{token}/photo", dependencies=[per_client(ratelimit.SHARE_VIEW, "share-view")])

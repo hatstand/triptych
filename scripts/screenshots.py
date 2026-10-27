@@ -482,7 +482,7 @@ async def main() -> None:
     # The upcoming trip with the connecting flight, shared by two links.
     upcoming = min((t for t in trips if t.start_date >= date.today()), key=lambda t: t.start_date)
     link_id = await sharing.create_link(me, upcoming.id, "Mum")
-    await sharing.create_link(me, upcoming.id, "Airbnb host")
+    await sharing.create_link(me, upcoming.id, "Airbnb host", expire_after_trip=True)
     assert link_id is not None
     await db.close()
 

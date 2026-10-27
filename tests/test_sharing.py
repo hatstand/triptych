@@ -4,7 +4,7 @@ import logging
 import os
 import uuid
 from collections.abc import Iterator
-from datetime import datetime
+from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -190,3 +190,39 @@ async def test_the_owner_makes_and_revokes_links_from_the_trip_page(owner: str, 
     assert f"/s/{link.token}" in page and "Host" in page
     assert client.post(f"/trips/{trip_id}/links/{link.id}/delete").status_code == 303
     assert await sharing.links(owner, trip_id) == []
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_a_link_can_expire_a_week_after_the_trip(owner: str) -> None:
+    trip_id = await a_trip(owner)  # its flight lands 14 Nov 2026
+    link_id = await sharing.create_link(owner, trip_id, None, expire_after_trip=True)
+    assert link_id is not None
+    async with db.connection() as conn:
+        cur = await conn.execute("SELECT expires_at FROM share_link WHERE id = %s", (link_id,))
+        row = await cur.fetchone()
+    assert row is not None and row[0] == datetime(2026, 11, 22, tzinfo=UTC)
+    (link,) = await sharing.links(owner, trip_id)
+    assert link.last_day == date(2026, 11, 21)
+
+    async with db.connection() as conn:
+        await conn.execute("UPDATE share_link SET expires_at = now() WHERE id = %s", (link_id,))
+    assert await sharing.links(owner, trip_id) == []
+    assert await sharing.delete_expired_links() == 1
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_a_links_calendar_is_as_redacted_as_its_page(owner: str, client: TestClient) -> None:
+    trip_id = await a_trip(owner)
+    link_id = await sharing.create_link(owner, trip_id, None)
+    assert link_id is not None
+    resp = client.get(f"/s/{sharing.token_for(link_id)}/calendar.ics")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/calendar")
+    assert resp.headers["referrer-policy"] == "no-referrer"
+    assert "TP 1351 LIS" in resp.text and "TAP" in resp.text
+    for secret in ("SECRET1", "12A", "Ada Lovelace", "door code"):
+        assert secret not in resp.text
+    await sharing.revoke_link(owner, trip_id, link_id)
+    assert client.get(f"/s/{sharing.token_for(link_id)}/calendar.ics").status_code == 404

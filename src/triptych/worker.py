@@ -14,7 +14,7 @@ import restate
 from hypercorn.asyncio import serve
 from hypercorn.config import Config
 
-from triptych import db, telemetry
+from triptych import db, sharing, telemetry
 from triptych.config import settings
 from triptych.models import PhotoRequest
 from triptych.services import place_photo
@@ -96,6 +96,14 @@ async def request_photos() -> None:
         log.exception("couldn't ask for missing photos")
 
 
+async def delete_expired_links() -> None:
+    try:
+        if n := await sharing.delete_expired_links():
+            log.info("deleted expired share links", extra={"count": n})
+    except Exception:
+        log.exception("couldn't delete expired share links")
+
+
 async def start_up() -> None:
     if await register():
         await fill_timezones()
@@ -103,6 +111,7 @@ async def start_up() -> None:
         await canonicalise_flight_numbers()
         await retitle_trips()
         await request_photos()
+    await delete_expired_links()
 
 
 async def main() -> None:
