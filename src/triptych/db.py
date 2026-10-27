@@ -38,6 +38,7 @@ from triptych.models import (
     Reservation,
     ReservationFields,
     Role,
+    SharedTripSummary,
     Trip,
     TripAccess,
     TripSummary,
@@ -72,8 +73,20 @@ async def close() -> None:
 
 
 async def _changed(conn: AsyncConnection, owner: str) -> None:
-    """Tell listeners `owner`'s trips, inbox or notifications changed, once this transaction commits."""
-    await conn.execute("SELECT pg_notify('triptych_changes', %s)", (owner,))
+    """Tell listeners `owner`'s trips, inbox or notifications changed, once this transaction commits,
+    and so did everyone any of `owner`'s trips are shared with."""
+    await conn.execute(
+        """SELECT pg_notify('triptych_changes', u::text) FROM (
+               SELECT %(owner)s::uuid AS u
+               UNION SELECT m.user_id FROM trip_member m JOIN trip t ON t.id = m.trip_id
+               WHERE t.owner = %(owner)s AND m.user_id IS NOT NULL) us""",
+        {"owner": owner},
+    )
+
+
+async def notify_changed(conn: AsyncConnection, user_id: str) -> None:
+    """Tell listeners `user_id`'s pages changed (an invite came or went), once this transaction commits."""
+    await conn.execute("SELECT pg_notify('triptych_changes', %s)", (user_id,))
 
 
 async def changes(url: str) -> AsyncGenerator[str | None]:
@@ -202,6 +215,18 @@ async def _merge_trip(conn: AsyncConnection, absorbed: str, into: str) -> None:
     await conn.execute("UPDATE notification SET trip_id = %s WHERE trip_id = %s", (into, absorbed))
     # Both trips are the same owner's, so whoever the absorbed one was shared with sees the merged one.
     await conn.execute("UPDATE share_link SET trip_id = %s WHERE trip_id = %s", (into, absorbed))
+    # Someone invited to both keeps one invite, with the more generous role.
+    same = "(i.email = a.email OR i.user_id = a.user_id)"
+    await conn.execute(
+        f"""UPDATE trip_member i SET role = 'edit' FROM trip_member a
+            WHERE i.trip_id = %s AND a.trip_id = %s AND {same} AND a.role = 'edit'""",
+        (into, absorbed),
+    )
+    await conn.execute(
+        f"DELETE FROM trip_member a USING trip_member i WHERE a.trip_id = %s AND i.trip_id = %s AND {same}",
+        (absorbed, into),
+    )
+    await conn.execute("UPDATE trip_member SET trip_id = %s WHERE trip_id = %s", (into, absorbed))
     await conn.execute(
         """UPDATE inbox_item SET trip_ids = array_replace(trip_ids, %s::uuid, %s::uuid)
            WHERE %s::uuid = ANY(trip_ids)""",
@@ -1416,11 +1441,45 @@ async def trip_access(user_id: str, trip_id: str) -> TripAccess | None:
     except ValueError:
         return None
     async with connection() as conn:
-        cur = await conn.execute("SELECT owner::text FROM trip WHERE id = %s", (trip_id,))
+        cur = await conn.execute(
+            """SELECT t.owner::text, m.role FROM trip t
+               LEFT JOIN trip_member m ON m.trip_id = t.id AND m.user_id = %s
+               WHERE t.id = %s""",
+            (user_id, trip_id),
+        )
         row = await cur.fetchone()
-    if row is None or row[0] != user_id:
+    if row is None:
         return None
-    return TripAccess(trip_id=trip_id, owner=row[0], role=Role.OWNER)
+    owner, member_role = row
+    role = Role.OWNER if owner == user_id else Role(member_role) if member_role else None
+    return TripAccess(trip_id=trip_id, owner=owner, role=role) if role else None
+
+
+async def shared_trip_summaries(user_id: str) -> list[SharedTripSummary]:
+    """Other people's trips that `user_id` has accepted, soonest first."""
+    async with connection() as conn, conn.cursor(row_factory=dict_row) as cur:
+        await cur.execute(
+            SUMMARY_SQL
+            + """ WHERE t.id IN (SELECT trip_id FROM trip_member WHERE user_id = %s)
+                  GROUP BY t.id, p.place ORDER BY start_date""",
+            (user_id,),
+        )
+        summaries = [TripSummary(**row, photo=_photo(row)) for row in await cur.fetchall()]
+        await cur.execute(
+            """SELECT m.trip_id::text AS trip_id, m.role,
+                      (SELECT e.email FROM user_email e WHERE e.user_id = t.owner
+                       ORDER BY e.created_at, e.email LIMIT 1) AS shared_by
+               FROM trip_member m JOIN trip t ON t.id = m.trip_id WHERE m.user_id = %s""",
+            (user_id,),
+        )
+        memberships = {row["trip_id"]: row for row in await cur.fetchall()}
+    return [
+        SharedTripSummary(
+            **s.model_dump(), role=Role(memberships[s.id]["role"]), shared_by=memberships[s.id]["shared_by"]
+        )
+        for s in summaries
+        if s.id in memberships
+    ]
 
 
 async def get_trip(owner: str, trip_id: str) -> Trip | None:

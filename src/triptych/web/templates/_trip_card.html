@@ -1,7 +1,10 @@
 {% from "_icons.html" import icon %}
 {% from "_photo.html" import photo_title %}
-{#- Drag one card onto another to merge the trips (merge.ts) -#}
-<a class="card trip-card{{ ' featured' if featured }}" href="/trips/{{ t.id }}" draggable="true" data-trip-id="{{ t.id }}" data-trip-name="{{ t.name }}">
+{#- Drag one card onto another to merge the trips (merge.ts). Someone else's trip (a
+    SharedTripSummary, with shared_by) can't be merged. -#}
+{% set theirs = t.shared_by is defined %}
+<a class="card trip-card{{ ' featured' if featured }}" href="/trips/{{ t.id }}"
+   {%- if not theirs %} draggable="true" data-trip-id="{{ t.id }}" data-trip-name="{{ t.name }}"{% endif %}>
   {% if t.photo and featured %}
   {#- 3:2 beside the text, 5:2 across the top of the card on a phone (style.css) -#}
   <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}" alt=""
@@ -20,6 +23,7 @@
       {% if t.end_date != t.start_date %}– {{ t.end_date.strftime('%d %b %Y') }}{% else %}{{ t.start_date.strftime('%Y') }}{% endif %}
     </div>
     <div class="trip-name">{{ t.name }}</div>
+    {% if theirs %}<div class="muted small">Shared by {{ t.shared_by or 'someone' }}</div>{% endif %}
     <div class="muted small">{{ t.reservation_count }} item{{ 's' if t.reservation_count != 1 }}
       {% if featured %}{% elif t.start_date > today %}· in {{ (t.start_date - today).days }} days{% elif t.end_date >= today %}· now{% endif %}</div>
   </div>

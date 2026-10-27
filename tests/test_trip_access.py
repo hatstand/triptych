@@ -19,7 +19,7 @@ needs_db = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="T
 
 # The least each trip route needs. A new trip route fails test_every_trip_route_says_who_may_use_it
 # until it's listed here.
-NEEDS = {
+NEEDS: dict[tuple[str, str], Role | None] = {
     ("GET", "/trips/{trip_id}"): Role.VIEW,
     ("GET", "/trips/{trip_id}/photo"): Role.VIEW,
     ("GET", "/trips/{trip_id}/calendar.ics"): Role.VIEW,
@@ -33,6 +33,12 @@ NEEDS = {
     ("POST", "/trips/{trip_id}/delete"): Role.OWNER,
     ("POST", "/trips/{trip_id}/links"): Role.OWNER,
     ("POST", "/trips/{trip_id}/links/{link_id}/delete"): Role.OWNER,
+    ("POST", "/trips/{trip_id}/members"): Role.OWNER,
+    ("POST", "/trips/{trip_id}/members/remove"): Role.OWNER,
+    ("POST", "/trips/{trip_id}/leave"): Role.VIEW,
+    # Invitees have no access until they accept.
+    ("POST", "/trips/{trip_id}/accept"): None,
+    ("POST", "/trips/{trip_id}/decline"): None,
 }
 
 
@@ -120,7 +126,7 @@ def test_merging_needs_both_trips_to_be_yours(monkeypatch: pytest.MonkeyPatch) -
 
 @needs_db
 @pytest.mark.anyio
-async def test_only_the_owner_has_access_for_now(database: str) -> None:
+async def test_the_owner_has_access_and_strangers_have_none(database: str) -> None:
     me, other = await db.user_for_email("me@example.com"), await db.user_for_email("them@example.com")
     hotel = Reservation(
         id=str(uuid.uuid4()),

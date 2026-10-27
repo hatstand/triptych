@@ -227,10 +227,11 @@ Owns = Annotated[TripAccess, trip_access(Role.OWNER)]
 
 
 async def load_trip(access: TripAccess) -> Trip:
+    """The trip as `access` may see it: a viewer's comes without confirmation codes."""
     t = await db.get_trip(access.owner, access.trip_id)
     if t is None:
         raise HTTPException(404, "trip not found")
-    return t
+    return sharing.viewer_view(t) if access.role is Role.VIEW else t
 
 
 async def overview(owner: str) -> Overview:
@@ -431,7 +432,9 @@ def google_calendar_link(feed_url: str) -> str:
 
 
 async def home_context(me: auth.Me) -> dict[str, Any]:
-    ov = await overview(me.id)
+    ov, shared, invites = await asyncio.gather(
+        overview(me.id), db.shared_trip_summaries(me.id), sharing.pending_invites(me.id)
+    )
     today = date.today()
     feed_url = f"{settings.public_base_url}/feed/{feed_token(me.id)}.ics?u={me.id}"
     return {
@@ -439,6 +442,8 @@ async def home_context(me: auth.Me) -> dict[str, Any]:
         "inbound_address": settings.inbound_address,
         "upcoming": [t for t in ov.trips if t.end_date >= today],
         "past": [t for t in reversed(ov.trips) if t.end_date < today],
+        "shared": shared,
+        "invites": invites,
         "inbox": ov.inbox[:10],
         "notifications": ov.notifications,
         "feed_url": feed_url,
@@ -520,6 +525,7 @@ async def trip_context(me: auth.Me, access: TripAccess, t: Trip) -> dict[str, An
     others = [s for s in await db.trip_summaries(me.id) if s.id != t.id] if owns else []
     sources = await db.trip_sources(access.owner, t.id) if owns else []
     links = await sharing.links(access.owner, t.id) if owns else []
+    members = await sharing.members(access.owner, t.id) if owns else []
     return {
         "email": me.email,
         "role": access.role,
@@ -530,6 +536,8 @@ async def trip_context(me: auth.Me, access: TripAccess, t: Trip) -> dict[str, An
         "others": others,
         "sources": sources,
         "links": links,
+        "members": members,
+        "shared_by": None if owns else await db.primary_email(access.owner),
         "base_url": settings.public_base_url.rstrip("/"),
     }
 
@@ -579,6 +587,38 @@ async def link_create(
 async def link_revoke(link_id: str, access: Owns) -> Response:
     await sharing.revoke_link(access.owner, access.trip_id, link_id)
     return RedirectResponse(f"/trips/{access.trip_id}#share", status_code=303)
+
+
+@app.post("/trips/{trip_id}/members", dependencies=[per_user(ratelimit.SHARE_MANAGE, "share")])
+async def member_invite(access: Owns, email: Annotated[str, Form()]) -> Response:
+    await sharing.invite(access.owner, access.trip_id, email[:320])
+    return RedirectResponse(f"/trips/{access.trip_id}#share", status_code=303)
+
+
+@app.post("/trips/{trip_id}/members/remove")
+async def member_remove(access: Owns, email: Annotated[str, Form()]) -> Response:
+    await sharing.remove_member(access.owner, access.trip_id, email)
+    return RedirectResponse(f"/trips/{access.trip_id}#share", status_code=303)
+
+
+@app.post("/trips/{trip_id}/leave")
+async def member_leave(me: User, access: CanView) -> Response:
+    await sharing.leave(me.id, access.trip_id)
+    return RedirectResponse("/", status_code=303)
+
+
+# Invitees have no access to the trip until they accept, so these take no trip_access.
+@app.post("/trips/{trip_id}/accept")
+async def invite_accept(trip_id: str, me: User) -> Response:
+    if not await sharing.accept(me.id, trip_id):
+        raise HTTPException(404, "invite not found")
+    return RedirectResponse(f"/trips/{trip_id}", status_code=303)
+
+
+@app.post("/trips/{trip_id}/decline")
+async def invite_decline(trip_id: str, me: User) -> Response:
+    await sharing.decline(me.id, trip_id)
+    return RedirectResponse("/", status_code=303)
 
 
 # --- shared links (no sign-in) ---------------------------------------------------------------

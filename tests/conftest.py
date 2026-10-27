@@ -55,8 +55,10 @@ def own_every_trip(monkeypatch: pytest.MonkeyPatch) -> None:
             return None
         return TripAccess(trip_id=trip_id, owner=user_id, role=Role.OWNER)
 
-    async def links(owner: str, trip_id: str) -> list[sharing.ShareLink]:
+    async def nothing(*_: object) -> list[object]:
         return []
 
     monkeypatch.setattr(db, "trip_access", trip_access)
-    monkeypatch.setattr(sharing, "links", links)
+    monkeypatch.setattr(db, "shared_trip_summaries", nothing)
+    for unshared in ("links", "members", "pending_invites"):
+        monkeypatch.setattr(sharing, unshared, nothing)
