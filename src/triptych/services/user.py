@@ -120,6 +120,7 @@ async def add_reservation(ctx: restate.ObjectContext, req: AddReservation) -> No
         req.reservation_id,
         req.ingest_id,
         req.fields,
+        req.added_by,
     )
     await reminders.schedule(ctx, ctx.key(), filed.reservations)
     await place_photo.request(ctx, filed.trip_ids)

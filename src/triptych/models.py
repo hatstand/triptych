@@ -209,6 +209,8 @@ class Reservation(ReservationFields):
     """The extraction run (db extraction_run) this came from."""
     edited_fields: list[str] = Field(default_factory=list)
     """The fields its owner corrected, which filing and reprocessing leave as they are."""
+    added_by: str | None = None
+    """Who added it by hand, if that wasn't the trip's owner but an editor they shared it with."""
 
     @property
     def start_date(self) -> date:
@@ -470,6 +472,8 @@ class AddReservation(BaseModel):
     ingest_id: str | None
     """The ingest (an email of theirs) it was in, which missed it; None if none did."""
     fields: ReservationFields
+    added_by: str | None = None
+    """The editor adding it, if it isn't the trip's owner."""
 
 
 class RenameTrip(BaseModel):

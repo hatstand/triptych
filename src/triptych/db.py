@@ -105,7 +105,7 @@ async def changes(url: str) -> AsyncGenerator[str | None]:
 RESERVATION_COLUMNS = """
     id::text, kind, title, provider, confirmation_code, start_local, start_tz, end_local, end_tz,
     start_location, end_location, address, city, service_number, seat, travelers, notes,
-    source_ingest_id, source_run_id::text, edited_fields, country_code
+    source_ingest_id, source_run_id::text, edited_fields, country_code, added_by::text
 """
 
 # What a reservation's owner can correct on the trip page (ReservationFields).
@@ -1101,12 +1101,17 @@ async def edit_reservation(
 
 
 async def add_reservation(
-    owner: str, trip_id: str, reservation_id: str, ingest_id: str | None, fields: ReservationFields
+    owner: str,
+    trip_id: str,
+    reservation_id: str,
+    ingest_id: str | None,
+    fields: ReservationFields,
+    added_by: str | None = None,
 ) -> Filed:
     """One the owner adds by hand, from the ingest (an email of theirs) it was in, if they say. Its
     fields are all theirs, so a reprocess that finds it later leaves it as they set it, and their
     ingest's answer gains it (corrections.find): a correction like an edit. Returns the trip as
-    stored, for its reminders."""
+    stored, for its reminders. `added_by` is the editor adding it, if not the owner."""
     set_by_owner = [f for f in EDITABLE if getattr(fields, f) not in (None, [], "")]
     r = Reservation(
         **fields.model_dump(), id=reservation_id, source_ingest_id=ingest_id, edited_fields=set_by_owner
@@ -1123,14 +1128,15 @@ async def add_reservation(
             """
             INSERT INTO reservation (id, trip_id, kind, title, provider, confirmation_code, start_local,
                 start_tz, end_local, end_tz, start_location, end_location, address, city, service_number,
-                seat, travelers, notes, source_ingest_id, dedupe_key, edited_fields)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                seat, travelers, notes, source_ingest_id, dedupe_key, edited_fields, added_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT DO NOTHING
             """,
             (
                 r.id, trip_id, r.kind.value, r.title, r.provider, r.confirmation_code, r.start_local,
                 r.start_tz, r.end_local, r.end_tz, r.start_location, r.end_location, r.address, r.city,
                 r.service_number, r.seat, r.travelers, r.notes, ingest_id, dedupe_key(r), r.edited_fields,
+                added_by,
             ),
         )  # fmt: skip
         if cur.rowcount == 0:

@@ -259,6 +259,7 @@ CREATE TABLE public.reservation (
     service_number text,
     edited_fields text[] DEFAULT '{}'::text[] NOT NULL,
     country_code text,
+    added_by uuid,
     CONSTRAINT reservation_kind_check CHECK ((kind = ANY (ARRAY['flight'::text, 'lodging'::text, 'car'::text, 'rail'::text, 'ferry'::text, 'restaurant'::text, 'activity'::text, 'other'::text])))
 );
 
@@ -806,6 +807,14 @@ ALTER TABLE ONLY public.reprocess
 
 
 --
+-- Name: reservation reservation_added_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.reservation
+    ADD CONSTRAINT reservation_added_by_fkey FOREIGN KEY (added_by) REFERENCES public.app_user(id) ON DELETE SET NULL;
+
+
+--
 -- Name: reservation reservation_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -920,4 +929,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261026210000'),
     ('20261027110000'),
     ('20261027220000'),
-    ('20261027230000');
+    ('20261027230000'),
+    ('20261028000000');

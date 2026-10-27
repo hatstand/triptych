@@ -11,7 +11,7 @@ from collections.abc import AsyncGenerator, AsyncIterable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Annotated, Any, TypedDict, cast
+from typing import Annotated, Any, Literal, TypedDict, cast
 from urllib.parse import quote
 from zoneinfo import available_timezones
 
@@ -526,6 +526,7 @@ async def trip_context(me: auth.Me, access: TripAccess, t: Trip) -> dict[str, An
     sources = await db.trip_sources(access.owner, t.id) if owns else []
     links = await sharing.links(access.owner, t.id) if owns else []
     members = await sharing.members(access.owner, t.id) if owns else []
+    editors = {r.added_by for r in t.reservations if r.added_by}
     return {
         "email": me.email,
         "role": access.role,
@@ -537,6 +538,7 @@ async def trip_context(me: auth.Me, access: TripAccess, t: Trip) -> dict[str, An
         "sources": sources,
         "links": links,
         "members": members,
+        "added_by": {e: await db.primary_email(e) or "someone" for e in editors},
         "shared_by": None if owns else await db.primary_email(access.owner),
         "base_url": settings.public_base_url.rstrip("/"),
     }
@@ -590,8 +592,10 @@ async def link_revoke(link_id: str, access: Owns) -> Response:
 
 
 @app.post("/trips/{trip_id}/members", dependencies=[per_user(ratelimit.SHARE_MANAGE, "share")])
-async def member_invite(access: Owns, email: Annotated[str, Form()]) -> Response:
-    await sharing.invite(access.owner, access.trip_id, email[:320])
+async def member_invite(
+    access: Owns, email: Annotated[str, Form()], role: Annotated[Literal["view", "edit"], Form()] = "view"
+) -> Response:
+    await sharing.invite(access.owner, access.trip_id, email[:320], Role(role))
     return RedirectResponse(f"/trips/{access.trip_id}#share", status_code=303)
 
 
@@ -751,11 +755,17 @@ class AddReservationForm(ReservationForm):
 
 @app.post("/trips/{trip_id}/reservations")
 async def reservation_add(
-    trip_id: str, access: CanEdit, client: Client, form: Annotated[AddReservationForm, Form()]
+    trip_id: str, me: User, access: CanEdit, client: Client, form: Annotated[AddReservationForm, Form()]
 ) -> Response:
     fields = ReservationFields.model_validate(form.model_dump(exclude={"ingest_id"}))
+    owns = access.role is Role.OWNER
     req = AddReservation(
-        trip_id=trip_id, reservation_id=str(uuid.uuid4()), ingest_id=form.ingest_id, fields=fields
+        trip_id=trip_id,
+        reservation_id=str(uuid.uuid4()),
+        # Which email missed it is the owner's to say: the emails are theirs.
+        ingest_id=form.ingest_id if owns else None,
+        fields=fields,
+        added_by=None if owns else me.id,
     )
     await client.object_call(user_svc.add_reservation, access.owner, req)
     return RedirectResponse(f"/trips/{trip_id}", status_code=303)

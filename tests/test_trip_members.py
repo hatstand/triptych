@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from triptych import db, sharing
 from triptych.auth import Me
-from triptych.models import Kind, Reservation, Role, Trip, TripAccess
+from triptych.models import AddReservation, Kind, Reservation, Role, Trip, TripAccess
 from triptych.web import app as web
 from triptych.web import ratelimit
 
@@ -168,3 +168,73 @@ async def test_a_viewer_gets_a_read_only_trip_page_without_codes(
 
     assert client.post(f"/trips/{trip_id}/leave").status_code == 303
     assert client.get(f"/trips/{trip_id}").status_code == 404
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_an_editor_can_change_the_trip_but_not_share_or_delete_it(
+    owner: str, friend: str, as_user: list[Me]
+) -> None:
+    trip_id = await a_trip(owner)
+    await sharing.invite(owner, trip_id, "friend@example.com", Role.EDIT)
+    assert await sharing.accept(friend, trip_id)
+    assert (
+        await db.trip_access(friend, trip_id) or TripAccess(trip_id="", owner="", role=Role.VIEW)
+    ).role is Role.EDIT
+
+    calls: list[tuple[str, object]] = []
+
+    class Restate:
+        async def object_call(self, _handler: object, key: str, req: object) -> None:
+            calls.append((key, req))
+
+    web.app.dependency_overrides[web.rs] = Restate
+    as_user.append(Me(id=friend, email="friend@example.com"))
+    client = TestClient(web.app, follow_redirects=False)
+    page = client.get(f"/trips/{trip_id}").text
+    assert "SECRET1" in page and f"/trips/{trip_id}/rename" in page and 'commandfor="add-reservation"' in page
+    for owners_only in (
+        'commandfor="share"',
+        f"/trips/{trip_id}/delete",
+        f"/trips/{trip_id}/merge",
+        "Ask about",
+    ):
+        assert owners_only not in page
+
+    form = {
+        "kind": "rail",
+        "title": "Porto → Braga",
+        "start_local": "2026-11-15T10:00",
+        "ingest_id": "mail-1",
+    }
+    assert client.post(f"/trips/{trip_id}/reservations", data=form).status_code == 303
+    assert client.post(f"/trips/{trip_id}/rename", data={"name": "Porto with Alex"}).status_code == 303
+    (key, added), (key2, _) = calls
+    assert key == key2 == owner  # serialised with the owner's own changes
+    assert isinstance(added, AddReservation)
+    assert (added.added_by, added.ingest_id) == (friend, None)  # the owner's emails aren't theirs to name
+    assert client.post(f"/trips/{trip_id}/delete").status_code == 404
+    assert client.post(f"/trips/{trip_id}/links").status_code == 404
+
+    # What they add says so, to everyone on the trip.
+    await db.add_reservation(owner, trip_id, added.reservation_id, None, added.fields, added.added_by)
+    assert "Added by friend@example.com" in client.get(f"/trips/{trip_id}").text
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_the_owner_can_switch_someone_between_viewer_and_editor(
+    owner: str, friend: str, as_user: list[Me]
+) -> None:
+    trip_id = await a_trip(owner)
+    as_user.append(Me(id=owner, email="owner@example.com"))
+    client = TestClient(web.app, follow_redirects=False)
+    invite = {"email": "friend@example.com", "role": "edit"}
+    assert client.post(f"/trips/{trip_id}/members", data=invite).status_code == 303
+    assert await sharing.accept(friend, trip_id)
+    assert "Make viewer" in client.get(f"/trips/{trip_id}").text
+    assert client.post(f"/trips/{trip_id}/members", data=invite | {"role": "view"}).status_code == 303
+    assert await sharing.members(owner, trip_id) == [
+        sharing.Member(email="friend@example.com", role=Role.VIEW, accepted=True)
+    ]
+    assert client.post(f"/trips/{trip_id}/members", data=invite | {"role": "owner"}).status_code == 422
