@@ -34,6 +34,13 @@ def valid_tz(name: str | None) -> str | None:
     return name
 
 
+def model_tz(name: str | None, country_code: str | None) -> str | None:
+    """The model's own zone for a place, if it's a real one in the place's country. Picking from 418
+    zones, it once put Reykjavik in Atlantic/South_Georgia."""
+    tz = valid_tz(name)
+    return tz if tz and places.zone_in_country(tz, country_code) else None
+
+
 def parse_local(value: str | None) -> datetime | None:
     if not value:
         return None
@@ -63,7 +70,9 @@ def normalise(
     # Our places data names a city's zone more reliably than the model does (it once put a Shanghai
     # hotel in Asia/Hong_Kong); the model's own guesses are the fallback.
     city_tz = places.city_timezone(x.city, x.country_code)
-    start_tz, end_tz = valid_tz(x.start_timezone), city_tz or valid_tz(x.end_timezone)
+    start_country = x.start_country_code if x.kind in TRANSPORT else x.country_code
+    start_tz = model_tz(x.start_timezone, start_country)
+    end_tz = city_tz or model_tz(x.end_timezone, x.country_code)
     city, country_code = x.city, x.country_code
     start_location, end_location = x.start_location, x.end_location
 
@@ -152,8 +161,8 @@ def fill_timezones(rs: list[Reservation]) -> None:
             if r.kind in CODED and (arr := places.lookup(iata_of(r.end_location))):
                 r.end_tz = arr.timezone
             # A transport leg's city is where it arrives.
-            r.end_tz = r.end_tz or places.city_timezone(r.city)
-        elif tz := places.city_timezone(r.city):
+            r.end_tz = r.end_tz or places.city_timezone(r.city, r.country_code)
+        elif tz := places.city_timezone(r.city, r.country_code):
             r.start_tz = r.end_tz = tz
     keep_owner_set()
     arrival: str | None = None
