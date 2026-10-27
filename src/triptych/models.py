@@ -367,6 +367,8 @@ class InboxItem(BaseModel):
     state: IngestState
     message: str | None = None
     trip_ids: list[str] = Field(default_factory=list)
+    reclassifiable: bool = False
+    """A "no travel" one its owner can say is a booking: its original is kept, and they haven't yet."""
 
 
 class Notification(BaseModel):
@@ -402,6 +404,8 @@ class ReprocessRequest(BaseModel):
     mode: ReprocessMode
     model: str | None = None
     from_run_id: str | None = None
+    owner_says_travel: bool = False
+    """Its owner said this "no travel" ingest is a booking (the inbox's "This is a booking")."""
 
     @property
     def key(self) -> str:
@@ -502,6 +506,8 @@ class LlmExtractRequest(BaseModel):
     """An Ollama model other than LLM_MODEL (reprocessing, shadow runs)."""
     examples: list[ExtractionExample] = Field(default_factory=list)
     """Worked examples shown before the document, most relevant last (LLM_EXAMPLES)."""
+    owner_says_travel: bool = False
+    """Tell the model the recipient says this is a travel booking (llm.OWNER_SAYS_TRAVEL)."""
 
 
 class LlmSubjectRequest(BaseModel):

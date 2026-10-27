@@ -57,3 +57,14 @@ def test_corrections_to_a_run_with_no_answer() -> None:
     casa = {"kind": "lodging", "title": "Casa", "start_local": "2026-11-03T15:00:00"}
     fixed, *_ = corrections.apply(None, [Correction(reservation=None, edited=["title"], fields=casa)])
     assert [r.title for r in fixed.reservations] == ["Casa"]
+
+
+def test_one_its_owner_said_is_a_booking_is_travel() -> None:
+    nothing = Extraction(is_travel_document=False, reservations=[])
+    casa = {"kind": "lodging", "title": "Casa", "start_local": "2026-11-03T15:00:00"}
+    fixed, changed, _ = corrections.apply(
+        nothing, [Correction(reservation=None, fields=casa)], reclassified=True
+    )
+    assert fixed.is_travel_document and [r.title for r in fixed.reservations] == ["Casa"]
+    assert changed[0] == "said it's a booking"
+    assert not corrections.apply(nothing, []).answer.is_travel_document

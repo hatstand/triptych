@@ -17,6 +17,7 @@ install chromium`), or PLAYWRIGHT_CHROMIUM to point at another Chromium binary.
 
 import argparse
 import asyncio
+import hashlib
 import os
 import sys
 import uuid
@@ -44,6 +45,7 @@ from triptych.models import (
     IngestState,
     Kind,
     Notification,
+    RawInput,
     ReprocessRequest,
     Reservation,
 )
@@ -279,6 +281,13 @@ async def seed() -> str:
             message=message,
         )
         await db.upsert_inbox(me, item)
+        if state == "no_travel":  # its original kept, so it offers "This is a booking"
+            kept = RawInput(
+                id=str(uuid.uuid4()), owner=me, sha256=hashlib.sha256(label.encode()).digest(),
+                object_key=f"screenshots/{n}", size=1, source="upload", content_type="message/rfc822",
+                filename=None, received_at=item.received_at,
+            )  # fmt: skip
+            await db.add_raw_input(kept, item.ingest_id)
     # A fix to the British Airways booking, kept as a worked example (admin page).
     await db.save_example(
         db.Example(

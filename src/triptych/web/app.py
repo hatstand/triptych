@@ -37,6 +37,7 @@ from triptych.models import (
     Overview,
     RemoveReservation,
     RenameTrip,
+    ReprocessRequest,
     ReservationFields,
     Trip,
     TripRef,
@@ -44,6 +45,7 @@ from triptych.models import (
 from triptych.services import assistant as assistant_svc
 from triptych.services import eval_share as eval_share_svc
 from triptych.services import ingest as ingest_svc
+from triptych.services import reprocess as reprocess_svc
 from triptych.services import user as user_svc
 from triptych.web import csp, live, ratelimit
 from triptych.web.assets import STATIC, Assets, Static
@@ -618,6 +620,20 @@ async def reservation_delete(trip_id: str, reservation_id: str, me: User, client
         user_svc.remove_reservation, me.id, RemoveReservation(trip_id=trip_id, reservation_id=reservation_id)
     )
     return RedirectResponse(f"/trips/{trip_id}" if still_exists else "/", status_code=303)
+
+
+@app.post("/inbox/{ingest_id}/booking")
+async def inbox_booking(ingest_id: str, me: User, client: Client) -> Response:
+    """The owner says a "no travel" ingest is a booking: read it again, telling the model so."""
+    if not await db.mark_reclassified(me.id, ingest_id):
+        raise HTTPException(404)
+    req = ReprocessRequest(
+        batch_id=reprocess_svc.OWNER_BATCH, ingest_id=ingest_id, mode="apply", model=settings.llm_model,
+        owner_says_travel=True,
+    )  # fmt: skip
+    await db.add_reprocess(req, me.id)
+    await client.workflow_send(reprocess_svc.run, req.key, req)
+    return RedirectResponse("/", status_code=303)
 
 
 @app.post("/notifications/dismiss")

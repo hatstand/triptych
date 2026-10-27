@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from triptych.auth import Me
-from triptych.models import InboxItem, IngestRequest
+from triptych.models import InboxItem, IngestRequest, ReprocessRequest
 from triptych.web import app as web
 from triptych.web import assets, ratelimit
 
@@ -157,3 +157,26 @@ def test_livez_answers_without_signing_in() -> None:
     resp = TestClient(web.app).get("/livez")
     assert resp.status_code == 200
     assert resp.json() == {"ok": True}
+
+
+def test_saying_a_no_travel_is_a_booking_reads_it_again(
+    client: TestClient, restate_client: FakeRestate, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    marked: list[tuple[str, str]] = []
+
+    async def mark_reclassified(owner: str, ingest_id: str) -> bool:
+        marked.append((owner, ingest_id))
+        return ingest_id == "mail-1"
+
+    async def add_reprocess(*_: Any) -> None:
+        pass
+
+    monkeypatch.setattr(web.db, "mark_reclassified", mark_reclassified)
+    monkeypatch.setattr(web.db, "add_reprocess", add_reprocess)
+    assert client.post("/inbox/mail-2/booking").status_code == 404
+    assert restate_client.sent == []
+    assert client.post("/inbox/mail-1/booking").status_code == 303
+    [req] = restate_client.sent
+    assert marked == [(ME.id, "mail-2"), (ME.id, "mail-1")]
+    assert isinstance(req, ReprocessRequest)
+    assert (req.ingest_id, req.mode, req.owner_says_travel) == ("mail-1", "apply", True)

@@ -91,6 +91,7 @@ async def record_run(
     output: Extraction | None,
     error: str | None,
     examples: list[str] | None = None,
+    owner_says_travel: bool = False,
 ) -> None:
     """Record one extraction (db extraction_run), inside `ctx.run`."""
     try:
@@ -108,7 +109,7 @@ async def record_run(
             model_digest=digest,
             prompt_version=llm.prompt_version(),
             code_version=settings.code_version,
-            params=llm.chat_params(),
+            params=llm.chat_params() | ({"owner_says_travel": True} if owner_says_travel else {}),
             purpose=purpose,
             output=output,
             error=error,

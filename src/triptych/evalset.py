@@ -11,7 +11,8 @@ inbox_item, extraction_run and the hand-checked labels kept in the private evals
                                         written last, so a case without it is incomplete
 
 case.json also carries the owner's corrections: what they edited on or deleted from the trip page
-of the reservations that run made. Editing or deleting one copies its case again (services/user.py),
+of the reservations that run made, and whether they said a "no travel" one is a booking
+(`reclassified`). Editing or deleting one copies its case again (services/user.py),
 so `python -m evals sync` can draft the label from the owner's answer rather than the model's.
 """
 
@@ -90,8 +91,10 @@ class EvalStore:
                     case.reservations,
                     case.keys,
                     case.dismissals,
+                    reclassified=case.reclassified,
                 )
             ],
+            "reclassified": case.reclassified,
         }
         await self._put(prefix + "case.json", json.dumps(meta, indent=2).encode(), "application/json")
         await db.mark_eval_copied(ingest_id, kept.owner)

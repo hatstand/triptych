@@ -143,6 +143,13 @@ def document_message(received_at: datetime, subject: str | None, text: str) -> s
     )
 
 
+OWNER_SAYS_TRAVEL = (
+    "\n\nNote from the recipient: this document is a travel booking, though it was first read as not"
+    " being one. Set is_travel_document to true and extract its reservations."
+)
+"""Added to a document whose owner said it is a booking (LlmExtractRequest.owner_says_travel)."""
+
+
 async def extract(
     req: LlmExtractRequest, *, system: str = EXTRACT_SYSTEM, think: Think = False
 ) -> Extraction:
@@ -150,7 +157,8 @@ async def extract(
     doc = req.document
     user_msg: dict[str, Any] = {
         "role": "user",
-        "content": document_message(req.received_at, doc.subject, doc.text),
+        "content": document_message(req.received_at, doc.subject, doc.text)
+        + (OWNER_SAYS_TRAVEL if req.owner_says_travel else ""),
     }
     if doc.images_b64:
         user_msg["images"] = doc.images_b64

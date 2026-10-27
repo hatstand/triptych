@@ -6,7 +6,9 @@ be corrected and marked verified. Re-running only fetches what's new or changed.
 
 Where the owner corrected the app's answer on the trip page (case.json's corrections: fields edited,
 reservations deleted), the draft starts from their answer instead, tagged `corrected`, with what they
-changed in its notes. A correction made after the draft was written redrafts it if it's still as
+changed in its notes. So does one its owner said is a booking after the app read it as "no travel"
+(case.json's reclassified), which is then a travel document with what they have from it now.
+A correction made after the draft was written redrafts it if it's still as
 sync left it, and is otherwise only reported, so nothing you've touched is overwritten.
 
 Reads with its own bucket-scoped token if given (EVALS_ACCESS_KEY_ID, EVALS_SECRET_ACCESS_KEY,
@@ -72,6 +74,10 @@ class Synced:
     incomplete: list[str] = field(default_factory=list)
 
 
+CORRECTED = ("corrections", "reclassified")
+"""What case.json says the owner corrected: a change to either redrafts the label."""
+
+
 def tags_for(case: dict[str, Any]) -> list[str]:
     """Slices a new case starts in: where it came from and what it is."""
     kind = {"message/rfc822": "eml", "application/pdf": "pdf", "text/html": "html", "text/plain": "text"}
@@ -87,18 +93,20 @@ def draft_from(case: dict[str, Any]) -> Expected:
     output = Extraction.model_validate(run["output"]) if run.get("output") else None
     changed: list[str] = []
     owner_set: list[list[str]] = []
-    if fixes := [Correction.model_validate(c) for c in case.get("corrections") or []]:
-        output, changed, owner_set = corrections.apply(output, fixes)
-    tags = tags_for(case) + ["corrected"] * bool(fixes)
+    fixes = [Correction.model_validate(c) for c in case.get("corrections") or []]
+    reclassified = bool(case.get("reclassified"))
+    if fixes or reclassified:
+        output, changed, owner_set = corrections.apply(output, fixes, reclassified=reclassified)
+    tags = tags_for(case) + ["corrected"] * bool(fixes or reclassified)
     expected = draft(
         output, datetime.fromisoformat(case["received_at"]), case.get("source") or "upload", tags
     )
-    if fixes:
+    if fixes or reclassified:
         for r, fields in zip(expected.reservations, owner_set, strict=True):
             r.owner_set = [f for f in fields if f in ExpectedReservation.model_fields]
     filed = f"{run.get('model')} (prompt {run.get('prompt_version')})" if run else "nothing (no run)"
     notes = [case.get("subject") or case.get("label") or "", f"Draft from what {filed} answered."]
-    if fixes:
+    if changed:
         notes.append(f"Corrected in the app: {'; '.join(changed)}.")
     expected.notes = "\n".join(notes).strip()
     return expected
@@ -136,14 +144,16 @@ def sync(root: Path, s3: Any, bucket: str) -> Synced:
         if not path.exists():
             write_expected(path, draft_from(case))
             done.drafted.append(case_id)
-        elif before is not None and before.get("corrections") != case.get("corrections"):
+        elif before is not None and any(before.get(k) != case.get(k) for k in CORRECTED):
             # Redraft only what sync wrote and nobody has touched since.
             if untouched(path, before):
                 write_expected(path, draft_from(case))
                 done.redrafted.append(case_id)
             else:
                 done.recorrected.append(case_id)
-        elif case.get("corrections") and untouched(path, case, before_owner_set=True):
+        elif (case.get("corrections") or case.get("reclassified")) and untouched(
+            path, case, before_owner_set=True
+        ):
             write_expected(path, draft_from(case))  # a draft from before sync wrote owner_set
             done.redrafted.append(case_id)
     return done

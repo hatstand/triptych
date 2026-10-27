@@ -362,6 +362,8 @@ class EvalCase(BaseModel):
     """Their stored dedupe keys, by id (what `pair_up` matches the run's answer with)."""
     dismissals: list["Dismissal"] = Field(default_factory=list)
     """The ones the owner deleted."""
+    reclassified: bool = False
+    """The owner said it's a booking after it was read as "no travel" (mark_reclassified)."""
 
 
 class EvalSharing(BaseModel):
@@ -409,7 +411,7 @@ async def ingest_case(ingest_id: str, *, shared: bool = False) -> EvalCase | Non
     async with connection() as conn, conn.cursor(row_factory=dict_row) as cur:
         await cur.execute(
             """
-            SELECT i.ingest_id, i.label, i.state,
+            SELECT i.ingest_id, i.label, i.state, i.reclassified_at IS NOT NULL AS reclassified,
                    ri.id::text AS input_id, ri.owner::text, ri.sha256, ri.object_key, ri.size, ri.source,
                    ri.content_type, ri.filename, ri.received_at,
                    r.id::text AS run_id, r.model, r.model_digest, r.prompt_version, r.code_version,
@@ -471,6 +473,7 @@ async def ingest_case(ingest_id: str, *, shared: bool = False) -> EvalCase | Non
         ],
         keys={r["id"]: r["dedupe_key"] for r in stored},
         dismissals=dismissals,
+        reclassified=row["reclassified"],
     )
 
 
@@ -885,7 +888,11 @@ async def apply_reprocess(
             UPDATE inbox_item SET current_run_id = %(run)s,
                 trip_ids = ARRAY(SELECT trip_id FROM mine),
                 message = CASE WHEN state <> 'done' AND EXISTS (SELECT 1 FROM mine)
-                               THEN 'Filed when reprocessed.' ELSE message END,
+                                   THEN CASE WHEN reclassified_at IS NULL THEN 'Filed when reprocessed.'
+                                             ELSE 'Read again as a booking.' END
+                               WHEN state = 'no_travel' AND reclassified_at IS NOT NULL
+                                   THEN 'Read again as a booking, but still no reservations found.'
+                               ELSE message END,
                 state = CASE WHEN EXISTS (SELECT 1 FROM mine) THEN 'done' ELSE state END
             WHERE ingest_id = %(ingest)s AND owner = %(owner)s
             """,
@@ -1302,11 +1309,29 @@ async def inbox(owner: str, limit: int = 10) -> list[InboxItem]:
     async with connection() as conn, conn.cursor(row_factory=class_row(InboxItem)) as cur:
         await cur.execute(
             """SELECT ingest_id, source, label, received_at, state, message,
-                      ARRAY(SELECT x::text FROM unnest(trip_ids) x) AS trip_ids
+                      ARRAY(SELECT x::text FROM unnest(trip_ids) x) AS trip_ids,
+                      state = 'no_travel' AND input_id IS NOT NULL AND reclassified_at IS NULL
+                          AS reclassifiable
                FROM inbox_item WHERE owner = %s ORDER BY received_at DESC LIMIT %s""",
             (owner, limit),
         )
         return await cur.fetchall()
+
+
+async def mark_reclassified(owner: str, ingest_id: str) -> bool:
+    """The owner says their "no travel" ingest is a booking. False unless it's theirs and can be
+    read again (InboxItem.reclassifiable): it's then the web's to start the Reprocess that does."""
+    async with connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            """UPDATE inbox_item SET reclassified_at = now(), message = 'Reading it again as a booking…'
+               WHERE owner = %s AND ingest_id = %s AND state = 'no_travel' AND input_id IS NOT NULL
+                 AND reclassified_at IS NULL""",
+            (owner, ingest_id),
+        )
+        if cur.rowcount == 0:
+            return False
+        await _changed(conn, owner)
+        return True
 
 
 async def notifications(owner: str) -> list[Notification]:
@@ -1374,7 +1399,8 @@ async def correction_rates(since: datetime) -> list[CorrectionRate]:
         await cur.execute(
             """SELECT r.model, r.prompt_version, cardinality(r.examples) > 0 AS examples,
                       count(*)::int AS ingests,
-                      count(*) FILTER (WHERE c.edited OR c.deleted)::int AS corrected,
+                      count(*) FILTER (WHERE c.edited OR c.deleted OR i.reclassified_at IS NOT NULL)::int
+                          AS corrected,
                       count(*) FILTER (WHERE c.edited)::int AS edited,
                       count(*) FILTER (WHERE c.deleted)::int AS deleted
                FROM inbox_item i JOIN extraction_run r ON r.id = i.current_run_id

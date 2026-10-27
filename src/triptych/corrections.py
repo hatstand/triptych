@@ -35,10 +35,13 @@ def find(
     current: list[Reservation],
     keys: dict[str, str],
     dismissals: list[db.Dismissal],
+    *,
+    reclassified: bool = False,
 ) -> list[Correction]:
     """The owner's edits and deletions against the run's `output`. `current` is what they have
     from the ingest now, `keys` those reservations' stored dedupe keys and `dismissals` the ones
-    they deleted."""
+    they deleted. If they said it's a booking (`reclassified`), they keep everything they have
+    from it, edited or not, which a later run that found nothing would otherwise lose."""
     made = [
         (i, r)
         for i, x in enumerate(output.reservations if output else [])
@@ -55,7 +58,7 @@ def find(
             out.append(Correction(reservation=i, deleted=True))
     paired = {r.id for r in match.values()}
     for r in current:
-        if r.id not in paired and r.edited_fields:
+        if r.id not in paired and (r.edited_fields or reclassified):
             fields = r.model_dump(mode="json", include=set(ReservationFields.model_fields))
             out.append(Correction(reservation=None, edited=r.edited_fields, fields=fields))
     return out
@@ -104,11 +107,13 @@ def _set_by(c: Correction, fixed: ExtractedReservation) -> list[str]:
     return [f for f in dict.fromkeys(fields) if f not in ("start_iata", "end_iata") or fixed.kind in CODED]
 
 
-def apply(output: Extraction | None, corrections: list[Correction]) -> Applied:
-    """The run's answer as the owner corrected it."""
+def apply(output: Extraction | None, corrections: list[Correction], *, reclassified: bool = False) -> Applied:
+    """The run's answer as the owner corrected it (`reclassified`: they said it's a booking)."""
     output = output or Extraction(is_travel_document=False, reservations=[])
     by_index = {c.reservation: c for c in corrections if c.reservation is not None}
     kept, changed, owner_set = [], [], []
+    if reclassified:
+        changed.append("said it's a booking")
     for i, x in enumerate(output.reservations):
         name = x.title or x.kind.value
         if (c := by_index.get(i)) is None:
@@ -127,4 +132,7 @@ def apply(output: Extraction | None, corrections: list[Correction]) -> Applied:
             kept.append(added)
             owner_set.append(list(as_extracted(c.fields)))  # they kept all of it
             changed.append(f"kept {added.title or added.kind.value}, which this run didn't find")
-    return Applied(output.model_copy(update={"reservations": kept}), changed, owner_set)
+    travel = output.is_travel_document or reclassified
+    return Applied(
+        output.model_copy(update={"is_travel_document": travel, "reservations": kept}), changed, owner_set
+    )

@@ -171,13 +171,18 @@ def bucket() -> Any:
 
 
 def put_case(
-    s3: Any, ingest_id: str, output: dict[str, Any] | None, corrections: list[dict[str, Any]] | None = None
+    s3: Any,
+    ingest_id: str,
+    output: dict[str, Any] | None,
+    corrections: list[dict[str, Any]] | None = None,
+    *,
+    reclassified: bool = False,
 ) -> None:
     case = {
         "ingest_id": ingest_id, "source": "email", "content_type": "message/rfc822", "subject": "Your flight",
         "received_at": datetime(2026, 10, 25, 12, tzinfo=UTC).isoformat(), "images": 0,
         "run": {"model": "gemma4:26b", "prompt_version": "0123456789ab", "output": output},
-        "corrections": corrections or [],
+        "corrections": corrections or [], "reclassified": reclassified,
     }  # fmt: skip
     s3.put_object(Bucket="evals", Key=f"inputs/{ingest_id}/original.eml", Body=b"From: a\r\n\r\nhi")
     s3.put_object(Bucket="evals", Key=f"inputs/{ingest_id}/case.json", Body=json.dumps(case).encode())
@@ -247,6 +252,19 @@ def test_sync_drafts_from_the_owners_corrections(bucket: Any, tmp_path: Path) ->
     assert flight.owner_set == ["start_local", "end_location", "start_timezone", "end_iata"]
     assert set(hotel.owner_set) >= {"kind", "title", "start_local", "start_timezone", "city"}
     assert draft.partly_labelled and [c.id for c in load_cases(tmp_path)] == ["mail-1"]
+
+
+def test_sync_drafts_one_its_owner_said_is_a_booking_as_travel(bucket: Any, tmp_path: Path) -> None:
+    put_case(bucket, "mail-1", Extraction(is_travel_document=False).model_dump(mode="json"))
+    sync(tmp_path, bucket, "evals")
+    assert not read_expected(tmp_path / "cases" / "mail-1" / "expected.yaml").is_travel_document
+
+    # Read again as a booking: its run is now the one that found the flights.
+    put_case(bucket, "mail-1", two_flights(), reclassified=True)
+    assert sync(tmp_path, bucket, "evals").redrafted == ["mail-1"]
+    draft = read_expected(tmp_path / "cases" / "mail-1" / "expected.yaml")
+    assert draft.is_travel_document and len(draft.reservations) == 2
+    assert "corrected" in draft.tags and "said it's a booking" in (draft.notes or "")
 
 
 def test_a_partly_labelled_draft_is_scored_on_what_its_owner_set() -> None:
