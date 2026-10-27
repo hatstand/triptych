@@ -437,6 +437,22 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
     await page.locator("dialog#merge[open]").wait_for()
     await page.screenshot(path=out / scheme / "12-merge-trips.png", animations="disabled")
     await page.close()
+    # A screenshot pasted anywhere on the home page is uploaded like a dropped file (drop.ts). The
+    # upload itself is answered here: there's no Restate to send it to.
+    page = await user.new_page()
+    await page.route(f"{WEB}/plans", lambda route: route.fulfill(status=200, body=""))
+    await page.goto(f"{WEB}/", wait_until="load")
+    await page.evaluate("document.fonts.ready")
+    await page.evaluate(
+        """() => {
+            const data = new DataTransfer();
+            data.items.add(new File([new Uint8Array(8)], "image.png", { type: "image/png" }));
+            window.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data }));
+        }"""
+    )
+    await page.locator("#drop-status", has_text="Added 1 file.").wait_for()
+    await page.screenshot(path=out / scheme / "13-paste.png", animations="disabled")
+    await page.close()
     for ctx in (anon, user, admin):
         await ctx.close()
     return refused
