@@ -1306,6 +1306,35 @@ async def refill_timezones() -> None:
             await _fill_timezones(conn, trip_id)
 
 
+async def canonicalise_flight_numbers() -> None:
+    """Rewrite flight numbers filed before enrich wrote them one way ('BA0168', 'VN 050' as 'BA 168',
+    'VN 50'), and re-key their rows so the next email about the flight replaces rather than duplicates
+    them, unless that would clash with another of the trip's segments. Leaves numbers their owners
+    typed, and the keys of rows their owners corrected (their edits were made against them). Not under
+    the User object: it only does what filing would have."""
+    async with connection() as conn, conn.transaction():
+        async with conn.cursor(row_factory=class_row(Reservation)) as cur:
+            await cur.execute(
+                f"""SELECT {RESERVATION_COLUMNS} FROM reservation
+                    WHERE kind = 'flight' AND service_number IS NOT NULL
+                      AND NOT 'service_number' = ANY(edited_fields)"""
+            )
+            todo = await cur.fetchall()
+        for r in todo:
+            if (number := enrich.flight_number(r.service_number or "")) == r.service_number:
+                continue
+            key = dedupe_key(r.model_copy(update={"service_number": number}))
+            await conn.execute(
+                """UPDATE reservation a SET service_number = %s,
+                       dedupe_key = CASE WHEN a.edited_fields = '{}' AND NOT EXISTS (
+                           SELECT 1 FROM reservation b
+                           WHERE b.trip_id = a.trip_id AND b.dedupe_key = %s AND b.id <> a.id)
+                       THEN %s ELSE a.dedupe_key END
+                   WHERE a.id = %s""",
+                (number, key, key, r.id),
+            )
+
+
 async def fill_countries() -> None:
     """Give reservations filed before they had a country_code the one their extraction run gave,
     paired with the run's answer the way a reprocess pairs them. Leaves cities their owners corrected

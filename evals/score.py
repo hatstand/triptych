@@ -175,6 +175,9 @@ def compare(name: str, expected: Any, predicted: Any, accept: list[str | None] |
         return score
     if name in TEXT:
         ok = fold(p) in {fold(a) for a in right}
+    elif name == "service_number":
+        # 'BA0168' is 'BA 168': enrich writes flight numbers one way.
+        ok = code(enrich.flight_number(p)) in {code(enrich.flight_number(a)) for a in right}
     elif name in CODES or name == "kind":
         ok = code(p) in {code(a) for a in right}
     elif name in (*ZONES, *ENRICHED):

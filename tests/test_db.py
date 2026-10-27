@@ -315,6 +315,31 @@ async def test_older_reservations_get_their_timezone_refilled(me: str) -> None:
     assert (lodging.start_tz, lodging.end_tz) == ("Europe/Lisbon", "Europe/Lisbon")
 
 
+async def test_older_flight_numbers_are_canonicalised_and_rekeyed(me: str) -> None:
+    padded = outbound().model_copy(update={"service_number": "BA0168"})
+    typed = home().model_copy(update={"service_number": "VN 050"})
+    train = res(Kind.RAIL, "2026-11-14T09:00", "2026-11-14T12:00", "Porto").model_copy(
+        update={"service_number": "G0324"}
+    )
+    trip_ids = (await db.file_reservations(me, "i1", [padded, typed, train])).trip_ids
+    async with db.connection() as conn:
+        await conn.execute(
+            "UPDATE reservation SET edited_fields = '{service_number}' WHERE id = %s", (typed.id,)
+        )
+        await conn.commit()
+
+    async def numbers() -> list[str]:
+        trips = [await db.get_trip(me, t) for t in trip_ids]
+        return sorted(r.service_number or "" for t in trips if t for r in t.reservations)
+
+    await db.canonicalise_flight_numbers()
+    assert await numbers() == ["BA 168", "G0324", "VN 050"]
+    # A new email about the flight finds the row its number was rewritten in.
+    again = outbound().model_copy(update={"service_number": "BA 168", "id": str(uuid.uuid4())})
+    await db.file_reservations(me, "i2", [again])
+    assert await numbers() == ["BA 168", "G0324", "VN 050"]
+
+
 async def test_older_trips_get_retitled_unless_renamed(me: str) -> None:
     ours = (await db.file_reservations(me, "i1", [outbound(), home()])).trip_ids[0]
     spring = res(Kind.LODGING, "2027-03-01T15:00", "2027-03-05T11:00", "Porto")
