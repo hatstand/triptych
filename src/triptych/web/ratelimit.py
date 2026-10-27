@@ -21,6 +21,9 @@ INVITE_PAGE = parse("30/minute")
 # Signed in: per user. Each request queues an ingest or an LLM answer.
 ADD_PLANS = parse("60/hour")
 ASK = parse("60/hour")
+# Shared trip links (sharing.py): opening one per client, making one per user.
+SHARE_VIEW = parse("60/minute")
+SHARE_MANAGE = parse("30/hour")
 
 
 def limiter() -> Limiter:

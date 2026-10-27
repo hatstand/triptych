@@ -24,7 +24,7 @@ from limits import RateLimitItem
 from pydantic import BaseModel, field_validator, model_validator
 from starlette.middleware.base import RequestResponseEndpoint
 
-from triptych import auth, db, enrich, ical, inbound, journeys, llm, senders, telemetry
+from triptych import auth, db, enrich, ical, inbound, journeys, llm, senders, sharing, telemetry
 from triptych.config import settings
 from triptych.models import (
     AddReservation,
@@ -513,25 +513,31 @@ async def add_plans(
     return RedirectResponse("/", status_code=303)
 
 
-@app.get("/trips/{trip_id}", response_class=HTMLResponse)
-async def trip_page(request: Request, trip_id: str, me: User, access: CanView) -> Response:
-    t = await load_trip(access)
+async def trip_context(me: auth.Me, access: TripAccess, t: Trip) -> dict[str, Any]:
+    """What trip.html needs to show a trip to someone with `access`."""
     owns = access.role is Role.OWNER
-    # Other trips to merge into and the emails a booking came from are the owner's alone.
-    others = [s for s in await db.trip_summaries(me.id) if s.id != trip_id] if owns else []
-    sources = await db.trip_sources(access.owner, trip_id) if owns else []
-    return templates.TemplateResponse(
-        request,
-        "trip.html",
-        {
-            "email": me.email,
-            "trip": t,
-            "summary": t.summary(),
-            "days": journeys.timeline(t.reservations),
-            "others": others,
-            "sources": sources,
-        },
-    )
+    # Other trips to merge into, where bookings came from and how it's shared are the owner's alone.
+    others = [s for s in await db.trip_summaries(me.id) if s.id != t.id] if owns else []
+    sources = await db.trip_sources(access.owner, t.id) if owns else []
+    links = await sharing.links(access.owner, t.id) if owns else []
+    return {
+        "email": me.email,
+        "role": access.role,
+        "trip": t,
+        "trip_url": f"/trips/{t.id}",
+        "summary": t.summary(),
+        "days": journeys.timeline(t.reservations),
+        "others": others,
+        "sources": sources,
+        "links": links,
+        "base_url": settings.public_base_url.rstrip("/"),
+    }
+
+
+@app.get("/trips/{trip_id}", response_class=HTMLResponse)
+async def trip_page(request: Request, me: User, access: CanView) -> Response:
+    t = await load_trip(access)
+    return templates.TemplateResponse(request, "trip.html", await trip_context(me, access, t))
 
 
 @app.get("/trips/{trip_id}/photo")
@@ -555,18 +561,74 @@ async def trip_ask(
     answer: Answer = await client.service_call(
         assistant_svc.ask, AskTrip(owner=access.owner, trip_id=trip_id, question=question)
     )
+    context = await trip_context(me, access, t)
     return templates.TemplateResponse(
-        request,
-        "trip.html",
-        {
-            "email": me.email,
-            "trip": t,
-            "summary": t.summary(),
-            "days": journeys.timeline(t.reservations),
-            "question": question,
-            "answer": answer.text,
-        },
+        request, "trip.html", context | {"question": question, "answer": answer.text}
     )
+
+
+@app.post("/trips/{trip_id}/links", dependencies=[per_user(ratelimit.SHARE_MANAGE, "share")])
+async def link_create(access: Owns, label: Annotated[str, Form()] = "") -> Response:
+    await sharing.create_link(access.owner, access.trip_id, label[:100])
+    return RedirectResponse(f"/trips/{access.trip_id}#share", status_code=303)
+
+
+@app.post("/trips/{trip_id}/links/{link_id}/delete")
+async def link_revoke(link_id: str, access: Owns) -> Response:
+    await sharing.revoke_link(access.owner, access.trip_id, link_id)
+    return RedirectResponse(f"/trips/{access.trip_id}#share", status_code=303)
+
+
+# --- shared links (no sign-in) ---------------------------------------------------------------
+
+LINK_HEADERS = {
+    # The token is in the URL: keep it out of Referer headers, search indexes and shared caches.
+    "Referrer-Policy": "no-referrer",
+    "X-Robots-Tag": "noindex, nofollow",
+    "Cache-Control": "private, no-store",
+}
+
+
+async def linked_trip(token: str) -> sharing.LinkedTrip:
+    found = await sharing.open_link(token)
+    if found is None:
+        raise HTTPException(404, "this link doesn't work any more")
+    return found
+
+
+@app.get(
+    "/s/{token}", response_class=HTMLResponse, dependencies=[per_client(ratelimit.SHARE_VIEW, "share-view")]
+)
+async def shared_page(request: Request, token: str) -> Response:
+    found = await linked_trip(token)
+    if me := await signed_in(request):
+        access = await db.trip_access(me.id, found.trip_id)
+        if access is not None:
+            return RedirectResponse(f"/trips/{found.trip_id}", status_code=303)
+    t = await db.get_trip(found.owner, found.trip_id)
+    if t is None:
+        raise HTTPException(404)
+    shown = sharing.shared_view(t)
+    context = {
+        "role": None,
+        "trip": shown,
+        "trip_url": f"/s/{token}",
+        "summary": shown.summary(),
+        "days": journeys.timeline(shown.reservations),
+    }
+    return templates.TemplateResponse(request, "trip.html", context, headers=LINK_HEADERS)
+
+
+@app.get("/s/{token}/photo", dependencies=[per_client(ratelimit.SHARE_VIEW, "share-view")])
+async def shared_photo(token: str) -> Response:
+    found = await linked_trip(token)
+    photo = await db.trip_photo(found.owner, found.trip_id)
+    if photo is None:
+        raise HTTPException(404)
+    image, content_type = photo
+    # Cached only by this viewer's browser, so a revoked link's photo lingers nowhere else.
+    headers = LINK_HEADERS | {"Cache-Control": "private, max-age=86400"}
+    return Response(image, media_type=content_type, headers=headers)
 
 
 @app.post("/trips/{trip_id}/rename")

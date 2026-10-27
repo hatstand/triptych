@@ -125,7 +125,7 @@ def test_changing_airport_in_the_same_city_still_connects() -> None:
     assert [c.warning for c in j.connections] == ["Airport change: LHR → LGW, 4h 30m to make it"]
     trip = Trip(id="t", owner="u", name="Edinburgh", reservations=[a, b])
     html = web.templates.get_template("trip.html").render(
-        email=None, trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
+        email=None, role="owner", trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
     )
     html = re.sub(r"/static/assets/icons-[\w-]+\.svg", "/static/icons.svg", html)  # when built
     icon = '<svg class="i" aria-hidden="true"><use href="/static/icons.svg#warning"/></svg>'
@@ -207,7 +207,7 @@ def test_format_duration() -> None:
 def test_trip_page_renders_journey_with_expandable_segments() -> None:
     trip = Trip(id="t", owner="u", name="Sydney", reservations=[LHR_SGN, SGN_SYD])
     html = web.templates.get_template("trip.html").render(
-        email=None, trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
+        email=None, role="owner", trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
     )
     assert "LHR → SGN → SYD" in html
     assert "3h 15m layover in SGN" in html
@@ -234,7 +234,7 @@ def test_check_in_waits_for_the_train_that_gets_you_there() -> None:
     assert last == [Stay(stay, checkout=True)]
     trip = Trip(id="t", owner="u", name="Paris", reservations=[stay, train])
     html = web.templates.get_template("trip.html").render(
-        email=None, trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
+        email=None, role="owner", trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
     )
     assert html.index("ES9024") < html.index("Check-in from 14:00") < html.index("Check out")
     assert "3 nights" in html
@@ -351,7 +351,7 @@ def test_ferries_connect_and_arrive_on_the_timeline() -> None:
     )
     trip = Trip(id="t", owner="u", name="Hydra", reservations=[single])
     html = web.templates.get_template("trip.html").render(
-        email=None, trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
+        email=None, role="owner", trip=trip, summary=trip.summary(), days=timeline(trip.reservations)
     )
     assert '<li class="entry ferry">' in html
     assert re.search(r'icons(-[\w-]+)?\.svg#ferry"', html)

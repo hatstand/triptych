@@ -8,6 +8,7 @@ LOG_LEVEL sets the level). uvicorn's and hypercorn's loggers go through the same
 
 import logging
 import os
+import re
 import sys
 
 from pythonjsonlogger.json import JsonFormatter
@@ -21,6 +22,20 @@ JSON_FIELDS = {"levelname": "severity_text", "name": "logger"}
 class _StdoutHandler(logging.StreamHandler):
     """Ours, so a second setup (tests run several lifespans) replaces it rather than doubling up,
     and leaves anyone else's handlers (pytest's capture) alone."""
+
+
+SHARE_TOKEN = re.compile(r"(/s/)[^/?\s]+")
+
+
+class RedactShareTokens(logging.Filter):
+    """A shared link's token opens the trip, so access log lines show /s/<token> instead."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(
+                SHARE_TOKEN.sub(r"\1<token>", a) if isinstance(a, str) else a for a in record.args
+            )
+        return True
 
 
 def formatter(fmt: str, service: str) -> logging.Formatter:
@@ -50,3 +65,6 @@ def setup(service: str) -> None:
         lg = logging.getLogger(name)
         lg.handlers.clear()
         lg.propagate = True
+    access = logging.getLogger("uvicorn.access")
+    if not any(isinstance(f, RedactShareTokens) for f in access.filters):
+        access.addFilter(RedactShareTokens())

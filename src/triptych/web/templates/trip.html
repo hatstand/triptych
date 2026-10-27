@@ -5,13 +5,15 @@
 {% from "_photo.html" import photo_credit %}
 <script type="module" src="{{ static('dialog.ts') }}"></script>
 <script type="module" src="{{ static('photo.ts') }}"></script>
+{% if role == 'owner' %}<script type="module" src="{{ static('copy.ts') }}"></script>{% endif %}
 {% set transport = ('flight', 'rail', 'ferry') %}
 {#- Arrival (or end) of r after its start, with its date when that differs and its zone when it changes. -#}
 {% macro until(start, start_tz, end, end_tz) -%}
 {% if end.date() != start.date() %}{{ end.strftime('%a') }} {% endif %}{{ end.strftime('%H:%M') }}{% if end_tz and end_tz != start_tz %} <span class="muted small">{{ end | tz_abbr(end_tz) }}</span>{% endif %}
 {%- endmacro %}
+{#- `role` is what the viewer may do (models.Role), or none on a shared link's read-only page. -#}
 {% macro edit_button(r) -%}
-<button type="button" class="link small" commandfor="edit-{{ r.id }}" command="show-modal">edit</button>
+{% if role in ('edit', 'owner') %}<button type="button" class="link small" commandfor="edit-{{ r.id }}" command="show-modal">edit</button>{% endif %}
 {%- endmacro %}
 {#- A labelled field of the edit dialog, marked when its owner has corrected it before. -#}
 {% macro field(r, name, label, value, type='text', wide=false) %}
@@ -192,11 +194,11 @@
 {% macro track(node, arrives=false) %}
 <div class="track"><div class="node">{{ node }}</div>{% if arrives %}<div class="stop"></div>{% endif %}</div>
 {% endmacro %}
-<a href="/" class="small">← All trips</a>
+{% if role %}<a href="/" class="small">← All trips</a>{% endif %}
 {% if trip.photo %}
 <figure class="trip-photo">
   {#- The frame's shape is fixed (style.css), so the crop that keeps the subject in it is known. -#}
-  <img src="/trips/{{ trip.id }}/photo?v={{ trip.photo.version }}" alt="{{ trip.destination or '' }}"
+  <img src="{{ trip_url }}/photo?v={{ trip.photo.version }}" alt="{{ trip.destination or '' }}"
        data-focus="{{ trip.photo.position(5) }}" data-focus-narrow="{{ trip.photo.position(2.5) }}">
   <figcaption class="muted small">{{ photo_credit(trip.photo) }}</figcaption>
 </figure>
@@ -216,12 +218,20 @@
       {%- endif %}{% endfor %}
     </ul>
   </div>
+  {% if role %}
   <div class="actions">
-    <a class="button secondary" href="/trips/{{ trip.id }}/calendar.ics">Export .ics</a>
+    <a class="button secondary" href="{{ trip_url }}/calendar.ics">Export .ics</a>
+    {% if role in ('edit', 'owner') %}
     <button type="button" class="button secondary" commandfor="add-reservation" command="show-modal">Add</button>
     <button type="button" class="button secondary" commandfor="trip-edit" command="show-modal">Edit</button>
+    {% endif %}
+    {% if role == 'owner' %}
+    <button type="button" class="button secondary" commandfor="share" command="show-modal">Share</button>
+    {% endif %}
   </div>
+  {% endif %}
 </div>
+{% if role in ('edit', 'owner') %}
 {#- Cancel, Escape and a click outside all close it unsaved; dialog.ts puts the name back. -#}
 <dialog id="trip-edit" class="dialog" closedby="any" aria-labelledby="trip-edit-title">
   <h2 id="trip-edit-title">Edit trip</h2>
@@ -247,11 +257,53 @@
     </div>
   </form>
   {% endif %}
+  {% if role == 'owner' %}
   <form method="post" action="/trips/{{ trip.id }}/delete" class="dialog-footer"
         data-confirm="Delete this trip?">
     <button class="danger">Delete trip</button>
   </form>
+  {% endif %}
 </dialog>
+{% endif %}
+{% if role == 'owner' %}
+{#- Read-only links for anyone, signed in or not (sharing.py). They never show confirmation codes,
+    seats, travellers or notes, and revoking one stops it at once. -#}
+<dialog id="share" class="dialog wide" closedby="any" aria-labelledby="share-title">
+  <h2 id="share-title">Share this trip</h2>
+  <p class="muted small">Anyone with a link sees the plan, without confirmation codes, seats, travellers or notes.</p>
+  {% if links %}
+  <ul class="share-links">
+    {% for l in links %}
+    <li class="stack">
+      <div class="row">
+        <b>{{ l.label or 'Link' }}</b>
+        <span class="muted small">made {{ l.created_at.strftime('%-d %b') }} · {{ 'opened ' ~ l.last_used_at.strftime('%-d %b') if l.last_used_at else 'not opened yet' }}</span>
+      </div>
+      <div class="copy-field">
+        <input id="link-{{ l.id }}" class="mono" readonly value="{{ base_url }}/s/{{ l.token }}" aria-label="Link{{ ' for ' ~ l.label if l.label }}">
+        <button type="button" class="button secondary copy" data-copy="link-{{ l.id }}" title="Copy link" aria-label="Copy link">
+          {{- icon('copy') }}{{ icon('check') }}<span class="copied-label" aria-live="polite"></span>
+        </button>
+      </div>
+      <form method="post" action="/trips/{{ trip.id }}/links/{{ l.id }}/delete" data-confirm="Stop this link working?">
+        <button class="link small revoke">Revoke</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <form method="post" action="/trips/{{ trip.id }}/links" class="dialog-footer stack">
+    <label for="link-label" class="muted small">New link, named for who it's for</label>
+    <div class="merge-field">
+      <input id="link-label" name="label" maxlength="100" placeholder="Mum, the Airbnb host…">
+      <button class="button secondary">Make link</button>
+    </div>
+  </form>
+  <div class="dialog-actions">
+    <button type="button" class="button secondary" commandfor="share" command="close">Done</button>
+  </div>
+</dialog>
+{% endif %}
 
 <div class="grid">
   <section class="timeline">
@@ -285,6 +337,7 @@
     {% endfor %}
   </section>
 
+  {% if role == 'owner' %}
   <aside>
     <section class="card">
       <h2>Ask about this trip</h2>
@@ -295,9 +348,13 @@
       {% if answer %}<div class="answer">{{ answer }}</div>{% endif %}
     </section>
   </aside>
+  {% endif %}
 </div>
+{% if not role %}<p class="muted small shared-footer">Shared from <a href="/">Triptych</a></p>{% endif %}
 {#- Outside the timeline, so a leg's dialog opens even while its journey is folded. -#}
+{% if role in ('edit', 'owner') %}
 {% for r in trip.reservations %}{{ edit_dialog(r) }}{% endfor %}
 {{ add_dialog() }}
 <datalist id="timezones">{% for z in timezones %}<option value="{{ z }}">{% endfor %}</datalist>
+{% endif %}
 {% endblock %}

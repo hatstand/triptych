@@ -492,6 +492,28 @@ button.danger {
 .merge-field select {
   min-width: 0;
 }
+.merge-field input {
+  flex: 1;
+  min-width: 0;
+}
+/* A trip's share links, each with its URL to copy and a way to revoke it. */
+.share-links {
+  list-style: none;
+  margin: 12px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+.share-links .row {
+  align-items: baseline;
+}
+button.link.revoke {
+  color: var(--danger);
+}
+.shared-footer {
+  margin-top: 24px;
+  text-align: center;
+}
 /* A dialog with a form of labelled fields, two to a row where there's room. */
 .dialog.wide {
   width: min(560px, calc(100vw - 32px));

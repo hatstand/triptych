@@ -200,6 +200,8 @@ async def _merge_trip(conn: AsyncConnection, absorbed: str, into: str) -> None:
     )
     await conn.execute("UPDATE reservation SET trip_id = %s WHERE trip_id = %s", (into, absorbed))
     await conn.execute("UPDATE notification SET trip_id = %s WHERE trip_id = %s", (into, absorbed))
+    # Both trips are the same owner's, so whoever the absorbed one was shared with sees the merged one.
+    await conn.execute("UPDATE share_link SET trip_id = %s WHERE trip_id = %s", (into, absorbed))
     await conn.execute(
         """UPDATE inbox_item SET trip_ids = array_replace(trip_ids, %s::uuid, %s::uuid)
            WHERE %s::uuid = ANY(trip_ids)""",
