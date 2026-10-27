@@ -572,3 +572,7 @@ class AskTrip(BaseModel):
     owner: str
     trip_id: str
     question: str
+    asker: str | None = None
+    """Who asks, when it isn't the owner but someone the trip is shared with."""
+    viewer: bool = False
+    """The asker may only view the trip, so the model isn't shown its confirmation codes."""

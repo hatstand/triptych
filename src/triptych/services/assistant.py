@@ -2,7 +2,7 @@
 
 import restate
 
-from triptych import db
+from triptych import db, sharing
 from triptych.models import Answer, AskTrip, LlmAskRequest, Trip
 from triptych.services.llm_service import GPU_SCOPE, limit_key
 from triptych.services.llm_service import ask as llm_ask
@@ -32,20 +32,21 @@ def itinerary_text(t: Trip) -> str:
     return "\n".join(lines)
 
 
-async def _itinerary(owner: str, trip_id: str) -> str:
+async def _itinerary(owner: str, trip_id: str, viewer: bool) -> str:
     t = await db.get_trip(owner, trip_id)
     if t is None:
         raise restate.TerminalError("trip not found", status_code=404)
-    return itinerary_text(t)
+    # The model can repeat anything it's shown, so a viewer's answer is drawn from a viewer's trip.
+    return itinerary_text(sharing.viewer_view(t) if viewer else t)
 
 
 @assistant.handler()
 async def ask(ctx: restate.Context, req: AskTrip) -> Answer:
     context = await ctx.run_typed(
-        "load itinerary", _itinerary, restate.RunOptions[str](), req.owner, req.trip_id
+        "load itinerary", _itinerary, restate.RunOptions[str](), req.owner, req.trip_id, req.viewer
     )
     return await ctx.scope(GPU_SCOPE).service_call(
         llm_ask,
         LlmAskRequest(context=context, question=req.question),
-        limit_key=limit_key("interactive", req.owner),
+        limit_key=limit_key("interactive", req.asker or req.owner),
     )
