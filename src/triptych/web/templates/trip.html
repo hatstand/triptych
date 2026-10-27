@@ -27,10 +27,47 @@
     stays as they set it when the same booking is filed or reprocessed again (db.edit_reservation).
     Cancel, Escape and a click outside close it unsaved; dialog.ts puts the values back. -#}
 {% macro edit_dialog(r) %}
-{% set local = '%Y-%m-%dT%H:%M' %}
 <dialog id="edit-{{ r.id }}" class="dialog wide" closedby="any" aria-labelledby="edit-{{ r.id }}-title">
   <h2 id="edit-{{ r.id }}-title">Edit {{ r.title }}</h2>
   <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/edit" class="stack">
+    {{ reservation_fields(r) }}
+    <div class="dialog-actions">
+      <button type="button" class="button secondary" commandfor="edit-{{ r.id }}" command="close">Cancel</button>
+      <button>Save</button>
+    </div>
+  </form>
+  <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/delete" class="dialog-footer"
+        data-confirm="Remove this item?">
+    <button class="danger">Remove item</button>
+  </form>
+</dialog>
+{% endmacro %}
+{#- Something extraction missed, added by hand. Saying which email it was in makes it a correction of
+    that email's answer, as an edit is (db.add_reservation). -#}
+{% macro add_dialog() %}
+<dialog id="add-reservation" class="dialog wide" closedby="any" aria-labelledby="add-reservation-title">
+  <h2 id="add-reservation-title">Add to this trip</h2>
+  <form method="post" action="/trips/{{ trip.id }}/reservations" class="stack">
+    {% if sources %}
+    <label class="field wide">
+      <span>Which email was it in?</span>
+      <select name="ingest_id">
+        {% for s in sources %}<option value="{{ s.ingest_id }}">{{ s.label }}</option>{% endfor %}
+        <option value="">None of these</option>
+      </select>
+    </label>
+    {% endif %}
+    {{ reservation_fields({'edited_fields': []}) }}
+    <div class="dialog-actions">
+      <button type="button" class="button secondary" commandfor="add-reservation" command="close">Cancel</button>
+      <button>Add</button>
+    </div>
+  </form>
+</dialog>
+{% endmacro %}
+{#- The fields of a reservation's edit or add form, filled in with `r`'s. -#}
+{% macro reservation_fields(r) %}
+{% set local = '%Y-%m-%dT%H:%M' %}
     <div class="fields">
       <label class="field">
         <span>Kind{% if 'kind' in r.edited_fields %} <span class="muted">· edited</span>{% endif %}</span>
@@ -39,7 +76,7 @@
         </select>
       </label>
       {{ field(r, 'title', 'Title', r.title, required=true) }}
-      {{ field(r, 'start_local', 'Starts', r.start_local.strftime(local), type='datetime-local', required=true) }}
+      {{ field(r, 'start_local', 'Starts', r.start_local.strftime(local) if r.start_local, type='datetime-local', required=true) }}
       {{ field(r, 'start_tz', 'Start timezone', r.start_tz, type='zone') }}
       {{ field(r, 'end_local', 'Ends', r.end_local.strftime(local) if r.end_local, type='datetime-local') }}
       {{ field(r, 'end_tz', 'End timezone', r.end_tz, type='zone') }}
@@ -54,16 +91,6 @@
       {{ field(r, 'travelers', 'Travelers, one per line', r.travelers | join('\n'), type='textarea', wide=true) }}
       {{ field(r, 'notes', 'Notes', r.notes, type='textarea', wide=true) }}
     </div>
-    <div class="dialog-actions">
-      <button type="button" class="button secondary" commandfor="edit-{{ r.id }}" command="close">Cancel</button>
-      <button>Save</button>
-    </div>
-  </form>
-  <form method="post" action="/trips/{{ trip.id }}/reservations/{{ r.id }}/delete" class="dialog-footer"
-        data-confirm="Remove this item?">
-    <button class="danger">Remove item</button>
-  </form>
-</dialog>
 {% endmacro %}
 {#- One reservation. On the timeline its times are in the clock column (a flight, train or ferry's arrival
     too); inside a journey they are on the card, with the icon. -#}
@@ -191,6 +218,7 @@
   </div>
   <div class="actions">
     <a class="button secondary" href="/trips/{{ trip.id }}/calendar.ics">Export .ics</a>
+    <button type="button" class="button secondary" commandfor="add-reservation" command="show-modal">Add</button>
     <button type="button" class="button secondary" commandfor="trip-edit" command="show-modal">Edit</button>
   </div>
 </div>
@@ -270,5 +298,6 @@
 </div>
 {#- Outside the timeline, so a leg's dialog opens even while its journey is folded. -#}
 {% for r in trip.reservations %}{{ edit_dialog(r) }}{% endfor %}
+{{ add_dialog() }}
 <datalist id="timezones">{% for z in timezones %}<option value="{{ z }}">{% endfor %}</datalist>
 {% endblock %}

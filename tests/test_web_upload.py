@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from triptych.auth import Me
-from triptych.models import InboxItem, IngestRequest, ReprocessRequest
+from triptych.models import AddReservation, InboxItem, IngestRequest, ReprocessRequest
 from triptych.web import app as web
 from triptych.web import assets, ratelimit
 
@@ -180,3 +180,22 @@ def test_saying_a_no_travel_is_a_booking_reads_it_again(
     assert marked == [(ME.id, "mail-2"), (ME.id, "mail-1")]
     assert isinstance(req, ReprocessRequest)
     assert (req.ingest_id, req.mode, req.owner_says_travel) == ("mail-1", "apply", True)
+
+
+def test_adding_by_hand_says_which_email_missed_it(
+    client: TestClient, restate_client: FakeRestate, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls: list[Any] = []
+
+    async def object_call(_handler: Any, key: str, req: Any) -> None:
+        calls.append((key, req))
+
+    monkeypatch.setattr(restate_client, "object_call", object_call, raising=False)
+    form = {"kind": "flight", "title": "Back", "start_local": "2026-11-07T18:00", "travelers": "",
+            "ingest_id": "mail-1", "seat": " "}  # fmt: skip
+    assert client.post("/trips/t1/reservations", data=form).status_code == 303
+    assert client.post("/trips/t1/reservations", data=form | {"ingest_id": ""}).status_code == 303
+    (key, req), (_, unsourced) = calls
+    assert isinstance(req, AddReservation) and key == ME.id
+    assert (req.trip_id, req.ingest_id, req.fields.title, req.fields.seat) == ("t1", "mail-1", "Back", None)
+    assert unsourced.ingest_id is None and unsourced.reservation_id != req.reservation_id

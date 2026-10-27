@@ -10,6 +10,7 @@ import restate
 
 from triptych import db
 from triptych.models import (
+    AddReservation,
     EditReservation,
     FileRequest,
     FileResult,
@@ -106,6 +107,25 @@ async def edit_reservation(ctx: restate.ObjectContext, req: EditReservation) -> 
         )
         if edited and edited.source_ingest_id:
             corrected(ctx, edited.source_ingest_id)
+
+
+@user.handler()
+async def add_reservation(ctx: restate.ObjectContext, req: AddReservation) -> None:
+    filed = await ctx.run_typed(
+        "add reservation",
+        db.add_reservation,
+        restate.RunOptions[db.Filed](),
+        ctx.key(),
+        req.trip_id,
+        req.reservation_id,
+        req.ingest_id,
+        req.fields,
+    )
+    await reminders.schedule(ctx, ctx.key(), filed.reservations)
+    await place_photo.request(ctx, filed.trip_ids)
+    if req.ingest_id:
+        # Its ingest missed it: a correction to learn from.
+        corrected(ctx, req.ingest_id)
 
 
 @user.handler()
