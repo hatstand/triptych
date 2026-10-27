@@ -16,6 +16,7 @@ from triptych.models import (
     PhotoChoice,
     ReprocessRequest,
     Reservation,
+    Role,
 )
 
 pytestmark = [
@@ -196,8 +197,9 @@ async def test_reminder_target_is_empty_once_rescheduled(me: str) -> None:
 async def test_all_trips_feed_query(me: str) -> None:
     await db.file_reservations(me, "ingest-1", [outbound(), hotel(), home()])
     await db.file_reservations(me, "ingest-2", [res(Kind.RAIL, "2027-01-21T08:31", city="Paris")])
-    trips = await db.all_trips(me)
-    assert sorted(len(t.reservations) for t in trips) == [1, 3]
+    trips = await db.feed_trips(me)
+    assert sorted(len(t.reservations) for t, _ in trips) == [1, 3]
+    assert {role for _, role in trips} == {Role.OWNER}
 
 
 async def test_addresses_map_to_one_user_each(database: str) -> None:

@@ -229,6 +229,11 @@
     {% if role == 'owner' %}
     <button type="button" class="button secondary" commandfor="share" command="show-modal">Share</button>
     {% elif role %}
+    {#- Shared trips are in the member's own calendar feed unless they take them out. -#}
+    <form method="post" action="/trips/{{ trip.id }}/feed">
+      <input type="hidden" name="shown" value="{{ 'false' if in_feed else 'true' }}">
+      <button class="button secondary">{{ 'Hide from my calendar' if in_feed else 'Show in my calendar' }}</button>
+    </form>
     <form method="post" action="/trips/{{ trip.id }}/leave" data-confirm="Leave this trip? You'll need a new invite to see it again.">
       <button class="button secondary">Leave</button>
     </form>

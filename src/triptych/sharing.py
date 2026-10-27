@@ -261,6 +261,24 @@ async def leave(user_id: str, trip_id: str) -> None:
         await db.notify_changed(conn, user_id)
 
 
+async def in_feed(user_id: str, trip_id: str) -> bool:
+    """Whether a trip shared with the user is in their calendar feed."""
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            "SELECT in_feed FROM trip_member WHERE trip_id = %s AND user_id = %s", (trip_id, user_id)
+        )
+        row = await cur.fetchone()
+    return bool(row and row[0])
+
+
+async def set_in_feed(user_id: str, trip_id: str, shown: bool) -> None:
+    async with db.connection() as conn:
+        await conn.execute(
+            "UPDATE trip_member SET in_feed = %s WHERE trip_id = %s AND user_id = %s",
+            (shown, trip_id, user_id),
+        )
+
+
 VIEWER_HIDDEN = frozenset({"confirmation_code", "source_ingest_id", "source_run_id"})
 """What a viewer doesn't see of each reservation: a code is enough to change or cancel a booking."""
 

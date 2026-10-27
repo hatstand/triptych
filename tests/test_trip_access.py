@@ -36,6 +36,7 @@ NEEDS: dict[tuple[str, str], Role | None] = {
     ("POST", "/trips/{trip_id}/members"): Role.OWNER,
     ("POST", "/trips/{trip_id}/members/remove"): Role.OWNER,
     ("POST", "/trips/{trip_id}/leave"): Role.VIEW,
+    ("POST", "/trips/{trip_id}/feed"): Role.VIEW,
     # Invitees have no access until they accept.
     ("POST", "/trips/{trip_id}/accept"): None,
     ("POST", "/trips/{trip_id}/decline"): None,
