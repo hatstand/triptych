@@ -142,7 +142,7 @@ class FakeRestate:
 
 
 @pytest.fixture
-def restate_client() -> Iterator[FakeRestate]:
+def restate_client(own_every_trip: None) -> Iterator[FakeRestate]:
     fake = FakeRestate()
     web.app.dependency_overrides[web.rs] = lambda: fake
     web.app.dependency_overrides[web.current_user] = lambda: ME

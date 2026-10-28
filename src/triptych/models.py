@@ -283,6 +283,26 @@ class TripSummary(BaseModel):
     photo: Photo | None = None
 
 
+class Role(StrEnum):
+    """What someone may do with a trip, each role allowing everything the ones before it do."""
+
+    VIEW = "view"
+    EDIT = "edit"
+    OWNER = "owner"
+
+    def allows(self, need: "Role") -> bool:
+        roles = list(Role)
+        return roles.index(self) >= roles.index(need)
+
+
+class TripAccess(BaseModel):
+    """Someone's access to a trip: whose it is and what they may do with it."""
+
+    trip_id: str
+    owner: str
+    role: Role
+
+
 class Trip(BaseModel):
     id: str
     owner: str

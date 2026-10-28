@@ -13,6 +13,7 @@ import pytest
 from psycopg import conninfo, sql
 
 from triptych import db
+from triptych.models import Role, TripAccess
 
 ADMIN_URL = os.environ.get("TEST_DATABASE_URL")
 SCHEMA = Path(__file__).resolve().parent.parent / "db" / "schema.sql"
@@ -42,3 +43,15 @@ async def database() -> AsyncIterator[str]:
         await db.close()
         with psycopg.connect(ADMIN_URL, autocommit=True) as admin:
             admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(sql.Identifier(name)))
+
+
+@pytest.fixture
+def own_every_trip(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Web tests without a database: whoever asks owns every trip, except ones named someone-elses*."""
+
+    async def trip_access(user_id: str, trip_id: str) -> TripAccess | None:
+        if trip_id.startswith("someone-elses"):
+            return None
+        return TripAccess(trip_id=trip_id, owner=user_id, role=Role.OWNER)
+
+    monkeypatch.setattr(db, "trip_access", trip_access)

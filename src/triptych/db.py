@@ -37,7 +37,9 @@ from triptych.models import (
     ReprocessRequest,
     Reservation,
     ReservationFields,
+    Role,
     Trip,
+    TripAccess,
     TripSummary,
 )
 
@@ -1403,6 +1405,20 @@ async def reminder_target(reservation_id: str, expected_start: datetime) -> Remi
 async def trip_summaries(owner: str) -> list[TripSummary]:
     async with connection() as conn:
         return await _summaries(conn, owner)
+
+
+async def trip_access(user_id: str, trip_id: str) -> TripAccess | None:
+    """What `user_id` may do with the trip, or None if nothing (or there's no such trip)."""
+    try:
+        uuid.UUID(trip_id)
+    except ValueError:
+        return None
+    async with connection() as conn:
+        cur = await conn.execute("SELECT owner::text FROM trip WHERE id = %s", (trip_id,))
+        row = await cur.fetchone()
+    if row is None or row[0] != user_id:
+        return None
+    return TripAccess(trip_id=trip_id, owner=row[0], role=Role.OWNER)
 
 
 async def get_trip(owner: str, trip_id: str) -> Trip | None:

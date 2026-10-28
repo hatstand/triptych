@@ -27,7 +27,7 @@ class FakeRestate:
 
 
 @pytest.fixture
-def restate_client(monkeypatch: pytest.MonkeyPatch) -> Iterator[FakeRestate]:
+def restate_client(monkeypatch: pytest.MonkeyPatch, own_every_trip: None) -> Iterator[FakeRestate]:
     fake = FakeRestate()
 
     async def add_inbox_item(owner: str, item: InboxItem) -> None:
@@ -109,7 +109,7 @@ def test_signed_out_drop_goes_to_login(restate_client: FakeRestate, monkeypatch:
 
 
 def test_trip_photo_is_served_cacheably_and_only_to_its_owner(
-    client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, own_every_trip: None
 ) -> None:
     async def trip_photo(owner: str, trip_id: str) -> tuple[bytes, str] | None:
         return (b"jpeg", "image/jpeg") if (owner, trip_id) == (ME.id, "t1") else None
