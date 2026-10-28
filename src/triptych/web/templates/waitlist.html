@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="card narrow stack">
+  <h1>You're on the waitlist</h1>
+  <p>Thanks for signing up as <strong>{{ waiting }}</strong>. Triptych is letting people in a few at a
+    time, and yours is in the queue.</p>
+  <p class="muted">There's no email when you're in: come back later and you'll land on your trips.
+    Until then, bookings forwarded from your address are turned away.</p>
+  <form method="post" action="/logout"><button class="button secondary">Sign out</button></form>
+</section>
+{% endblock %}

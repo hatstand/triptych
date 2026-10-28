@@ -207,3 +207,63 @@ async def test_trips_shared_with_the_address_wait_for_the_new_account(
     me = await senders.owner("me@gmail.com")
     assert me is not None
     assert [i.trip_id for i in await sharing.pending_invites(me)] == [trip_id]
+
+
+@pytest.fixture
+def waitlist(monkeypatch: pytest.MonkeyPatch, browser: httpx.AsyncClient) -> None:
+    for module in (web, signup):
+        monkeypatch.setattr(module, "settings", replace(module.settings, signups="waitlist"))
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_on_the_waitlist_until_an_admin_lets_you_in(
+    browser: httpx.AsyncClient,
+    waitlist: None,
+    mail: Mail,
+    keys: tuple[bytes, bytes],
+    fake_restate: FakeRestate,
+) -> None:
+    code = await start(browser)
+    await mail(signed(code, "me@gmail.com", keys[0]), "me@gmail.com")
+    assert (await create_passkey(browser, Authenticator())).status_code == 200
+    me = await senders.owner("me@gmail.com")
+    assert me is not None
+    assert [w.email for w in await signup.waitlist()] == ["me@gmail.com"]
+
+    home = await browser.get("/")
+    assert home.status_code == 303 and home.headers["location"] == "/waitlist"
+    assert (await browser.get("/account")).headers["location"] == "/waitlist"
+    assert "on the waitlist" in (await browser.get("/waitlist")).text
+    refused = await mail(sign(message("me@gmail.com"), "gmail.com", keys[0]), "me@gmail.com")
+    assert refused.status_code == 403 and "waitlist" in refused.json()["detail"]
+    assert fake_restate.sent == []
+
+    await signup.approve(me)
+    assert (await browser.get("/")).status_code == 200
+    assert (await browser.get("/waitlist")).headers["location"] == "/"
+    assert await signup.waitlist() == []
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_a_shared_trip_skips_the_waitlist(
+    browser: httpx.AsyncClient, waitlist: None, mail: Mail, keys: tuple[bytes, bytes]
+) -> None:
+    owner = await db.user_for_email("owner@example.com")
+    await sharing.invite(owner, await a_trip(owner), "me@gmail.com")
+    code = await start(browser)
+    await mail(signed(code, "me@gmail.com", keys[0]), "me@gmail.com")
+    assert (await create_passkey(browser, Authenticator())).status_code == 200
+    assert await signup.waitlist() == []
+    assert (await browser.get("/")).status_code == 200
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_sign_in_page_offers_signing_up_only_when_its_on(
+    browser: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    assert 'href="/signup"' in (await browser.get("/login")).text
+    monkeypatch.setattr(web, "settings", replace(web.settings, signups="closed"))
+    assert 'href="/signup"' not in (await browser.get("/login")).text

@@ -24,7 +24,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel, Field, ValidationError
 
-from triptych import auth, db, llm, telemetry
+from triptych import auth, db, llm, signup, telemetry
 from triptych.config import settings
 from triptych.models import IngestState, ReprocessRequest
 from triptych.services import reprocess
@@ -94,6 +94,7 @@ async def render(
     counts = await db.ingest_counts(datetime.now(UTC) - timedelta(days=7))
     ingests = await db.recent_ingests(state)
     invites = await auth.pending_invites()
+    waiting = await signup.waitlist()
     batches = await db.reprocess_batches()
     items = await db.reprocess_batch(batch) if batch else []
     rates = await db.correction_rates(datetime.now(UTC) - timedelta(days=CORRECTION_DAYS))
@@ -114,6 +115,8 @@ async def render(
             "ingests": ingests,
             "invites": invites,
             "invite_days": auth.INVITE_TTL.days,
+            "waiting": waiting,
+            "signups": settings.signups,
             "llm": llm_status,
             "llm_model": settings.llm_model,
             "batches": batches,
@@ -134,6 +137,11 @@ async def dashboard(
     request: Request, login: Admin, state: str | None = None, batch: str | None = None
 ) -> Response:
     return await render(request, login, state, batch)
+
+
+class ApproveForm(BaseModel):
+    user: str
+    email: str = ""
 
 
 class InviteForm(BaseModel):
@@ -234,6 +242,10 @@ async def post(request: Request, login: Admin) -> Response:
                 return await render(request, login, removed_example=removed)
             case "invite":
                 return await create_invite(request, login, InviteForm.model_validate(form))
+            case "approve":
+                approved = ApproveForm.model_validate(form)
+                await signup.approve(approved.user)
+                return await render(request, login, approved=approved.email)
             case _:
                 raise HTTPException(400, f"unknown action {action}")
     except ValidationError as e:

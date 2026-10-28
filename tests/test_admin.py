@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-from triptych import auth, db
+from triptych import auth, db, signup
 from triptych.admin import app as admin
 from triptych.models import ReprocessRequest
 
@@ -60,6 +60,9 @@ def filters(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str | None]]:
     monkeypatch.setattr(admin, "settings", settings)
     monkeypatch.setattr(admin.auth, "pending_invites", pending_invites)
     monkeypatch.setattr(admin.auth, "create_invite", create_invite)
+    monkeypatch.setattr(admin.signup, "waitlist", waitlist)
+    approved.clear()
+    monkeypatch.setattr(admin.signup, "approve", approve)
     monkeypatch.setattr(admin.db, "ingest_counts", ingest_counts)
     monkeypatch.setattr(admin.db, "recent_ingests", recent_ingests)
     monkeypatch.setattr(admin.llm, "health", health)
@@ -73,6 +76,19 @@ def filters(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[str | None]]:
 
 
 removed_examples: list[str] = []
+approved: list[str] = []
+
+
+async def waitlist() -> list[signup.Waiting]:
+    return [
+        signup.Waiting(
+            user_id="u-9", email="keen@example.com", since=datetime(2026, 10, 28, 9, 0, tzinfo=UTC)
+        )
+    ]
+
+
+async def approve(user_id: str) -> None:
+    approved.append(user_id)
 
 
 async def correction_rates(since: datetime) -> list[db.CorrectionRate]:
@@ -376,3 +392,15 @@ def test_removing_an_example_needs_our_origin(filters: list[str | None]) -> None
     )  # fmt: skip
     assert r.status_code == 403
     assert removed_examples == []
+
+
+def test_admin_lets_people_off_the_waitlist(filters: list[str | None]) -> None:
+    page = client.get("/", headers=as_login(OWNER))
+    assert "keen@example.com" in page.text and 'value="u-9"' in page.text
+    r = client.post(
+        "/",
+        data={"action": "approve", "user": "u-9", "email": "keen@example.com"},
+        headers={**as_login(OWNER), "Origin": SITE},
+    )
+    assert r.status_code == 200 and approved == ["u-9"]
+    assert "Let <b>keen@example.com</b> in" in r.text

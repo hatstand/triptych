@@ -56,6 +56,7 @@ class Me(BaseModel):
 
     id: str
     email: str
+    waitlisted: bool = False  # signed up, and waiting for an admin to let them in (signup.py)
 
 
 class Passkey(BaseModel):
@@ -132,12 +133,14 @@ async def session_user(token: str) -> Me | None:
         cur = await conn.execute(
             """SELECT s.user_id::text,
                       (SELECT email FROM user_email e WHERE e.user_id = s.user_id
-                       ORDER BY created_at, email LIMIT 1)
-               FROM web_session s WHERE s.token_hash = %s AND s.expires_at > now()""",
+                       ORDER BY created_at, email LIMIT 1),
+                      u.waitlisted_at IS NOT NULL
+               FROM web_session s JOIN app_user u ON u.id = s.user_id
+               WHERE s.token_hash = %s AND s.expires_at > now()""",
             (_hash(token),),
         )
         row = await cur.fetchone()
-    return Me(id=row[0], email=row[1] or "") if row else None
+    return Me(id=row[0], email=row[1] or "", waitlisted=row[2]) if row else None
 
 
 async def end_session(token: str) -> None:
