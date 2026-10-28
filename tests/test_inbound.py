@@ -99,16 +99,53 @@ def test_tampered_body_fails_dkim(keys: tuple[bytes, bytes]) -> None:
         inbound.verify(raw, "me@gmail.com", dns(pub, {"gmail.com"}))
 
 
+AUTOFORWARD_ENVELOPE = "me+caf_=plans=triptych.purplehatstands.com@gmail.com"
+# What a Gmail filter forward's own ARC set covers: the message, and the mailbox it was delivered to.
+ARC_HEADERS = [b"from", b"to", b"subject", b"message-id", b"delivered-to", b"x-forwarded-for"]
+
+
+def autoforward(priv: bytes, mailbox: str, body: str = "Booking ref QZ7K2M") -> bytes:
+    """An airline's mail as Gmail forwards it from `mailbox`, with Google's ARC set on top."""
+    raw = (
+        f"X-Forwarded-For: {mailbox} plans@triptych.purplehatstands.com\r\n".encode()
+        + f"Delivered-To: {mailbox}\r\n".encode()
+        + b"Authentication-Results: mx.google.com; dkim=pass header.d=airline.example\r\n"
+        + message("Atlantica Air <noreply@airline.example>", body)
+    )
+    seal = dkim.arc_sign(raw, b"arc", b"google.com", priv, b"mx.google.com", include_headers=ARC_HEADERS)
+    return b"".join(seal) + raw
+
+
 def test_autoforward_accepted_via_google_arc_seal(keys: tuple[bytes, bytes]) -> None:
     priv, pub = keys
-    raw = b"Authentication-Results: mx.google.com; dkim=pass header.d=airline.example\r\n" + message(
-        "Atlantica Air <noreply@airline.example>"
-    )
-    seal = b"".join(dkim.arc_sign(raw, b"arc", b"google.com", priv, b"mx.google.com"))
-    result = inbound.verify(
-        seal + raw, "me+caf_=plans=triptych.purplehatstands.com@gmail.com", dns(pub, {"google.com"})
-    )
+    result = inbound.verify(autoforward(priv, "me@gmail.com"), AUTOFORWARD_ENVELOPE, dns(pub, {"google.com"}))
     assert result == inbound.Accepted("me@gmail.com", "arc:google.com")
+
+
+def test_autoforward_from_another_mailbox_is_rejected(keys: tuple[bytes, bytes]) -> None:
+    """A stranger auto-forwards from their own Gmail and resends it with your envelope."""
+    priv, pub = keys
+    with pytest.raises(inbound.Rejected):
+        inbound.verify(
+            autoforward(priv, "stranger@gmail.com"), AUTOFORWARD_ENVELOPE, dns(pub, {"google.com"})
+        )
+
+
+def test_autoforward_needs_google_to_have_signed_the_mailbox(keys: tuple[bytes, bytes]) -> None:
+    priv, pub = keys
+    lookup = dns(pub, {"google.com"})
+    # A Delivered-To added on top after Google signed isn't one it covered.
+    forged = autoforward(priv, "stranger@gmail.com")
+    with pytest.raises(inbound.Rejected):
+        inbound.verify(b"Delivered-To: me@gmail.com\r\n" + forged, AUTOFORWARD_ENVELOPE, lookup)
+    # Nor is a seal whose message signature doesn't cover the forwarding headers at all.
+    raw = b"Delivered-To: me@gmail.com\r\n" + message("noreply@airline.example")
+    bare = b"".join(dkim.arc_sign(raw, b"arc", b"google.com", priv, b"mx.google.com")) + raw
+    with pytest.raises(inbound.Rejected):
+        inbound.verify(bare, AUTOFORWARD_ENVELOPE, lookup)
+    # Nor is anyone else's seal.
+    with pytest.raises(inbound.Rejected):
+        inbound.verify(autoforward(priv, "me@gmail.com"), AUTOFORWARD_ENVELOPE, dns(pub, {"evil.example"}))
 
 
 def test_gmail_forwarding_confirmation_surfaces_code(keys: tuple[bytes, bytes]) -> None:
@@ -254,14 +291,11 @@ async def test_a_code_from_a_strangers_signed_mail_proves_nothing(
 async def test_a_code_is_not_accepted_by_auto_forward(
     mail: Mail, keys: tuple[bytes, bytes], fake_restate: FakeRestate
 ) -> None:
-    """A Google ARC seal doesn't say whose mailbox the mail left from, so it can't prove one."""
-    attacker = await db.user_for_email("attacker@gmail.com")
-    code = await senders.request(attacker, "victim@gmail.com")
-    raw = b"Authentication-Results: mx.google.com; dkim=pass header.d=airline.example\r\n" + message(
-        "noreply@airline.example", f"Verify {code}"
-    )
-    seal = b"".join(dkim.arc_sign(raw, b"arc", b"google.com", keys[0], b"mx.google.com"))
-    resp = await mail(seal + raw, "victim+caf_=plans=triptych.purplehatstands.com@gmail.com")
+    """Codes come straight from the address, never by auto-forward, even a genuine one from it."""
+    owner = await db.user_for_email("owner@gmail.com")
+    code = await senders.request(owner, "victim@gmail.com")
+    raw = autoforward(keys[0], "victim@gmail.com", f"Verify {code}")
+    resp = await mail(raw, "victim+caf_=plans=triptych.purplehatstands.com@gmail.com")
     assert resp.status_code == 403 and "directly" in resp.json()["detail"]
     assert await senders.owner("victim@gmail.com") is None
 
