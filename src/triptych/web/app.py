@@ -179,6 +179,8 @@ async def current_user(request: Request) -> auth.Me:
     me = await signed_in(request)
     if me is None:
         raise HTTPException(status_code=303, headers={"Location": "/login"})
+    if me.waitlisted:
+        raise HTTPException(status_code=303, headers={"Location": "/waitlist"})
     return me
 
 
@@ -249,7 +251,16 @@ async def overview(owner: str) -> Overview:
 async def login_page(request: Request) -> Response:
     if await signed_in(request):
         return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "login.html", {})
+    return templates.TemplateResponse(request, "login.html", {"signups": settings.signups != "closed"})
+
+
+@app.get("/waitlist", response_class=HTMLResponse)
+async def waitlist_page(request: Request) -> Response:
+    """Where a signed-in account still waiting to be let in (signup.py) lands, whatever it asks for."""
+    me = await signed_in(request)
+    if me is None or not me.waitlisted:
+        return RedirectResponse("/" if me else "/login", status_code=303)
+    return templates.TemplateResponse(request, "waitlist.html", {"waiting": me.email})
 
 
 @app.get(
@@ -1020,6 +1031,10 @@ async def inbound_mail(request: Request, client: Client) -> dict[str, str]:
         return {"status": "sender-verified", "user": owner, "auth": result.how}
 
     assert owner is not None
+    if await signup.is_waitlisted(owner):
+        raise HTTPException(
+            403, "your Triptych account is still on the waitlist; try again once you're let in"
+        )
     if result.how.startswith("dkim:"):
         await senders.mark_verified(result.sender)
     req = IngestRequest(

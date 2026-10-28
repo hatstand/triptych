@@ -358,7 +358,14 @@ async def serve(app: str, url: str, env: dict[str, str]) -> asyncio.subprocess.P
 
 
 async def capture(
-    browser: Browser, out: Path, scheme: str, session: str, trip_id: str, link_token: str, friend_session: str
+    browser: Browser,
+    out: Path,
+    scheme: str,
+    session: str,
+    trip_id: str,
+    link_token: str,
+    friend_session: str,
+    waiting_session: str,
 ) -> list[str]:
     """Saves each page's screenshots, and returns whatever the Content-Security-Policy refused."""
     refused: list[str] = []
@@ -382,6 +389,8 @@ async def capture(
     await user.add_cookies([{"name": "session", "value": session, "url": WEB}])
     friend = await context()
     await friend.add_cookies([{"name": "session", "value": friend_session, "url": WEB}])
+    waiting = await context()
+    await waiting.add_cookies([{"name": "session", "value": waiting_session, "url": WEB}])
     # In production, tailscale serve puts the admin app at /admin on the web app's host and sets the
     # login header; here the admin app is on its own port, so its /static comes from the web app.
     admin = await context({"Tailscale-User-Login": ADMIN_LOGIN})
@@ -403,6 +412,7 @@ async def capture(
         (friend, "16-home-shared", f"{WEB}/"),
         (friend, "17-trip-viewer", f"{WEB}/trips/{trip_id}"),
         (anon, "18-signup", f"{WEB}/signup"),
+        (waiting, "20-waitlist", f"{WEB}/"),
     ]
     (out / scheme).mkdir(parents=True, exist_ok=True)
     for ctx, name, url in shots:
@@ -476,7 +486,7 @@ async def capture(
     await page.evaluate("document.fonts.ready")
     await page.screenshot(path=out / scheme / "19-signup-send.png", full_page=True, animations="disabled")
     await page.close()
-    for ctx in (anon, user, friend, admin):
+    for ctx in (anon, user, friend, waiting, admin):
         await ctx.close()
     return refused
 
@@ -507,6 +517,11 @@ async def main() -> None:
     later = next(t for t in trips if t.start_date > upcoming.start_date)
     await sharing.invite(me, later.id, FRIEND)
     friend_session = await auth.create_session(friend)
+    # Someone who signed up while SIGNUPS=waitlist, still waiting to be let in.
+    waiting = await db.user_for_email("robin@example.com")
+    async with db.connection() as conn:
+        await conn.execute("UPDATE app_user SET waitlisted_at = now() WHERE id = %s", (waiting,))
+    waiting_session = await auth.create_session(waiting)
     await db.close()
 
     env = os.environ | {
@@ -514,7 +529,7 @@ async def main() -> None:
         "PUBLIC_BASE_URL": WEB,
         "ADMIN_TAILSCALE_LOGINS": ADMIN_LOGIN,
         "RESTATE_UI_URL": "http://localhost:9070",
-        "SIGNUPS": "open",
+        "SIGNUPS": "waitlist",
         # Nothing listens here, so the admin page's model status shows its error state at once.
         "OLLAMA_URL": "http://127.0.0.1:9",
         # Only so the account page offers eval set sharing; rendering it never touches a bucket.
@@ -538,6 +553,7 @@ async def main() -> None:
                     upcoming.id,
                     sharing.token_for(link_id),
                     friend_session,
+                    waiting_session,
                 )
             await browser.close()
     finally:

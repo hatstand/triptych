@@ -8,6 +8,11 @@ the browser holding the token can go on to make the account, together with its f
 leaves nothing behind but a row that expires. An address that already has an account never gets
 another: its owner is told to sign in (a lost passkey is recovered by an admin invite).
 
+With SIGNUPS=waitlist a new account waits for an admin to approve it on /admin: its owner can sign
+in, but sees only that they're waiting, and mail from them is refused. There's no outbound mail to
+say when they're in; they find out at their next visit. Someone a trip has already been shared with
+skips the queue.
+
 The code is an HMAC of the token under SECRET_KEY, in the same form as sender codes (senders.py), so
 the page can show it again on reload while the database stores only hashes of either.
 """
@@ -137,10 +142,46 @@ async def create_account(conn: AsyncConnection, signup_token_hash: bytes, user_i
     row = await cur.fetchone()
     if row is None:
         raise SignupError("This signup has expired. Please start again.")
-    await conn.execute("INSERT INTO app_user (id) VALUES (%s)", (user_id,))
+    # On the waitlist, unless someone has already shared a trip with the address.
+    await conn.execute(
+        """INSERT INTO app_user (id, waitlisted_at)
+           SELECT %(id)s, CASE WHEN %(waitlist)s AND NOT EXISTS (
+                      SELECT 1 FROM trip_member WHERE email = %(email)s AND user_id IS NULL)
+                  THEN now() END""",
+        {"id": user_id, "waitlist": settings.signups == "waitlist", "email": row[0]},
+    )
     try:
         await conn.execute(
             "INSERT INTO user_email (email, user_id, verified_at) VALUES (%s, %s, now())", (row[0], user_id)
         )
     except UniqueViolation as e:  # the caller's transaction rolls back as this propagates
         raise SignupError(f"{row[0]} already has an account. Sign in instead.") from e
+
+
+class Waiting(BaseModel):
+    user_id: str
+    email: str
+    since: datetime
+
+
+async def waitlist() -> list[Waiting]:
+    """Accounts waiting to be let in, longest-waiting first."""
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """SELECT u.id::text, coalesce((SELECT email FROM user_email e WHERE e.user_id = u.id
+                                            ORDER BY created_at, email LIMIT 1), ''), u.waitlisted_at
+               FROM app_user u WHERE u.waitlisted_at IS NOT NULL ORDER BY u.waitlisted_at"""
+        )
+        return [Waiting(user_id=i, email=e, since=s) for i, e, s in await cur.fetchall()]
+
+
+async def is_waitlisted(user_id: str) -> bool:
+    async with db.connection() as conn:
+        cur = await conn.execute("SELECT waitlisted_at IS NOT NULL FROM app_user WHERE id = %s", (user_id,))
+        row = await cur.fetchone()
+    return bool(row and row[0])
+
+
+async def approve(user_id: str) -> None:
+    async with db.connection() as conn:
+        await conn.execute("UPDATE app_user SET waitlisted_at = NULL WHERE id = %s", (user_id,))

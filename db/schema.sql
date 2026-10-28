@@ -25,7 +25,8 @@ SET default_table_access_method = heap;
 
 CREATE TABLE public.app_user (
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    id uuid DEFAULT gen_random_uuid() NOT NULL
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    waitlisted_at timestamp with time zone
 );
 
 
@@ -981,4 +982,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261028000000'),
     ('20261028010000'),
     ('20261028120000'),
-    ('20261028130000');
+    ('20261028130000'),
+    ('20261028140000');

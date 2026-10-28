@@ -5,7 +5,11 @@
   <p class="muted">Use the passkey you saved for Triptych on this device, your phone, or a security key.</p>
   <button type="button" data-passkey="login">Sign in with a passkey</button>
   <p class="error" data-passkey-error hidden></p>
+  {% if signups %}
+  <p class="muted small">No account yet? <a href="/signup">Create one</a>.</p>
+  {% else %}
   <p class="muted small">No account yet? Ask for an invite link.</p>
+  {% endif %}
 </section>
 <script type="module" src="{{ static('passkey.ts') }}"></script>
 {% endblock %}

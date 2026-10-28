@@ -41,6 +41,33 @@
 </section>
 
 <section class="card">
+  <h2>Waitlist</h2>
+  {% if approved %}<p>Let <b>{{ approved }}</b> in. They'll see their trips at their next visit.</p>{% endif %}
+  {% if waiting %}
+  <table class="ingests">
+    <tr><th>Waiting</th><th>Since</th><th></th></tr>
+    {% for w in waiting %}
+    <tr>
+      <td>{{ w.email }}</td>
+      <td class="mono">{{ w.since.strftime('%Y-%m-%d %H:%M') }}</td>
+      <td>
+        <form method="post">
+          <input type="hidden" name="action" value="approve">
+          <input type="hidden" name="user" value="{{ w.user_id }}">
+          <input type="hidden" name="email" value="{{ w.email }}">
+          <button>Let in</button>
+        </form>
+      </td>
+    </tr>
+    {% endfor %}
+  </table>
+  {% else %}
+  <p class="muted small">Nobody is waiting.
+    {% if signups == "closed" %}Signing up is off (SIGNUPS=closed).{% elif signups == "open" %}Anyone who signs up gets straight in (SIGNUPS=open).{% endif %}</p>
+  {% endif %}
+</section>
+
+<section class="card">
   <h2>LLM</h2>
   {% if llm.error %}
   <p><span class="badge failed">down</span> <span class="mono">{{ llm.error }}</span></p>
