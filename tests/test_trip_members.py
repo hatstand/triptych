@@ -10,7 +10,8 @@ from fastapi.testclient import TestClient
 
 from triptych import db, sharing
 from triptych.auth import Me
-from triptych.models import AddReservation, Kind, Reservation, Role, Trip, TripAccess
+from triptych.models import AddReservation, Answer, AskTrip, Kind, Reservation, Role, Trip, TripAccess
+from triptych.services import assistant
 from triptych.web import app as web
 from triptych.web import ratelimit
 
@@ -160,7 +161,7 @@ async def test_a_viewer_gets_a_read_only_trip_page_without_codes(
 
     page = client.get(f"/trips/{trip_id}").text
     assert "TP 1351 LIS→OPO" in page and "12A" in page and "Shared by owner@example.com" in page
-    for hidden in ("SECRET1", f"/trips/{trip_id}/rename", "/delete", 'commandfor="share"', "Ask about"):
+    for hidden in ("SECRET1", f"/trips/{trip_id}/rename", "/delete", 'commandfor="share"'):
         assert hidden not in page
     assert "SECRET1" not in client.get(f"/trips/{trip_id}/calendar.ics").text
     assert client.post(f"/trips/{trip_id}/rename", data={"name": "Mine now"}).status_code == 404
@@ -197,7 +198,6 @@ async def test_an_editor_can_change_the_trip_but_not_share_or_delete_it(
         'commandfor="share"',
         f"/trips/{trip_id}/delete",
         f"/trips/{trip_id}/merge",
-        "Ask about",
     ):
         assert owners_only not in page
 
@@ -264,3 +264,31 @@ async def test_shared_trips_are_in_the_members_calendar_feed_until_hidden(
     await sharing.set_in_feed(friend, trip_id, True)
     await sharing.invite(owner, trip_id, "friend@example.com", Role.EDIT)
     assert "SECRET1" in client.get(feed).text  # an editor's has them
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_members_can_ask_but_a_viewers_answer_never_sees_the_codes(
+    owner: str, friend: str, as_user: list[Me]
+) -> None:
+    trip_id = await a_trip(owner)
+    await sharing.invite(owner, trip_id, "friend@example.com")
+    assert await sharing.accept(friend, trip_id)
+    asked: list[AskTrip] = []
+
+    class Restate:
+        async def service_call(self, _handler: object, req: AskTrip) -> Answer:
+            asked.append(req)
+            return Answer(text="Leave at 7.")
+
+    web.app.dependency_overrides[web.rs] = Restate
+    as_user.append(Me(id=friend, email="friend@example.com"))
+    client = TestClient(web.app, follow_redirects=False)
+    assert "Ask about this trip" in client.get(f"/trips/{trip_id}").text
+    resp = client.post(f"/trips/{trip_id}/ask", data={"question": "When do I leave?"})
+    assert resp.status_code == 200 and "Leave at 7." in resp.text
+    (req,) = asked
+    assert (req.owner, req.asker, req.viewer) == (owner, friend, True)
+
+    assert "SECRET1" in await assistant._itinerary(owner, trip_id, viewer=False)
+    assert "SECRET1" not in await assistant._itinerary(owner, trip_id, viewer=True)

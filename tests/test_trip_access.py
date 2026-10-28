@@ -28,7 +28,7 @@ NEEDS: dict[tuple[str, str], Role | None] = {
     ("POST", "/trips/{trip_id}/reservations"): Role.EDIT,
     ("POST", "/trips/{trip_id}/reservations/{reservation_id}/edit"): Role.EDIT,
     ("POST", "/trips/{trip_id}/reservations/{reservation_id}/delete"): Role.EDIT,
-    ("POST", "/trips/{trip_id}/ask"): Role.OWNER,
+    ("POST", "/trips/{trip_id}/ask"): Role.VIEW,
     ("POST", "/trips/{trip_id}/merge"): Role.OWNER,
     ("POST", "/trips/{trip_id}/delete"): Role.OWNER,
     ("POST", "/trips/{trip_id}/links"): Role.OWNER,

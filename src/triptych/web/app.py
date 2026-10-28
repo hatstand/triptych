@@ -566,12 +566,22 @@ async def trip_photo(trip_id: str, access: CanView) -> Response:
 
 @app.post("/trips/{trip_id}/ask", response_class=HTMLResponse, dependencies=[per_user(ratelimit.ASK, "ask")])
 async def trip_ask(
-    request: Request, trip_id: str, me: User, access: Owns, client: Client, question: Annotated[str, Form()]
+    request: Request,
+    trip_id: str,
+    me: User,
+    access: CanView,
+    client: Client,
+    question: Annotated[str, Form()],
 ) -> Response:
     t = await load_trip(access)
-    answer: Answer = await client.service_call(
-        assistant_svc.ask, AskTrip(owner=access.owner, trip_id=trip_id, question=question)
+    req = AskTrip(
+        owner=access.owner,
+        trip_id=trip_id,
+        question=question,
+        asker=None if access.role is Role.OWNER else me.id,
+        viewer=access.role is Role.VIEW,
     )
+    answer: Answer = await client.service_call(assistant_svc.ask, req)
     context = await trip_context(me, access, t)
     return templates.TemplateResponse(
         request, "trip.html", context | {"question": question, "answer": answer.text}
