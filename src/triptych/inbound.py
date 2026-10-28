@@ -13,9 +13,9 @@ check also ties the signed message to the envelope sender's own mailbox:
 
 * DKIM: the message has exactly one From, which is the envelope sender, and a valid signature that
   covers From and comes from that address's domain.
-* ARC (Gmail only): the latest seal is Google's and the chain validates. This doesn't yet say which
-  Gmail mailbox forwarded it, so it only files mail for an address that is already a sender, and
-  never proves a new one (a verification code must come by the DKIM route).
+* ARC (Gmail only): the latest seal is Google's, the chain validates, and Google's latest
+  ARC-Message-Signature covers a Delivered-To or X-Forwarded-For naming the envelope sender, i.e.
+  the mailbox Gmail forwarded from.
 
 Verification is done here on the raw bytes (DKIM/ARC survive the Worker untouched), not delegated
 to Cloudflare. Whose account an authenticated sender files into (and whether they may at all) is
@@ -32,6 +32,7 @@ from email.utils import getaddresses, parseaddr
 from typing import Any
 
 import dkim
+import dkim.util
 
 from triptych import senders
 
@@ -114,16 +115,45 @@ def author(raw: bytes) -> str | None:
     return addresses[0].strip().lower() if len(addresses) == 1 else None
 
 
-def _arc_sealer(raw: bytes, dnsfunc: DnsFunc) -> str | None:
-    """Domain of the most recent ARC seal, if the whole chain validates."""
+# The headers Gmail adds that name the mailbox a forward left from.
+FORWARDING_HEADERS = (b"delivered-to", b"x-forwarded-for")
+
+
+def _google_forwarded_for(raw: bytes, sender: str, dnsfunc: DnsFunc) -> bool:
+    """Whether Google sealed the most recent ARC set, the chain validates, and the headers Google's
+    message signature covers say the mail was forwarded from `sender`'s mailbox."""
     try:
         cv, results, _ = dkim.arc_verify(raw, dnsfunc=dnsfunc)
     except dkim.DKIMException:
-        return None
+        return False
     if cv != dkim.CV_Pass or not results:
-        return None
-    domain = results[0].get("as-domain")
-    return domain.decode().lower() if isinstance(domain, bytes) else None
+        return False
+    latest = results[0]
+    if (
+        latest.get("as-domain", b"").lower() != b"google.com"
+        or latest.get("ams-domain", b"").lower() != b"google.com"
+    ):
+        return False
+    headers = dkim.DKIM(raw).headers
+    marker = b" i=%d;" % latest["instance"]
+    ams = next(
+        (v for n, v in headers if n.lower() == b"arc-message-signature" and marker in b" " + v.lower()), None
+    )
+    if ams is None:
+        return False
+    try:
+        covered = _signed_names(dkim.util.parse_tag_value(ams.strip()).get(b"h", b""))
+    except dkim.util.InvalidTagValueList:
+        return False
+    # The instances a verifier checks: each name listed picks the next one up from the bottom.
+    signed = dkim.select_headers(headers, [n for n in covered if n in FORWARDING_HEADERS])
+    named = {
+        canonical_sender(a)
+        for _, value in signed
+        for a in re.split(r"[\s,]+", value.decode("utf-8", "replace"))
+        if "@" in a
+    }
+    return sender in named
 
 
 def _aligned(signer: str, domain: str) -> bool:
@@ -152,11 +182,11 @@ def verify(
     domain = sender.rpartition("@")[2]
     if author(raw) == sender and any(_aligned(s, domain) for s in _dkim_domains(raw, dnsfunc)):
         return Accepted(sender, f"dkim:{domain}")
-    if domain in GOOGLE_DOMAINS and _arc_sealer(raw, dnsfunc) == "google.com":
+    if domain in GOOGLE_DOMAINS and _google_forwarded_for(raw, sender, dnsfunc):
         return Accepted(sender, "arc:google.com")
     raise Rejected(
         f"could not authenticate {sender} (it needs to be From {sender} with a DKIM signature from"
-        f" {domain}, or a Gmail auto-forward)"
+        f" {domain}, or a Gmail auto-forward from that mailbox)"
     )
 
 
