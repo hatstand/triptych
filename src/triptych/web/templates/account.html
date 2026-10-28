@@ -44,7 +44,8 @@
     <div class="row sender">
       <div>
         <div>{{ s.email }}</div>
-        <div class="muted small">Added {{ s.created_at.strftime('%d %b %Y') }}</div>
+        <div class="muted small">Added {{ s.created_at.strftime('%d %b %Y') }}{% if not s.verified_at %}.
+          Not confirmed yet: trips shared with it show up once you forward a booking from it{% endif %}</div>
       </div>
       {% if senders|length > 1 %}
       <form method="post" action="/account/senders/delete"

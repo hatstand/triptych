@@ -36,7 +36,7 @@ from playwright.async_api import (
     async_playwright,
 )
 
-from triptych import auth, db, photos, sharing
+from triptych import auth, db, photos, senders, sharing
 from triptych.config import settings
 from triptych.models import (
     Extraction,
@@ -491,6 +491,7 @@ async def main() -> None:
     assert link_id is not None
     # A friend it's shared with, who has also been invited to the later trip.
     friend = await db.user_for_email(FRIEND)
+    await senders.mark_verified(FRIEND)  # trip invites only reach proven addresses
     await sharing.invite(me, upcoming.id, FRIEND)
     await sharing.accept(friend, upcoming.id)
     later = next(t for t in trips if t.start_date > upcoming.start_date)

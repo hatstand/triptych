@@ -5,6 +5,10 @@ from any address no user has. An address gets there by being named on the invite
 up with, or by the user adding it on the account page: they're shown a code, and mail from that
 address carrying the code (authenticated like any other inbound mail, see inbound.py) proves they
 control it. The code is bound to the address it was issued for, so it can't vouch for another.
+
+An address is verified once mail authenticated by DKIM as coming from it has reached us: a code does
+that, and so does the first booking forwarded from an address an admin invite named. Only verified
+addresses match trip invites (sharing.py), since an unproven one may not be its user's at all.
 """
 
 import hashlib
@@ -12,6 +16,7 @@ import re
 import secrets
 from datetime import datetime, timedelta
 
+from psycopg import AsyncConnection
 from psycopg.errors import UniqueViolation
 from pydantic import BaseModel
 
@@ -30,6 +35,7 @@ class SenderError(Exception):
 class Sender(BaseModel):
     email: str
     created_at: datetime
+    verified_at: datetime | None
 
 
 class PendingSender(BaseModel):
@@ -60,10 +66,11 @@ async def owner(email: str) -> str | None:
 async def addresses(user_id: str) -> list[Sender]:
     async with db.connection() as conn:
         cur = await conn.execute(
-            "SELECT email, created_at FROM user_email WHERE user_id = %s ORDER BY created_at, email",
+            """SELECT email, created_at, verified_at FROM user_email WHERE user_id = %s
+               ORDER BY created_at, email""",
             (user_id,),
         )
-        return [Sender(email=e, created_at=c) for e, c in await cur.fetchall()]
+        return [Sender(email=e, created_at=c, verified_at=v) for e, c, v in await cur.fetchall()]
 
 
 async def pending(user_id: str) -> list[PendingSender]:
@@ -129,15 +136,29 @@ async def confirm(code: str, email: str) -> str:
         if existing := await cur.fetchone():
             if existing[0] != user_id:
                 raise SenderError(f"{email} already belongs to another Triptych account")
+            await _mark_verified(conn, email)
             return user_id
         try:
             async with conn.transaction():
                 await conn.execute(
-                    "INSERT INTO user_email (email, user_id) VALUES (%s, %s)", (email, user_id)
+                    "INSERT INTO user_email (email, user_id, verified_at) VALUES (%s, %s, now())",
+                    (email, user_id),
                 )
         except UniqueViolation as e:
             raise SenderError(f"{email} already belongs to another Triptych account") from e
     return user_id
+
+
+async def _mark_verified(conn: AsyncConnection, email: str) -> None:
+    await conn.execute(
+        "UPDATE user_email SET verified_at = now() WHERE email = %s AND verified_at IS NULL", (email,)
+    )
+
+
+async def mark_verified(email: str) -> None:
+    """Mail authenticated by DKIM as coming from `email` has arrived: it is proven, if it wasn't."""
+    async with db.connection() as conn:
+        await _mark_verified(conn, db.normalise_email(email))
 
 
 async def remove(user_id: str, email: str) -> None:

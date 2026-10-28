@@ -902,6 +902,8 @@ async def inbound_mail(request: Request, client: Client) -> dict[str, str]:
         return {"status": "sender-verified", "user": owner, "auth": result.how}
 
     assert owner is not None
+    if result.how.startswith("dkim:"):
+        await senders.mark_verified(result.sender)
     req = IngestRequest(
         user=owner,
         source="email",

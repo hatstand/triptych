@@ -1,8 +1,9 @@
 """Sharing a trip, with other Triptych users by invite and with anyone by link.
 
 An invite names an email address and a role (models.Role). It waits, matched by address, until
-someone with that address on their account accepts it; until then it shows nothing. Viewers see
-the trip without confirmation codes; editors and the owner see everything (but where it came from).
+someone with that address verified on their account (senders.py) accepts it; until then it shows
+nothing. Viewers see the trip without confirmation codes; editors and the owner see everything (but
+where it came from).
 
 Anyone with a link sees the trip read-only, without what could change a booking (codes, seats,
 travellers, notes) or say where it came from.
@@ -207,8 +208,9 @@ async def remove_member(owner: str, trip_id: str, email: str) -> None:
             await db.notify_changed(conn, row[0])
 
 
-# An invite reaches a user through any of their addresses, until they accept it.
-MINE = "m.user_id IS NULL AND m.email IN (SELECT email FROM user_email WHERE user_id = %(me)s)"
+# An invite reaches a user through any of their verified addresses (senders.py), until they accept it.
+MINE = """m.user_id IS NULL AND m.email IN (SELECT email FROM user_email
+                                         WHERE user_id = %(me)s AND verified_at IS NOT NULL)"""
 
 
 async def pending_invites(user_id: str) -> list[Invite]:
