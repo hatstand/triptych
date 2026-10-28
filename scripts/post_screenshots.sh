@@ -39,13 +39,18 @@ else
 fi
 git -C "$work" config user.name "github-actions[bot]"
 git -C "$work" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-rm -rf "${work:?}/$folder"
-mkdir -p "$work/$folder"
-cp -R "$dir/light" "$dir/dark" "$work/$folder/"
-git -C "$work" add -A
-git -C "$work" commit -q -m "Screenshots for $folder from run $GITHUB_RUN_ID" || echo "Same screenshots as before"
+# Commits this run's screenshots on top of whatever the worktree has checked out.
+commit() {
+  rm -rf "${work:?}/$folder"
+  mkdir -p "$work/$folder"
+  cp -R "$dir/light" "$dir/dark" "$work/$folder/"
+  git -C "$work" add -A
+  git -C "$work" commit -q -m "Screenshots for $folder from run $GITHUB_RUN_ID" || echo "Same screenshots as before"
+}
+commit
 
-# Other pull requests' runs push to the branch too: on a race, replay this commit onto theirs.
+# Other runs push to the branch too: on a race, commit again on top of theirs. Not a rebase: the
+# fetch is shallow, so a rebase finds no common history and replays every folder, conflicting.
 for attempt in 1 2 3 4 5; do
   if git -C "$work" push -q origin "HEAD:refs/heads/$branch"; then
     break
@@ -53,7 +58,8 @@ for attempt in 1 2 3 4 5; do
   [ "$attempt" = 5 ] && exit 1
   sleep $((attempt * 2))
   git -C "$work" fetch -q --depth=1 origin "$branch"
-  git -C "$work" rebase -q FETCH_HEAD
+  git -C "$work" checkout -q --detach FETCH_HEAD
+  commit
 done
 sha=$(git -C "$work" rev-parse HEAD)
 echo "Screenshots are on $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/tree/$sha/$folder"
