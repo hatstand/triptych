@@ -328,6 +328,7 @@ CREATE TABLE public.trip_member (
     invited_by uuid NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     accepted_at timestamp with time zone,
+    in_feed boolean DEFAULT true NOT NULL,
     CONSTRAINT trip_member_check CHECK (((user_id IS NULL) = (accepted_at IS NULL))),
     CONSTRAINT trip_member_role_check CHECK ((role = ANY (ARRAY['view'::text, 'edit'::text])))
 );
@@ -930,4 +931,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261027110000'),
     ('20261027220000'),
     ('20261027230000'),
-    ('20261028000000');
+    ('20261028000000'),
+    ('20261028010000');

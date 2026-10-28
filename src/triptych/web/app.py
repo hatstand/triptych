@@ -540,6 +540,7 @@ async def trip_context(me: auth.Me, access: TripAccess, t: Trip) -> dict[str, An
         "members": members,
         "added_by": {e: await db.primary_email(e) or "someone" for e in editors},
         "shared_by": None if owns else await db.primary_email(access.owner),
+        "in_feed": None if owns else await sharing.in_feed(me.id, t.id),
         "base_url": settings.public_base_url.rstrip("/"),
     }
 
@@ -609,6 +610,13 @@ async def member_remove(access: Owns, email: Annotated[str, Form()]) -> Response
 async def member_leave(me: User, access: CanView) -> Response:
     await sharing.leave(me.id, access.trip_id)
     return RedirectResponse("/", status_code=303)
+
+
+@app.post("/trips/{trip_id}/feed")
+async def member_feed(me: User, access: CanView, shown: Annotated[bool, Form()]) -> Response:
+    """Put a trip shared with you in your calendar feed, or take it out."""
+    await sharing.set_in_feed(me.id, access.trip_id, shown)
+    return RedirectResponse(f"/trips/{access.trip_id}", status_code=303)
 
 
 # Invitees have no access to the trip until they accept, so these take no trip_access.
@@ -910,7 +918,8 @@ async def trip_ics(trip_id: str, access: CanView) -> Response:
 async def feed(token: str, u: str) -> Response:
     if not hmac.compare_digest(token, feed_token(u)):
         raise HTTPException(404)
-    return ics(ical.calendar(await db.all_trips(u), "Triptych"), "triptych.ics")
+    trips = [sharing.viewer_view(t) if role is Role.VIEW else t for t, role in await db.feed_trips(u)]
+    return ics(ical.calendar(trips, "Triptych"), "triptych.ics")
 
 
 # --- JSON API --------------------------------------------------------------------------------

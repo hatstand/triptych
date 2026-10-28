@@ -238,3 +238,29 @@ async def test_the_owner_can_switch_someone_between_viewer_and_editor(
         sharing.Member(email="friend@example.com", role=Role.VIEW, accepted=True)
     ]
     assert client.post(f"/trips/{trip_id}/members", data=invite | {"role": "owner"}).status_code == 422
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_shared_trips_are_in_the_members_calendar_feed_until_hidden(
+    owner: str, friend: str, as_user: list[Me]
+) -> None:
+    trip_id = await a_trip(owner)
+    await sharing.invite(owner, trip_id, "friend@example.com")
+    client = TestClient(web.app, follow_redirects=False)
+    feed = f"/feed/{web.feed_token(friend)}.ics?u={friend}"
+    assert "TP 1351" not in client.get(feed).text  # not until accepted
+
+    assert await sharing.accept(friend, trip_id)
+    ics = client.get(feed).text
+    assert "TP 1351" in ics and "SECRET1" not in ics  # a viewer's: no codes
+
+    as_user.append(Me(id=friend, email="friend@example.com"))
+    assert "Hide from my calendar" in client.get(f"/trips/{trip_id}").text
+    assert client.post(f"/trips/{trip_id}/feed", data={"shown": "false"}).status_code == 303
+    assert "TP 1351" not in client.get(feed).text
+    assert "Show in my calendar" in client.get(f"/trips/{trip_id}").text
+
+    await sharing.set_in_feed(friend, trip_id, True)
+    await sharing.invite(owner, trip_id, "friend@example.com", Role.EDIT)
+    assert "SECRET1" in client.get(feed).text  # an editor's has them

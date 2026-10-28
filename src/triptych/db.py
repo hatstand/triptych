@@ -1514,23 +1514,28 @@ async def trip_photo(owner: str, trip_id: str) -> tuple[bytes, str] | None:
     return (bytes(row[0]), row[1]) if row else None
 
 
-async def all_trips(owner: str) -> list[Trip]:
-    """Every trip with its reservations in two queries (the calendar feed)."""
+async def feed_trips(user_id: str) -> list[tuple[Trip, Role]]:
+    """Every trip in the user's calendar feed, with what they may do with it: theirs, and the ones
+    shared with them that they haven't taken out of it. Two queries."""
     async with connection() as conn:
-        cur = await conn.execute("SELECT id::text, name, destination FROM trip WHERE owner = %s", (owner,))
+        cur = await conn.execute(
+            """SELECT t.id::text, t.owner::text, t.name, t.destination, coalesce(m.role, 'owner')
+               FROM trip t LEFT JOIN trip_member m ON m.trip_id = t.id AND m.user_id = %(u)s
+               WHERE t.owner = %(u)s OR (m.user_id IS NOT NULL AND m.in_feed)""",
+            {"u": user_id},
+        )
         trips = {
-            tid: Trip(id=tid, owner=owner, name=name, destination=dest)
-            for tid, name, dest in await cur.fetchall()
+            tid: (Trip(id=tid, owner=owner, name=name, destination=dest), Role(role))
+            for tid, owner, name, dest, role in await cur.fetchall()
         }
         cur = await conn.execute(
             f"""SELECT r.trip_id::text, {RESERVATION_COLUMNS.replace("id::text", "r.id::text", 1)}
-                FROM reservation r JOIN trip t ON t.id = r.trip_id
-                WHERE t.owner = %s ORDER BY r.start_local""",
-            (owner,),
+                FROM reservation r WHERE r.trip_id = ANY(%s::uuid[]) ORDER BY r.start_local""",
+            (list(trips),),
         )
         names = [d.name for d in cur.description or []][1:]
         for row in await cur.fetchall():
-            trips[row[0]].reservations.append(Reservation(**dict(zip(names, row[1:], strict=True))))
+            trips[row[0]][0].reservations.append(Reservation(**dict(zip(names, row[1:], strict=True))))
     return list(trips.values())
 
 
