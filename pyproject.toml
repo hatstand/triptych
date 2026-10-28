@@ -2,7 +2,7 @@
 name = "triptych"
 version = "0.1.0"
 description = "A TripIt-style itinerary organiser powered by a local LLM and Restate"
-requires-python = ">=3.13"
+requires-python = ">=3.14"
 dependencies = [
     "restate-sdk[serde,client]==1.2.0",
     "hypercorn>=0.17",
@@ -57,7 +57,7 @@ packages = ["src/triptych"]
 
 [tool.ruff]
 line-length = 110
-target-version = "py313"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
@@ -65,7 +65,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
 allowed-confusables = ["–"]
 
 [tool.ty.environment]
-python-version = "3.13"
+python-version = "3.14"
 
 [tool.ty.src]
 include = ["src", "tests", "scripts", "evals"]

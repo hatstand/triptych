@@ -36,7 +36,7 @@ def document(case: Case) -> tuple[ParsedDocument, bytes]:
 def owner_of(root: Path, case_id: str) -> str | None:
     try:
         return json.loads((root / "inputs" / case_id / "case.json").read_text()).get("owner")
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 

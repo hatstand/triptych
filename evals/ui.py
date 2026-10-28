@@ -79,7 +79,7 @@ class UiState(TypedDict):
 
     root: Path
     templates: Jinja2Templates
-    runs: "Runs"
+    runs: Runs
 
 
 def state(request: Request) -> UiState:

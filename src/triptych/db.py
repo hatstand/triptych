@@ -393,7 +393,7 @@ class EvalCase(BaseModel):
     """What the owner has from it now, corrections and all."""
     keys: dict[str, str] = Field(default_factory=dict)
     """Their stored dedupe keys, by id (what `pair_up` matches the run's answer with)."""
-    dismissals: list["Dismissal"] = Field(default_factory=list)
+    dismissals: list[Dismissal] = Field(default_factory=list)
     """The ones the owner deleted."""
     reclassified: bool = False
     """The owner said it's a booking after it was read as "no travel" (mark_reclassified)."""

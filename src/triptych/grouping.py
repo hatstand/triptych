@@ -42,7 +42,7 @@ class Bucket:
             return (start - self.end).days
         return 0
 
-    def absorb(self, other: "Bucket") -> None:
+    def absorb(self, other: Bucket) -> None:
         self.reservations += other.reservations
         self.absorbed += other.absorbed + ([] if other.is_new else [other.trip_id])
         self.start = min(self.start, other.start)

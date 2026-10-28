@@ -9,6 +9,7 @@ segments are one journey when all of these hold:
   stopover, not a connection).
 """
 
+import datetime as dt
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -85,7 +86,7 @@ def _aware(t: datetime, tz: str | None) -> datetime | None:
         return None
     try:
         return t.replace(tzinfo=ZoneInfo(tz))
-    except (ZoneInfoNotFoundError, ValueError):
+    except ZoneInfoNotFoundError, ValueError:
         return None
 
 
@@ -166,7 +167,7 @@ class Journey:
         return [c.wait for c in self.connections]
 
     @property
-    def connections(self) -> list["Connection"]:
+    def connections(self) -> list[Connection]:
         return [
             Connection(
                 place_label(a.end_location),
@@ -230,8 +231,9 @@ class Stay:
     def tz(self) -> str | None:
         return (self.hotel.end_tz or self.hotel.start_tz) if self.checkout else self.hotel.start_tz
 
+    # Annotations are lazy since 3.14, so a bare `date` here would name this property.
     @property
-    def date(self) -> date:
+    def date(self) -> dt.date:
         return self.time.date()
 
     @property

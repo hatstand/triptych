@@ -29,7 +29,7 @@ def valid_tz(name: str | None) -> str | None:
         return None
     try:
         ZoneInfo(name)
-    except (ZoneInfoNotFoundError, ValueError):
+    except ZoneInfoNotFoundError, ValueError:
         return None
     return name
 

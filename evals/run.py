@@ -154,7 +154,7 @@ def git_version() -> str:
             ["git", "describe", "--always", "--dirty"], capture_output=True, text=True, check=True,
             cwd=Path(__file__).parent,
         )  # fmt: skip
-    except (OSError, subprocess.CalledProcessError):
+    except OSError, subprocess.CalledProcessError:
         return "unknown"
     return out.stdout.strip()
 

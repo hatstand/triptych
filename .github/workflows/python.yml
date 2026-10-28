@@ -28,8 +28,8 @@ jobs:
       - uses: actions/checkout@v7
       - uses: astral-sh/setup-uv@v7
         with:
-          # Match the Dockerfile. Without a pin, uv picks the newest Python, which restate-sdk has no wheels for.
-          python-version: "3.13"
+          # Match the Dockerfile. Without a pin, uv picks the newest Python, which some dependencies (tink) have no wheels for.
+          python-version: "3.14"
           enable-cache: true
       - run: uv sync --locked
       - name: Lint
