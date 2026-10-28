@@ -518,6 +518,25 @@ button.danger {
 button.link.revoke {
   color: var(--danger);
 }
+.share-heading {
+  margin: 18px 0 4px;
+  font-size: 1rem;
+}
+.share-invite {
+  margin-top: 10px;
+}
+.card.invite {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.card.invite .actions {
+  display: flex;
+  gap: 8px;
+}
 .shared-footer {
   margin-top: 24px;
   text-align: center;

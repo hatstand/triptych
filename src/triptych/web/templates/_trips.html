@@ -9,6 +9,24 @@
   <p class="muted">No upcoming trips yet. Forward a confirmation email or paste one on the right.</p>
 {% endif %}
 
+{#- Other people's trips: invites to accept, then the ones accepted. -#}
+{% if invites or shared %}
+<h2>Shared with you</h2>
+{% for i in invites %}
+<div class="card invite">
+  <div>
+    <b>{{ i.trip_name }}</b>
+    <div class="muted small">{{ i.invited_by or 'Someone' }} invited you to {{ 'edit' if i.role == 'edit' else 'see' }} this trip</div>
+  </div>
+  <div class="actions">
+    <form method="post" action="/trips/{{ i.trip_id }}/decline"><button class="button secondary">Decline</button></form>
+    <form method="post" action="/trips/{{ i.trip_id }}/accept"><button>Accept</button></form>
+  </div>
+</div>
+{% endfor %}
+{% if shared %}<div class="trip-grid">{% for t in shared %}{% include "_trip_card.html" %}{% endfor %}</div>{% endif %}
+{% endif %}
+
 {% if past %}
 <h2>Past trips</h2>
 <div class="trip-grid">{% for t in past %}{% include "_trip_card.html" %}{% endfor %}</div>

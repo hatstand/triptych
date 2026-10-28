@@ -208,6 +208,7 @@
     <h1>{{ trip.name }}</h1>
     <div class="muted">{{ summary.start_date.strftime('%a %d %b') }} – {{ summary.end_date.strftime('%a %d %b %Y') }}
       {% if trip.destination %}· {{ trip.destination }}{% endif %}</div>
+    {% if shared_by %}<div class="muted small">Shared by {{ shared_by }}{{ ' · view only' if role == 'view' }}</div>{% endif %}
     {#- What the trip holds, one count per kind: "2 flights · 1 stay". -#}
     {% set nouns = {'flight': ('flight', 'flights'), 'lodging': ('stay', 'stays'), 'car': ('car', 'cars'),
       'rail': ('train', 'trains'), 'ferry': ('ferry', 'ferries'), 'restaurant': ('table', 'tables'),
@@ -226,6 +227,10 @@
     {% endif %}
     {% if role == 'owner' %}
     <button type="button" class="button secondary" commandfor="share" command="show-modal">Share</button>
+    {% elif role %}
+    <form method="post" action="/trips/{{ trip.id }}/leave" data-confirm="Leave this trip? You'll need a new invite to see it again.">
+      <button class="button secondary">Leave</button>
+    </form>
     {% endif %}
   </div>
 </div>
@@ -268,6 +273,27 @@
     seats, travellers or notes, and revoking one stops it at once. -#}
 <dialog id="share" class="dialog wide" closedby="any" aria-labelledby="share-title">
   <h2 id="share-title">Share this trip</h2>
+  <h3 class="share-heading">People</h3>
+  <p class="muted small">Invite someone by the address they use with Triptych. It shows up on their home page to
+    accept. They see everything but confirmation codes, and can't change anything.</p>
+  {% if members %}
+  <ul class="share-links">
+    {% for m in members %}
+    <li class="row">
+      <div><b>{{ m.email }}</b> <span class="muted small">· {{ 'can view' if m.accepted else 'invited' }}</span></div>
+      <form method="post" action="/trips/{{ trip.id }}/members/remove" data-confirm="Stop sharing this trip with {{ m.email }}?">
+        <input type="hidden" name="email" value="{{ m.email }}">
+        <button class="link small revoke">Remove</button>
+      </form>
+    </li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+  <form method="post" action="/trips/{{ trip.id }}/members" class="merge-field share-invite">
+    <input name="email" type="email" required placeholder="friend@example.com" aria-label="Their email address">
+    <button class="button secondary">Invite</button>
+  </form>
+  <h3 class="share-heading">Links</h3>
   <p class="muted small">Anyone with a link sees the plan, without confirmation codes, seats, travellers or notes.</p>
   {% if links %}
   <ul class="share-links">

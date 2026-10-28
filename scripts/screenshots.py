@@ -56,6 +56,7 @@ SCHEMA = ROOT / "db" / "schema.sql"
 WEB = "http://127.0.0.1:8100"
 ADMIN = "http://127.0.0.1:8101"
 EMAIL = "sam@example.com"
+FRIEND = "alex@example.com"  # who Sam shares a trip with
 ADMIN_LOGIN = "admin@example.com"
 BATCH = "dry-run-1"  # the reprocess batch the admin page opens
 VIEWPORT: ViewportSize = {"width": 1280, "height": 800}
@@ -357,7 +358,7 @@ async def serve(app: str, url: str, env: dict[str, str]) -> asyncio.subprocess.P
 
 
 async def capture(
-    browser: Browser, out: Path, scheme: str, session: str, trip_id: str, link_token: str
+    browser: Browser, out: Path, scheme: str, session: str, trip_id: str, link_token: str, friend_session: str
 ) -> list[str]:
     """Saves each page's screenshots, and returns whatever the Content-Security-Policy refused."""
     refused: list[str] = []
@@ -379,6 +380,8 @@ async def capture(
     anon = await context()
     user = await context()
     await user.add_cookies([{"name": "session", "value": session, "url": WEB}])
+    friend = await context()
+    await friend.add_cookies([{"name": "session", "value": friend_session, "url": WEB}])
     # In production, tailscale serve puts the admin app at /admin on the web app's host and sets the
     # login header; here the admin app is on its own port, so its /static comes from the web app.
     admin = await context({"Tailscale-User-Login": ADMIN_LOGIN})
@@ -397,6 +400,8 @@ async def capture(
         (admin, "06-admin", f"{ADMIN}/?batch={BATCH}"),
         (user, "09-account-sharing", f"{WEB}/account/sharing"),
         (anon, "14-shared-link", f"{WEB}/s/{link_token}"),
+        (friend, "16-home-shared", f"{WEB}/"),
+        (friend, "17-trip-viewer", f"{WEB}/trips/{trip_id}"),
     ]
     (out / scheme).mkdir(parents=True, exist_ok=True)
     for ctx, name, url in shots:
@@ -461,7 +466,7 @@ async def capture(
     await page.locator("#drop-status", has_text="Added 1 file.").wait_for()
     await page.screenshot(path=out / scheme / "13-paste.png", animations="disabled")
     await page.close()
-    for ctx in (anon, user, admin):
+    for ctx in (anon, user, friend, admin):
         await ctx.close()
     return refused
 
@@ -484,6 +489,13 @@ async def main() -> None:
     link_id = await sharing.create_link(me, upcoming.id, "Mum")
     await sharing.create_link(me, upcoming.id, "Airbnb host", expire_after_trip=True)
     assert link_id is not None
+    # A friend it's shared with, who has also been invited to the later trip.
+    friend = await db.user_for_email(FRIEND)
+    await sharing.invite(me, upcoming.id, FRIEND)
+    await sharing.accept(friend, upcoming.id)
+    later = next(t for t in trips if t.start_date > upcoming.start_date)
+    await sharing.invite(me, later.id, FRIEND)
+    friend_session = await auth.create_session(friend)
     await db.close()
 
     env = os.environ | {
@@ -507,7 +519,13 @@ async def main() -> None:
             refused: list[str] = []
             for scheme in ("light", "dark"):
                 refused += await capture(
-                    browser, args.out, scheme, session, upcoming.id, sharing.token_for(link_id)
+                    browser,
+                    args.out,
+                    scheme,
+                    session,
+                    upcoming.id,
+                    sharing.token_for(link_id),
+                    friend_session,
                 )
             await browser.close()
     finally:

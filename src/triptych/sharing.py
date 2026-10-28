@@ -1,5 +1,11 @@
-"""Sharing a trip by link: anyone with one sees the trip read-only, without what could change a
-booking (codes, seats, travellers, notes) or say where it came from.
+"""Sharing a trip, with other Triptych users by invite and with anyone by link.
+
+An invite names an email address and a role (models.Role). It waits, matched by address, until
+someone with that address on their account accepts it; until then it shows nothing. Viewers see
+the trip without confirmation codes; editors and the owner see everything (but where it came from).
+
+Anyone with a link sees the trip read-only, without what could change a booking (codes, seats,
+travellers, notes) or say where it came from.
 
 A link's token is derived from its id (an HMAC under SECRET_KEY), so its owner can copy it again,
 and only its SHA-256 is stored, so the database alone can't open it. Changing SECRET_KEY breaks
@@ -15,7 +21,7 @@ from pydantic import BaseModel
 
 from triptych import db
 from triptych.config import settings
-from triptych.models import Reservation, Trip
+from triptych.models import Reservation, Role, Trip
 
 SHARED_FIELDS = frozenset(
     {
@@ -39,6 +45,20 @@ class ShareLink(BaseModel):
     def last_day(self) -> date | None:
         """The last day (UTC) it works, if it expires."""
         return (self.expires_at - timedelta(microseconds=1)).date() if self.expires_at else None
+
+
+class Member(BaseModel):
+    email: str
+    role: Role
+    accepted: bool
+
+
+class Invite(BaseModel):
+    trip_id: str
+    trip_name: str
+    role: Role
+    invited_by: str | None
+    """The owner's address."""
 
 
 class LinkedTrip(BaseModel):
@@ -135,6 +155,126 @@ async def delete_expired_links() -> int:
     async with db.connection() as conn:
         cur = await conn.execute("DELETE FROM share_link WHERE expires_at <= now()")
         return cur.rowcount
+
+
+# --- invites ---------------------------------------------------------------------------------
+
+
+async def invite(owner: str, trip_id: str, email: str, role: Role = Role.VIEW) -> None:
+    """Invite whoever has `email` to the owner's trip. Inviting the same address again changes its
+    role. Says nothing about whether the address has an account, so it can't be used to find out."""
+    email = db.normalise_email(email)
+    if "@" not in email or role is Role.OWNER:
+        return
+    async with db.connection() as conn, conn.transaction():
+        cur = await conn.execute("SELECT user_id::text FROM user_email WHERE email = %s", (email,))
+        row = await cur.fetchone()
+        invitee = row[0] if row else None
+        if invitee == owner:
+            return
+        await conn.execute(
+            """INSERT INTO trip_member (trip_id, email, role, invited_by)
+               SELECT id, %(email)s, %(role)s, owner FROM trip WHERE id = %(trip)s AND owner = %(owner)s
+               ON CONFLICT (trip_id, email) DO UPDATE SET role = EXCLUDED.role""",
+            {"email": email, "role": role.value, "trip": trip_id, "owner": owner},
+        )
+        if invitee:
+            await db.notify_changed(conn, invitee)
+
+
+async def members(owner: str, trip_id: str) -> list[Member]:
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            """SELECT m.email, m.role, m.user_id IS NOT NULL
+               FROM trip_member m JOIN trip t ON t.id = m.trip_id
+               WHERE t.id = %s AND t.owner = %s ORDER BY m.created_at""",
+            (trip_id, owner),
+        )
+        rows = await cur.fetchall()
+    return [Member(email=e, role=Role(r), accepted=a) for e, r, a in rows]
+
+
+async def remove_member(owner: str, trip_id: str, email: str) -> None:
+    async with db.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            """DELETE FROM trip_member m USING trip t
+               WHERE m.trip_id = t.id AND t.id = %s AND t.owner = %s AND m.email = %s
+               RETURNING m.user_id::text""",
+            (trip_id, owner, db.normalise_email(email)),
+        )
+        row = await cur.fetchone()
+        if row and row[0]:
+            await db.notify_changed(conn, row[0])
+
+
+# An invite reaches a user through any of their addresses, until they accept it.
+MINE = "m.user_id IS NULL AND m.email IN (SELECT email FROM user_email WHERE user_id = %(me)s)"
+
+
+async def pending_invites(user_id: str) -> list[Invite]:
+    async with db.connection() as conn:
+        cur = await conn.execute(
+            f"""SELECT DISTINCT ON (t.id) t.id::text, t.name, m.role,
+                       (SELECT e.email FROM user_email e WHERE e.user_id = t.owner
+                        ORDER BY e.created_at, e.email LIMIT 1)
+                FROM trip_member m JOIN trip t ON t.id = m.trip_id
+                WHERE {MINE} AND t.owner <> %(me)s
+                  AND NOT EXISTS (SELECT 1 FROM trip_member a WHERE a.trip_id = t.id AND a.user_id = %(me)s)
+                ORDER BY t.id, m.created_at""",
+            {"me": user_id},
+        )
+        rows = await cur.fetchall()
+    return [Invite(trip_id=i, trip_name=n, role=Role(r), invited_by=by) for i, n, r, by in rows]
+
+
+async def accept(user_id: str, trip_id: str) -> bool:
+    """Accept an invite to the trip sent to one of the user's addresses. False if there's none."""
+    async with db.connection() as conn, conn.transaction():
+        cur = await conn.execute(
+            f"""UPDATE trip_member SET user_id = %(me)s, accepted_at = now()
+                WHERE ctid = (SELECT m.ctid FROM trip_member m JOIN trip t ON t.id = m.trip_id
+                              WHERE m.trip_id = %(trip)s AND {MINE} AND t.owner <> %(me)s
+                                AND NOT EXISTS (SELECT 1 FROM trip_member a
+                                                WHERE a.trip_id = m.trip_id AND a.user_id = %(me)s)
+                              LIMIT 1)
+                RETURNING 1""",
+            {"me": user_id, "trip": trip_id},
+        )
+        if await cur.fetchone() is None:
+            return False
+        await db.notify_changed(conn, user_id)
+        return True
+
+
+async def decline(user_id: str, trip_id: str) -> None:
+    async with db.connection() as conn, conn.transaction():
+        await conn.execute(
+            f"DELETE FROM trip_member m WHERE m.trip_id = %(trip)s AND {MINE}",
+            {"me": user_id, "trip": trip_id},
+        )
+        await db.notify_changed(conn, user_id)
+
+
+async def leave(user_id: str, trip_id: str) -> None:
+    async with db.connection() as conn, conn.transaction():
+        await conn.execute("DELETE FROM trip_member WHERE trip_id = %s AND user_id = %s", (trip_id, user_id))
+        await db.notify_changed(conn, user_id)
+
+
+VIEWER_HIDDEN = frozenset({"confirmation_code", "source_ingest_id", "source_run_id"})
+"""What a viewer doesn't see of each reservation: a code is enough to change or cancel a booking."""
+
+
+def viewer_view(trip: Trip) -> Trip:
+    """The trip as an invited viewer sees it."""
+    return trip.model_copy(
+        update={
+            "reservations": [
+                Reservation.model_validate(r.model_dump(exclude=set(VIEWER_HIDDEN)))
+                for r in trip.reservations
+            ]
+        }
+    )
 
 
 def shared_view(trip: Trip) -> Trip:

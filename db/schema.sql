@@ -316,6 +316,23 @@ CREATE TABLE public.trip (
 
 
 --
+-- Name: trip_member; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.trip_member (
+    trip_id uuid NOT NULL,
+    email text NOT NULL,
+    user_id uuid,
+    role text NOT NULL,
+    invited_by uuid NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    accepted_at timestamp with time zone,
+    CONSTRAINT trip_member_check CHECK (((user_id IS NULL) = (accepted_at IS NULL))),
+    CONSTRAINT trip_member_role_check CHECK ((role = ANY (ARRAY['view'::text, 'edit'::text])))
+);
+
+
+--
 -- Name: user_email; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -519,6 +536,22 @@ ALTER TABLE ONLY public.trip
 
 
 --
+-- Name: trip_member trip_member_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trip_member
+    ADD CONSTRAINT trip_member_pkey PRIMARY KEY (trip_id, email);
+
+
+--
+-- Name: trip_member trip_member_trip_id_user_id_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trip_member
+    ADD CONSTRAINT trip_member_trip_id_user_id_key UNIQUE (trip_id, user_id);
+
+
+--
 -- Name: user_email user_email_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -638,6 +671,20 @@ CREATE INDEX share_link_trip_idx ON public.share_link USING btree (trip_id);
 --
 
 CREATE INDEX trip_owner_idx ON public.trip USING btree (owner);
+
+
+--
+-- Name: trip_member_email_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX trip_member_email_idx ON public.trip_member USING btree (email) WHERE (user_id IS NULL);
+
+
+--
+-- Name: trip_member_user_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX trip_member_user_idx ON public.trip_member USING btree (user_id);
 
 
 --
@@ -791,6 +838,30 @@ ALTER TABLE ONLY public.trip
 
 
 --
+-- Name: trip_member trip_member_invited_by_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trip_member
+    ADD CONSTRAINT trip_member_invited_by_fkey FOREIGN KEY (invited_by) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
+-- Name: trip_member trip_member_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trip_member
+    ADD CONSTRAINT trip_member_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.trip(id) ON DELETE CASCADE;
+
+
+--
+-- Name: trip_member trip_member_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.trip_member
+    ADD CONSTRAINT trip_member_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.app_user(id) ON DELETE CASCADE;
+
+
+--
 -- Name: user_email user_email_user_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -848,4 +919,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261026150000'),
     ('20261026210000'),
     ('20261027110000'),
-    ('20261027220000');
+    ('20261027220000'),
+    ('20261027230000');

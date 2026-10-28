@@ -303,6 +303,14 @@ class TripAccess(BaseModel):
     role: Role
 
 
+class SharedTripSummary(TripSummary):
+    """Someone else's trip, shared with the user."""
+
+    role: Role
+    shared_by: str | None
+    """The owner's address."""
+
+
 class Trip(BaseModel):
     id: str
     owner: str
