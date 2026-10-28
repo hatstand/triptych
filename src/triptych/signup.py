@@ -139,10 +139,8 @@ async def create_account(conn: AsyncConnection, signup_token_hash: bytes, user_i
         raise SignupError("This signup has expired. Please start again.")
     await conn.execute("INSERT INTO app_user (id) VALUES (%s)", (user_id,))
     try:
-        async with conn.transaction():
-            await conn.execute(
-                "INSERT INTO user_email (email, user_id, verified_at) VALUES (%s, %s, now())",
-                (row[0], user_id),
-            )
-    except UniqueViolation as e:
+        await conn.execute(
+            "INSERT INTO user_email (email, user_id, verified_at) VALUES (%s, %s, now())", (row[0], user_id)
+        )
+    except UniqueViolation as e:  # the caller's transaction rolls back as this propagates
         raise SignupError(f"{row[0]} already has an account. Sign in instead.") from e
