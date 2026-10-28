@@ -20,7 +20,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import ec
 from webauthn.helpers import base64url_to_bytes, bytes_to_base64url, encode_cbor
 
-from triptych import auth, db
+from triptych import auth, db, signup
 from triptych.config import settings
 from triptych.models import Kind, Reservation
 from triptych.web import ratelimit
@@ -121,11 +121,19 @@ async def browser(database: str) -> AsyncIterator[httpx.AsyncClient]:
     app.dependency_overrides.clear()
 
 
-async def sign_up(browser: httpx.AsyncClient, device: Authenticator, email: str = ME) -> httpx.Response:
-    invite = await auth.create_invite(email)
+async def accept_invite(browser: httpx.AsyncClient, invite: str, email: str = ME) -> None:
+    """Opens the invite link and proves the address, as mailing its code to plans@ would (signup.py)."""
     page = await browser.get(f"/register/{invite}")
     assert page.status_code == 200 and email in page.text
-    options = (await browser.post("/auth/register/options", json={"invite": invite})).json()
+    started = await browser.post("/signup", data={"invite": invite})
+    assert started.status_code == 303, started.text
+    (code,) = set(re.findall(r"TRIPTYCH-[A-Z0-9]{10}", (await browser.get("/signup")).text))
+    await signup.confirm(code, email)
+
+
+async def sign_up(browser: httpx.AsyncClient, device: Authenticator, email: str = ME) -> httpx.Response:
+    await accept_invite(browser, await auth.create_invite(email), email)
+    options = (await browser.post("/auth/register/options", json={"signup": True})).json()
     return await browser.post(
         "/auth/register/verify", json={"credential": device.create(options), "name": "Laptop"}
     )
@@ -168,15 +176,30 @@ async def test_invite_sign_up_then_sign_in_with_passkey(browser: httpx.AsyncClie
 
 async def test_invite_works_once(browser: httpx.AsyncClient) -> None:
     invite = await auth.create_invite(ME)
-    first = (await browser.post("/auth/register/options", json={"invite": invite})).json()
-    second = (await browser.post("/auth/register/options", json={"invite": invite})).json()
-    device = Authenticator()
-    ok = await browser.post("/auth/register/verify", json={"credential": device.create(second)})
+    await accept_invite(browser, invite)
+    first = (await browser.post("/auth/register/options", json={"signup": True})).json()
+    second = (await browser.post("/auth/register/options", json={"signup": True})).json()
+    ok = await browser.post("/auth/register/verify", json={"credential": Authenticator().create(second)})
     assert ok.status_code == 200
-    # The earlier ceremony for the same invite can't be completed now the invite is spent.
+    # The earlier ceremony for the same signup can't be completed now it and its invite are spent.
     resp = await browser.post("/auth/register/verify", json={"credential": Authenticator().create(first)})
     assert resp.status_code == 400
     assert (await browser.get(f"/register/{invite}")).status_code == 404
+    assert (await browser.post("/signup", data={"invite": invite})).status_code == 404
+
+
+async def test_an_invite_needs_the_address_proven(browser: httpx.AsyncClient) -> None:
+    invite = await auth.create_invite(ME)
+    assert (await browser.post("/signup", data={"invite": invite})).status_code == 303
+    refused = await browser.post("/auth/register/options", json={"signup": True})
+    assert refused.status_code == 400
+    assert [i.email for i in await auth.pending_invites()] == [ME]
+
+
+async def test_an_invite_works_while_signing_up_is_closed(browser: httpx.AsyncClient) -> None:
+    assert settings.signups == "closed"
+    assert (await browser.get("/signup")).status_code == 404
+    assert (await sign_up(browser, Authenticator())).status_code == 200
 
 
 async def test_pending_invites_hide_spent_and_expired_ones(browser: httpx.AsyncClient) -> None:
@@ -188,8 +211,9 @@ async def test_pending_invites_hide_spent_and_expired_ones(browser: httpx.AsyncC
 async def test_registration_without_invite_or_session_is_refused(browser: httpx.AsyncClient) -> None:
     resp = await browser.post("/auth/register/options", json={})
     assert resp.status_code == 400 and resp.json()["error"] == "Sign in first."
-    resp = await browser.post("/auth/register/options", json={"invite": "made-up"})
+    resp = await browser.post("/auth/register/options", json={"signup": True})
     assert resp.status_code == 400
+    assert (await browser.post("/signup", data={"invite": "made-up"})).status_code == 404
 
 
 async def test_unknown_or_forged_passkey_cannot_sign_in(browser: httpx.AsyncClient) -> None:

@@ -95,7 +95,7 @@ Nothing listens on port 25 here. The Worker
 
 * **Verified senders:** the canonical envelope sender must be one of a user's verified sending
   addresses, and the message is filed in that user's account. Anything else is refused before any
-  DNS lookups. A user's first address is the one their invite named; they add more on the account
+  DNS lookups. A user's first address is the one they signed up with; they add more on the account
   page, which gives them a code to send from the new address to `plans@` (`src/triptych/senders.py`).
 * **Manual forwards** must carry a DKIM signature from the sender's own domain.
 * **Gmail auto-forwards**, whose envelope sender is rewritten to `you+caf_=…@gmail.com`, must
@@ -217,8 +217,15 @@ same way later. Inbound mail is matched on its DKIM-verified sender address: an 
 seen before gets a new user, so mail can be filed before its owner ever signs in, and those trips
 are there when they do.
 
-Nothing proves that someone controls an address, so the first passkey needs an **invite**: a
-one-time link, valid for 7 days, for one of the user's addresses, printed by
+An account's first passkey comes from **signing up** (`src/triptych/signup.py`): the person
+enters their address at `/signup` and proves it by emailing a code from it to `plans@` (a prefilled
+`mailto:` link), authenticated like any inbound mail. Only then are the account, its address and the
+passkey created, together. `SIGNUPS` says who may: `closed` (the default), `waitlist` (accounts
+wait for an admin to click "Let in" on `/admin`, unless a trip was already shared with the address)
+or `open`.
+
+An **invite** is a one-time link, valid for 7 days, that starts the same signup for the address it
+names, whatever `SIGNUPS` says, and skips the waitlist. It's printed by
 
 ```bash
 docker compose exec web python -m triptych.invite you@example.com [--days 1]
@@ -226,8 +233,8 @@ docker compose exec web python -m triptych.invite you@example.com [--days 1]
 
 or made from the **Invites** form on the Tailscale-authorised `/admin` page (deploy/README.md).
 
-That's how the first user signs up, how anyone else is let in, and how someone who has lost every
-passkey gets back in. Signed-in users add more passkeys (a phone, a security key) from the account
+That's how the first user signs up, and how someone who has lost every passkey gets back in: an
+invited signup for an address that already has an account adds the new passkey to it. Signed-in users add more passkeys (a phone, a security key) from the account
 page, and can remove any passkey except their last.
 
 * **RP ID and origins.** Passkeys are bound to the RP ID: by default the hostname of
@@ -240,10 +247,10 @@ page, and can remove any passkey except their last.
   HTTPS. Only their SHA-256 is stored (`web_session`), so signing out ends them server-side. They
   last 30 days.
 * **CSRF.** POSTs whose `Origin` isn't one of the allowed origins get a 403 (`/inbound` excepted).
-* **Challenges** are stateless: the challenge, its purpose, the user and the invite travel in a
+* **Challenges** are stateless: the challenge, its purpose, the user and the signup travel in a
   5-minute cookie signed with `SECRET_KEY` (so set a real one). A challenge isn't strictly
   single-use within that window, but replaying one needs both that cookie and the authenticator's
-  response from the same ceremony. Invites are still spent in the database.
+  response from the same ceremony. Signups and invites are still spent in the database.
 * **WebAuthn user handle** is the 16 bytes of the user's UUID: stable, random, and not an address.
 
 ## Logs
@@ -317,7 +324,8 @@ src/triptych/
   ical.py          .ics export
   db.py            Postgres access: plain SQL → pydantic, idempotent writes for ctx.run
   auth.py          passkeys (WebAuthn ceremonies), sessions, invites
-  invite.py        CLI: print a one-time passkey registration link for an address
+  invite.py        CLI: print a one-time invite link for an address
+  signup.py        signing up by mailing a code from your address; the waitlist
   photos.py        destination photos: choose on Wikipedia/Commons, download
   services/        Restate handlers: ingest, llm_service, user, place_photo, reminders, assistant, endpoint
   worker.py        Restate endpoint (hypercorn h2c) + self-registration + flow-control rules

@@ -6,7 +6,12 @@ authenticated by DKIM as coming from the address (inbound.py) marks the signup v
 the browser holding the token can go on to make the account, together with its first passkey
 (auth.finish_registration). Nothing about the account exists until then, so an abandoned signup
 leaves nothing behind but a row that expires. An address that already has an account never gets
-another: its owner is told to sign in (a lost passkey is recovered by an admin invite).
+another: its owner is told to sign in.
+
+An admin invite link (auth.create_invite) starts a signup for the address it names, so invited
+people prove their address the same way. It works while SIGNUPS is closed and skips the waitlist,
+and if the address already has an account, the passkey is added to it: that's how someone who has
+lost every passkey gets back in.
 
 With SIGNUPS=waitlist a new account waits for an admin to approve it on /admin: its owner can sign
 in, but sees only that they're waiting, and mail from them is refused. There's no outbound mail to
@@ -44,6 +49,9 @@ class Signup(BaseModel):
     verified: bool
     taken: bool
     """The address already belongs to an account, whose owner should sign in instead."""
+    invited: bool
+    """Started from an admin invite: allowed while SIGNUPS is closed, skips the waitlist, and may add
+    a passkey to the address's existing account (how someone who lost theirs gets back in)."""
 
     @property
     def channel(self) -> str:
@@ -68,9 +76,10 @@ def code_for(token: str) -> str:
     return "TRIPTYCH-" + "".join(chars)
 
 
-async def start(email: str) -> str:
-    """A token for the browser signing up as `email`. Replaces any earlier signup for the address. Says
-    nothing about whether the address already has an account, so it can't be used to find out."""
+async def start(email: str, invite_hash: bytes | None = None) -> str:
+    """A token for the browser signing up as `email` (named by the invite whose token hashes to
+    `invite_hash`, if it came from one). Replaces any earlier signup for the address. Says nothing
+    about whether the address already has an account, so it can't be used to find out."""
     email = db.normalise_email(email)
     if not senders.looks_like_address(email):
         raise SignupError("That doesn't look like an email address.")
@@ -78,9 +87,9 @@ async def start(email: str) -> str:
     async with db.connection() as conn, conn.transaction():
         await conn.execute("DELETE FROM signup WHERE expires_at <= now() OR email = %s", (email,))
         await conn.execute(
-            """INSERT INTO signup (token_hash, code_hash, email, expires_at)
-               VALUES (%s, %s, %s, now() + %s)""",
-            (token_hash(token), senders.code_hash(code_for(token)), email, TTL),
+            """INSERT INTO signup (token_hash, code_hash, email, expires_at, invite_hash)
+               VALUES (%s, %s, %s, now() + %s, %s)""",
+            (token_hash(token), senders.code_hash(code_for(token)), email, TTL, invite_hash),
         )
     return token
 
@@ -89,16 +98,22 @@ async def get(token: str) -> Signup | None:
     async with db.connection() as conn:
         cur = await conn.execute(
             """SELECT id::text, email, expires_at, verified_at IS NOT NULL,
-                      EXISTS (SELECT 1 FROM user_email e WHERE e.email = s.email)
+                      EXISTS (SELECT 1 FROM user_email e WHERE e.email = s.email), invite_hash IS NOT NULL
                FROM signup s WHERE token_hash = %s AND expires_at > now()""",
             (token_hash(token),),
         )
         row = await cur.fetchone()
     if row is None:
         return None
-    signup_id, email, expires_at, verified, taken = row
+    signup_id, email, expires_at, verified, taken, invited = row
     return Signup(
-        id=signup_id, email=email, code=code_for(token), expires_at=expires_at, verified=verified, taken=taken
+        id=signup_id,
+        email=email,
+        code=code_for(token),
+        expires_at=expires_at,
+        verified=verified,
+        taken=taken,
+        invited=invited,
     )
 
 
@@ -133,29 +148,47 @@ async def confirm(code: str, email: str) -> None:
 
 async def create_account(conn: AsyncConnection, signup_token_hash: bytes, user_id: str) -> None:
     """Within the caller's transaction (auth.finish_registration, which adds the passkey): make the
-    account a verified signup asked for, with its address proven, and spend the signup."""
+    account a verified signup asked for, with its address proven, and spend the signup (and its
+    invite). An invited signup for an address that already has an account adds the passkey to that
+    account instead, `user_id` being its id."""
     cur = await conn.execute(
         """DELETE FROM signup WHERE token_hash = %s AND expires_at > now() AND verified_at IS NOT NULL
-           RETURNING email""",
+           RETURNING email, invite_hash""",
         (signup_token_hash,),
     )
     row = await cur.fetchone()
     if row is None:
         raise SignupError("This signup has expired. Please start again.")
-    # On the waitlist, unless someone has already shared a trip with the address.
+    email, invite_hash = row
+    if invite_hash is not None:
+        cur = await conn.execute(
+            "DELETE FROM invite WHERE token_hash = %s AND email = %s AND expires_at > now() RETURNING 1",
+            (invite_hash, email),
+        )
+        if await cur.fetchone() is None:
+            raise SignupError("This invite has expired or was already used.")
+    cur = await conn.execute("SELECT user_id::text FROM user_email WHERE email = %s FOR UPDATE", (email,))
+    if existing := await cur.fetchone():
+        if invite_hash is None or existing[0] != user_id:
+            raise SignupError(f"{email} already has an account. Sign in instead.")
+        await conn.execute(
+            "UPDATE user_email SET verified_at = coalesce(verified_at, now()) WHERE email = %s", (email,)
+        )
+        return
+    # On the waitlist, unless invited by an admin or someone has already shared a trip with the address.
     await conn.execute(
         """INSERT INTO app_user (id, waitlisted_at)
            SELECT %(id)s, CASE WHEN %(waitlist)s AND NOT EXISTS (
                       SELECT 1 FROM trip_member WHERE email = %(email)s AND user_id IS NULL)
                   THEN now() END""",
-        {"id": user_id, "waitlist": settings.signups == "waitlist", "email": row[0]},
+        {"id": user_id, "waitlist": settings.signups == "waitlist" and invite_hash is None, "email": email},
     )
     try:
         await conn.execute(
-            "INSERT INTO user_email (email, user_id, verified_at) VALUES (%s, %s, now())", (row[0], user_id)
+            "INSERT INTO user_email (email, user_id, verified_at) VALUES (%s, %s, now())", (email, user_id)
         )
     except UniqueViolation as e:  # the caller's transaction rolls back as this propagates
-        raise SignupError(f"{row[0]} already has an account. Sign in instead.") from e
+        raise SignupError(f"{email} already has an account. Sign in instead.") from e
 
 
 class Waiting(BaseModel):

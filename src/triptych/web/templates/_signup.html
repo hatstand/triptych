@@ -2,14 +2,19 @@
 {% if not signup %}
 <h1>This signup has expired</h1>
 <p class="muted">Signups last half an hour. <a href="/signup">Start again</a>.</p>
-{% elif signup.verified and signup.taken %}
+{% elif signup.verified and signup.taken and not signup.invited %}
 <h1>You already have an account</h1>
 <p>{{ signup.email }} already belongs to a Triptych account. <a href="/login">Sign in</a> with its passkey.
   Lost it? Ask for a new invite link.</p>
 {% elif signup.verified %}
 <h1>{{ signup.email }} is yours</h1>
+{% if signup.taken %}
+<p>Thanks, your email arrived. Create a new passkey to get back into your account. Your device keeps
+  it, protected by your fingerprint, face or screen lock.</p>
+{% else %}
 <p>Thanks, your email arrived. Last step: create a passkey to sign in with. Your device keeps it,
   protected by your fingerprint, face or screen lock.</p>
+{% endif %}
 <label class="stack small">Name this passkey (optional)
   <input name="passkey-name" placeholder="e.g. iPhone, YubiKey" maxlength="60">
 </label>
@@ -32,7 +37,9 @@
 </div>
 <p class="muted small">Only send this from your own address, for your own account. The code works for
   half an hour, until {{ signup.expires_at.strftime('%H:%M') }} UTC.</p>
+{% if not signup.invited %}
 <form method="post" action="/signup/cancel">
   <button class="link">Use a different address</button>
 </form>
+{% endif %}
 {% endif %}

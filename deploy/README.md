@@ -120,9 +120,13 @@ cd /srv/triptych && sudo -u deploy docker compose exec web python -m triptych.in
 ```
 
 Open the printed link (it uses `PUBLIC_BASE_URL`, which must be the address you browse to, e.g.
-`https://triptych.axolotl-goblin.ts.net`) and create a passkey. Add a second one from the account
+`https://triptych.axolotl-goblin.ts.net`), send the prefilled email from that address to prove it
+(the Email Worker must be set up), and create a passkey. Add a second one from the account
 page so a lost device doesn't lock you out; if it does, issue yourself another invite.
 Once the admin pages below are set up, the **Invites** form there does the same from a browser.
+
+To let people sign up themselves, set `SIGNUPS=waitlist` in `/srv/triptych/.env` and redeploy; their
+accounts then wait on the admin page's **Waitlist** card until you let them in.
 
 ### Restate UI
 

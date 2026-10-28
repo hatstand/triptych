@@ -56,13 +56,12 @@ def signed(code: str, frm: str, priv: bytes) -> bytes:
 
 @needs_db
 @pytest.mark.anyio
-async def test_signup_is_off_unless_configured(database: str) -> None:
-    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url=ORIGIN) as c:
-        assert web.settings.signups == "closed"
-        assert (await c.get("/signup")).status_code == 404
-        assert (
-            await c.post("/signup", data={"email": "me@gmail.com"}, headers={"Origin": ORIGIN})
-        ).status_code == 404
+async def test_signup_is_off_unless_configured(
+    browser: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(web, "settings", replace(web.settings, signups="closed"))
+    assert (await browser.get("/signup")).status_code == 404
+    assert (await browser.post("/signup", data={"email": "me@gmail.com"})).status_code == 404
 
 
 @needs_db
@@ -267,3 +266,19 @@ async def test_sign_in_page_offers_signing_up_only_when_its_on(
     assert 'href="/signup"' in (await browser.get("/login")).text
     monkeypatch.setattr(web, "settings", replace(web.settings, signups="closed"))
     assert 'href="/signup"' not in (await browser.get("/login")).text
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_an_admin_invite_skips_the_waitlist(
+    browser: httpx.AsyncClient, waitlist: None, mail: Mail, keys: tuple[bytes, bytes]
+) -> None:
+    invite = await auth.create_invite("me@gmail.com")
+    assert (await browser.post("/signup", data={"invite": invite})).status_code == 303
+    page = (await browser.get("/signup")).text
+    assert "Use a different address" not in page  # the invite names it
+    (code,) = set(CODE.findall(page))
+    await mail(signed(code, "me@gmail.com", keys[0]), "me@gmail.com")
+    assert (await create_passkey(browser, Authenticator())).status_code == 200
+    assert await signup.waitlist() == []
+    assert await auth.pending_invites() == []
