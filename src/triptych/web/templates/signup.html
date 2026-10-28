@@ -1,0 +1,25 @@
+{% extends "base.html" %}
+{% block head %}
+<script type="module" src="{{ static('live.ts') }}"></script>
+<script type="module" src="{{ static('copy.ts') }}"></script>
+{% endblock %}
+{% block content %}
+<section class="card narrow stack">
+  {% if signup %}
+  {# /signup/events re-renders this from the same partial once mail proves the address (web/live.py) #}
+  <div hx-ext="sse" sse-connect="/signup/events" sse-swap="signup">{% include "_signup.html" %}</div>
+  {% else %}
+  <h1>Create an account</h1>
+  <p class="muted">Triptych files the bookings you forward it from your email address. To check the
+    address is yours, you'll send us one short email from it.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form method="post" action="/signup" class="stack">
+    <label class="stack small">Your email address
+      <input type="email" name="email" value="{{ entered or '' }}" autocomplete="email" required autofocus>
+    </label>
+    <button>Continue</button>
+  </form>
+  <p class="muted small">Already have an account? <a href="/login">Sign in</a>.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% from "_icons.html" import icon %}
+{% if not signup %}
+<h1>This signup has expired</h1>
+<p class="muted">Signups last half an hour. <a href="/signup">Start again</a>.</p>
+{% elif signup.verified %}
+<h1>{{ signup.email }} is yours</h1>
+<p>Thanks, your email arrived. Next you'll create a passkey to sign in with.</p>
+{% else %}
+<h1>Send us one email</h1>
+<p>From <strong>{{ signup.email }}</strong>, send the email below to <code>{{ inbound_address }}</code>. It's
+  all filled in: just press Send. This page moves on by itself when it arrives.</p>
+<a class="button signup-send" href="{{ links.mailto }}">{{ icon('mail') }} Open in my mail app</a>
+<p class="muted small">No mail app on this device? Open it in
+  <a href="{{ links.gmail }}" target="_blank" rel="noopener">Gmail</a> or
+  <a href="{{ links.outlook }}" target="_blank" rel="noopener">Outlook</a>, or send any email with this
+  code in the subject:</p>
+<div class="copy-field">
+  <input id="signup-code" class="mono" readonly value="{{ signup.code }}" aria-label="Signup code">
+  <button type="button" class="button secondary copy" data-copy="signup-code" title="Copy code" aria-label="Copy code">
+    {{- icon('copy') }}{{ icon('check') }}<span class="copied-label" aria-live="polite"></span>
+  </button>
+</div>
+<p class="muted small">Only send this from your own address, for your own account. The code works for
+  half an hour, until {{ signup.expires_at.strftime('%H:%M') }} UTC.</p>
+<form method="post" action="/signup/cancel">
+  <button class="link">Use a different address</button>
+</form>
+{% endif %}

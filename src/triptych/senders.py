@@ -43,8 +43,12 @@ class PendingSender(BaseModel):
     expires_at: datetime
 
 
-def _hash(code: str) -> bytes:
+def code_hash(code: str) -> bytes:
     return hashlib.sha256(code.upper().encode()).digest()
+
+
+def looks_like_address(email: str) -> bool:
+    return re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email) is not None
 
 
 def find_code(text: str) -> str | None:
@@ -87,7 +91,7 @@ async def request(user_id: str, email: str) -> str:
     """A code that, sent from `email` to plans@, adds `email` to this user's senders. Replaces any
     earlier code for the same address."""
     email = db.normalise_email(email)
-    if not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+    if not looks_like_address(email):
         raise SenderError("That doesn't look like an email address.")
     taken = await owner(email)
     if taken == user_id:
@@ -103,7 +107,7 @@ async def request(user_id: str, email: str) -> str:
         await conn.execute(
             """INSERT INTO sender_verification (code_hash, user_id, email, expires_at)
                VALUES (%s, %s, %s, now() + %s)""",
-            (_hash(code), user_id, email, CODE_TTL),
+            (code_hash(code), user_id, email, CODE_TTL),
         )
     return code
 
@@ -113,7 +117,7 @@ async def is_pending(code: str, email: str) -> bool:
     async with db.connection() as conn:
         cur = await conn.execute(
             "SELECT 1 FROM sender_verification WHERE code_hash = %s AND email = %s AND expires_at > now()",
-            (_hash(code), db.normalise_email(email)),
+            (code_hash(code), db.normalise_email(email)),
         )
         return await cur.fetchone() is not None
 
@@ -126,7 +130,7 @@ async def confirm(code: str, email: str) -> str:
         cur = await conn.execute(
             """DELETE FROM sender_verification
                WHERE code_hash = %s AND email = %s AND expires_at > now() RETURNING user_id::text""",
-            (_hash(code), email),
+            (code_hash(code), email),
         )
         row = await cur.fetchone()
         if row is None:

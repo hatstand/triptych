@@ -402,6 +402,7 @@ async def capture(
         (anon, "14-shared-link", f"{WEB}/s/{link_token}"),
         (friend, "16-home-shared", f"{WEB}/"),
         (friend, "17-trip-viewer", f"{WEB}/trips/{trip_id}"),
+        (anon, "18-signup", f"{WEB}/signup"),
     ]
     (out / scheme).mkdir(parents=True, exist_ok=True)
     for ctx, name, url in shots:
@@ -466,6 +467,15 @@ async def capture(
     await page.locator("#drop-status", has_text="Added 1 file.").wait_for()
     await page.screenshot(path=out / scheme / "13-paste.png", animations="disabled")
     await page.close()
+    # Signing up: after entering an address, the email to send from it to prove it (signup.py).
+    page = await anon.new_page()
+    await page.goto(f"{WEB}/signup", wait_until="load")
+    await page.fill("input[name=email]", "robin@example.com")
+    await page.click("form[action='/signup'] button")
+    await page.locator(".signup-send").wait_for()
+    await page.evaluate("document.fonts.ready")
+    await page.screenshot(path=out / scheme / "19-signup-send.png", full_page=True, animations="disabled")
+    await page.close()
     for ctx in (anon, user, friend, admin):
         await ctx.close()
     return refused
@@ -504,6 +514,7 @@ async def main() -> None:
         "PUBLIC_BASE_URL": WEB,
         "ADMIN_TAILSCALE_LOGINS": ADMIN_LOGIN,
         "RESTATE_UI_URL": "http://localhost:9070",
+        "SIGNUPS": "open",
         # Nothing listens here, so the admin page's model status shows its error state at once.
         "OLLAMA_URL": "http://127.0.0.1:9",
         # Only so the account page offers eval set sharing; rendering it never touches a bucket.

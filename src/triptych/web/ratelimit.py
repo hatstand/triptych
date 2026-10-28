@@ -18,6 +18,8 @@ Limiter = MovingWindowRateLimiter
 LOGIN = parse("20/minute")
 REGISTER = parse("10/minute")
 INVITE_PAGE = parse("30/minute")
+# Each new signup is a row and a code to mail; the page itself (and its stream) is cheap.
+SIGNUP = parse("10/hour")
 # Signed in: per user. Each request queues an ingest or an LLM answer.
 ADD_PLANS = parse("60/hour")
 ASK = parse("60/hour")

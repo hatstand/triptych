@@ -18,5 +18,6 @@
   "calendar": "calendar",
   "copy": "copy",
   "check": "check",
-  "checkout": "log-out"
+  "checkout": "log-out",
+  "mail": "mail"
 }
