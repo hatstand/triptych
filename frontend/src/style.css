@@ -507,6 +507,14 @@ button.danger {
 .share-links .row {
   align-items: baseline;
 }
+.check {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.check input {
+  width: auto;
+}
 button.link.revoke {
   color: var(--danger);
 }

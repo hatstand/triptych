@@ -9,7 +9,7 @@ import base64
 import hashlib
 import hmac
 import uuid
-from datetime import datetime
+from datetime import date, datetime, timedelta
 
 from pydantic import BaseModel
 
@@ -35,6 +35,11 @@ class ShareLink(BaseModel):
     last_used_at: datetime | None
     token: str
 
+    @property
+    def last_day(self) -> date | None:
+        """The last day (UTC) it works, if it expires."""
+        return (self.expires_at - timedelta(microseconds=1)).date() if self.expires_at else None
+
 
 class LinkedTrip(BaseModel):
     trip_id: str
@@ -50,14 +55,34 @@ def _hash(token: str) -> bytes:
     return hashlib.sha256(token.encode()).digest()
 
 
-async def create_link(owner: str, trip_id: str, label: str | None) -> str | None:
-    """A new link to the owner's trip (None if it isn't theirs). Returns its id."""
+EXPIRES_AFTER_TRIP = timedelta(days=7)
+"""How long after its trip's last day a link made to expire keeps working."""
+
+
+async def create_link(
+    owner: str, trip_id: str, label: str | None, expire_after_trip: bool = False
+) -> str | None:
+    """A new link to the owner's trip (None if it isn't theirs). Returns its id. One made to expire
+    stops at the end of the day EXPIRES_AFTER_TRIP after the trip's last day as it is now (UTC)."""
     link_id = str(uuid.uuid4())
     async with db.connection() as conn:
         cur = await conn.execute(
-            """INSERT INTO share_link (id, trip_id, token_sha256, label)
-               SELECT %s, id, %s, %s FROM trip WHERE id = %s AND owner = %s RETURNING id""",
-            (link_id, _hash(token_for(link_id)), (label or "").strip() or None, trip_id, owner),
+            """INSERT INTO share_link (id, trip_id, token_sha256, label, expires_at)
+               SELECT %(id)s, t.id, %(hash)s, %(label)s,
+                      CASE WHEN %(expire)s THEN
+                        ((SELECT max(coalesce(r.end_local, r.start_local))::date FROM reservation r
+                          WHERE r.trip_id = t.id) + %(after)s + 1)::timestamp AT TIME ZONE 'UTC'
+                      END
+               FROM trip t WHERE t.id = %(trip)s AND t.owner = %(owner)s RETURNING id""",
+            {
+                "id": link_id,
+                "hash": _hash(token_for(link_id)),
+                "label": (label or "").strip() or None,
+                "expire": expire_after_trip,
+                "after": EXPIRES_AFTER_TRIP.days,
+                "trip": trip_id,
+                "owner": owner,
+            },
         )
         return link_id if await cur.fetchone() else None
 
@@ -67,7 +92,8 @@ async def links(owner: str, trip_id: str) -> list[ShareLink]:
         cur = await conn.execute(
             """SELECT l.id::text, l.label, l.created_at, l.expires_at, l.last_used_at
                FROM share_link l JOIN trip t ON t.id = l.trip_id
-               WHERE t.id = %s AND t.owner = %s ORDER BY l.created_at""",
+               WHERE t.id = %s AND t.owner = %s AND (l.expires_at IS NULL OR l.expires_at > now())
+               ORDER BY l.created_at""",
             (trip_id, owner),
         )
         rows = await cur.fetchall()
@@ -102,6 +128,13 @@ async def open_link(token: str) -> LinkedTrip | None:
         )
         row = await cur.fetchone()
     return LinkedTrip(trip_id=row[0], owner=row[1]) if row else None
+
+
+async def delete_expired_links() -> int:
+    """Drop links that have expired (they already open nothing). Returns how many."""
+    async with db.connection() as conn:
+        cur = await conn.execute("DELETE FROM share_link WHERE expires_at <= now()")
+        return cur.rowcount
 
 
 def shared_view(trip: Trip) -> Trip:

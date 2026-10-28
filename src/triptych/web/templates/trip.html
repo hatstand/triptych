@@ -218,7 +218,6 @@
       {%- endif %}{% endfor %}
     </ul>
   </div>
-  {% if role %}
   <div class="actions">
     <a class="button secondary" href="{{ trip_url }}/calendar.ics">Export .ics</a>
     {% if role in ('edit', 'owner') %}
@@ -229,7 +228,6 @@
     <button type="button" class="button secondary" commandfor="share" command="show-modal">Share</button>
     {% endif %}
   </div>
-  {% endif %}
 </div>
 {% if role in ('edit', 'owner') %}
 {#- Cancel, Escape and a click outside all close it unsaved; dialog.ts puts the name back. -#}
@@ -277,7 +275,8 @@
     <li class="stack">
       <div class="row">
         <b>{{ l.label or 'Link' }}</b>
-        <span class="muted small">made {{ l.created_at.strftime('%-d %b') }} · {{ 'opened ' ~ l.last_used_at.strftime('%-d %b') if l.last_used_at else 'not opened yet' }}</span>
+        <span class="muted small">made {{ l.created_at.strftime('%-d %b') }} · {{ 'opened ' ~ l.last_used_at.strftime('%-d %b') if l.last_used_at else 'not opened yet' }}
+          {%- if l.expires_at %} · works until {{ l.last_day.strftime('%-d %b') }}{% endif %}</span>
       </div>
       <div class="copy-field">
         <input id="link-{{ l.id }}" class="mono" readonly value="{{ base_url }}/s/{{ l.token }}" aria-label="Link{{ ' for ' ~ l.label if l.label }}">
@@ -298,6 +297,7 @@
       <input id="link-label" name="label" maxlength="100" placeholder="Mum, the Airbnb host…">
       <button class="button secondary">Make link</button>
     </div>
+    <label class="check small"><input type="checkbox" name="expire" value="true"> Stop working a week after the trip</label>
   </form>
   <div class="dialog-actions">
     <button type="button" class="button secondary" commandfor="share" command="close">Done</button>
