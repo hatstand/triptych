@@ -525,6 +525,13 @@ button.link.revoke {
 .share-invite {
   margin-top: 10px;
 }
+.share-invite select {
+  width: auto;
+}
+.member-actions {
+  display: flex;
+  gap: 12px;
+}
 .card.invite {
   display: flex;
   justify-content: space-between;

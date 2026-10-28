@@ -128,6 +128,7 @@
   {% if r.travelers %}<dt>Travelers</dt><dd>{{ r.travelers | join(', ') }}</dd>{% endif %}
 </dl>
 {% if r.notes %}<div class="muted small">{{ r.notes }}</div>{% endif %}
+{% if r.added_by %}<div class="muted small">Added by {{ added_by[r.added_by] }}</div>{% endif %}
 {% endmacro %}
 {#- A hotel's check-in, or its check-out on a later day. -#}
 {% macro stay(s) %}
@@ -275,22 +276,33 @@
   <h2 id="share-title">Share this trip</h2>
   <h3 class="share-heading">People</h3>
   <p class="muted small">Invite someone by the address they use with Triptych. It shows up on their home page to
-    accept. They see everything but confirmation codes, and can't change anything.</p>
+    accept. Viewers see everything but confirmation codes; editors can also add, correct and remove bookings.</p>
   {% if members %}
   <ul class="share-links">
     {% for m in members %}
     <li class="row">
-      <div><b>{{ m.email }}</b> <span class="muted small">· {{ 'can view' if m.accepted else 'invited' }}</span></div>
+      <div><b>{{ m.email }}</b> <span class="muted small">· {{ ('can ' if m.accepted else 'invited to ') ~ ('edit' if m.role == 'edit' else 'view') }}</span></div>
+      <div class="member-actions">
+      <form method="post" action="/trips/{{ trip.id }}/members">
+        <input type="hidden" name="email" value="{{ m.email }}">
+        <input type="hidden" name="role" value="{{ 'view' if m.role == 'edit' else 'edit' }}">
+        <button class="link small">{{ 'Make viewer' if m.role == 'edit' else 'Make editor' }}</button>
+      </form>
       <form method="post" action="/trips/{{ trip.id }}/members/remove" data-confirm="Stop sharing this trip with {{ m.email }}?">
         <input type="hidden" name="email" value="{{ m.email }}">
         <button class="link small revoke">Remove</button>
       </form>
+      </div>
     </li>
     {% endfor %}
   </ul>
   {% endif %}
   <form method="post" action="/trips/{{ trip.id }}/members" class="merge-field share-invite">
     <input name="email" type="email" required placeholder="friend@example.com" aria-label="Their email address">
+    <select name="role" aria-label="What they can do">
+      <option value="view">Can view</option>
+      <option value="edit">Can edit</option>
+    </select>
     <button class="button secondary">Invite</button>
   </form>
   <h3 class="share-heading">Links</h3>

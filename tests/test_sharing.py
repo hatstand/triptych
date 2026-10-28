@@ -46,6 +46,7 @@ def test_new_reservation_fields_stay_off_links_until_listed() -> None:
         "source_ingest_id",
         "source_run_id",
         "edited_fields",
+        "added_by",
     }
     assert set(Reservation.model_fields) == sharing.SHARED_FIELDS | hidden
     assert not sharing.SHARED_FIELDS & hidden
