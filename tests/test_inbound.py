@@ -70,6 +70,28 @@ def test_spoofed_sender_without_valid_signature_is_rejected(keys: tuple[bytes, b
         inbound.verify(raw, "me@gmail.com", dns(pub, {"evil.example"}))
 
 
+def test_signature_for_another_mailbox_at_the_domain_is_rejected(keys: tuple[bytes, bytes]) -> None:
+    """Gmail signs anyone's mail as d=gmail.com, so a stranger can replay their own signed message
+    with your address as the envelope sender. The signed From has to be the sender."""
+    priv, pub = keys
+    raw = sign(message("stranger@gmail.com"), "gmail.com", priv)
+    with pytest.raises(inbound.Rejected, match="could not authenticate"):
+        inbound.verify(raw, "me@gmail.com", dns(pub, {"gmail.com"}))
+
+
+def test_a_second_from_header_is_rejected(keys: tuple[bytes, bytes]) -> None:
+    priv, pub = keys
+    raw = b"From: stranger@gmail.com\r\n" + sign(message("me@gmail.com"), "gmail.com", priv)
+    with pytest.raises(inbound.Rejected):
+        inbound.verify(raw, "me@gmail.com", dns(pub, {"gmail.com"}))
+    assert inbound.author(raw) is None
+
+
+def test_author_is_the_one_from_address() -> None:
+    assert inbound.author(message("Me <Me@Gmail.com>")) == "me@gmail.com"
+    assert inbound.author(message("a@gmail.com, b@gmail.com")) is None
+
+
 def test_tampered_body_fails_dkim(keys: tuple[bytes, bytes]) -> None:
     priv, pub = keys
     raw = sign(message("me@gmail.com"), "gmail.com", priv).replace(b"QZ7K2M", b"XXXXXX")
@@ -103,6 +125,14 @@ def test_gmail_forwarding_confirmation_surfaces_code(keys: tuple[bytes, bytes]) 
         "123456789",
         "https://mail-settings.google.com/mail/vf-abc123",
     )
+
+
+def test_forwarding_confirmation_must_be_from_the_verifier(keys: tuple[bytes, bytes]) -> None:
+    """Any google.com-signed mail replayed with the verifier's envelope isn't a confirmation."""
+    priv, pub = keys
+    raw = sign(message("someone@google.com", "me@gmail.com\r\nConfirmation code: 1\r\n"), "google.com", priv)
+    with pytest.raises(inbound.Rejected):
+        inbound.verify(raw, "forwarding-noreply@google.com", dns(pub, {"google.com"}))
 
 
 def test_verification_code_is_found_in_subject_or_body() -> None:
@@ -204,6 +234,36 @@ async def test_new_address_is_verified_by_mailing_its_code(
     resp = await mail(sign(message("me@gmail.com"), "gmail.com", priv), "me@gmail.com")
     assert resp.json()["status"] == "queued"
     assert [r.user for r in fake_restate.sent] == [me]
+
+
+@pytest.mark.anyio
+@needs_db
+async def test_a_code_from_a_strangers_signed_mail_proves_nothing(
+    mail: Mail, keys: tuple[bytes, bytes], fake_restate: FakeRestate
+) -> None:
+    """Someone asks for a code for your unclaimed address, then replays mail Gmail signed for them."""
+    attacker = await db.user_for_email("attacker@gmail.com")
+    code = await senders.request(attacker, "victim@gmail.com")
+    raw = sign(message("attacker@gmail.com", f"Verify {code}"), "gmail.com", keys[0])
+    assert (await mail(raw, "victim@gmail.com")).status_code == 403
+    assert await senders.owner("victim@gmail.com") is None
+
+
+@pytest.mark.anyio
+@needs_db
+async def test_a_code_is_not_accepted_by_auto_forward(
+    mail: Mail, keys: tuple[bytes, bytes], fake_restate: FakeRestate
+) -> None:
+    """A Google ARC seal doesn't say whose mailbox the mail left from, so it can't prove one."""
+    attacker = await db.user_for_email("attacker@gmail.com")
+    code = await senders.request(attacker, "victim@gmail.com")
+    raw = b"Authentication-Results: mx.google.com; dkim=pass header.d=airline.example\r\n" + message(
+        "noreply@airline.example", f"Verify {code}"
+    )
+    seal = b"".join(dkim.arc_sign(raw, b"arc", b"google.com", keys[0], b"mx.google.com"))
+    resp = await mail(seal + raw, "victim+caf_=plans=triptych.purplehatstands.com@gmail.com")
+    assert resp.status_code == 403 and "directly" in resp.json()["detail"]
+    assert await senders.owner("victim@gmail.com") is None
 
 
 @pytest.mark.anyio

@@ -888,6 +888,11 @@ async def inbound_mail(request: Request, client: Client) -> dict[str, str]:
         return {"status": "forwarding-confirmation", "user": owners[0]}
 
     if code is not None:
+        if not result.how.startswith("dkim:"):
+            # An ARC seal says the mail passed through Gmail, not whose mailbox it left from.
+            raise HTTPException(
+                403, f"send the verification code from {result.sender} directly, not by auto-forward"
+            )
         try:
             owner = await senders.confirm(code, result.sender)
         except senders.SenderError as e:

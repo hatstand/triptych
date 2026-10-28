@@ -7,8 +7,16 @@ The *envelope sender* decides whose account a trip lands in, so it must be authe
 * Gmail auto-forward (filter): envelope = you+caf_=plans=domain@gmail.com, header From is the
   airline, and Google adds an ARC seal (d=google.com) vouching for where it came from.
 
-We accept a message when either a valid DKIM signature from the canonical envelope sender's own
-domain is present, or (for Gmail) the latest ARC seal is Google's and the ARC chain validates.
+A signature only vouches for its domain, not for one mailbox in it: anyone at gmail.com can get
+Gmail to sign a message and then send those bytes on with any envelope sender they like. So each
+check also ties the signed message to the envelope sender's own mailbox:
+
+* DKIM: the message has exactly one From, which is the envelope sender, and a valid signature that
+  covers From and comes from that address's domain.
+* ARC (Gmail only): the latest seal is Google's and the chain validates. This doesn't yet say which
+  Gmail mailbox forwarded it, so it only files mail for an address that is already a sender, and
+  never proves a new one (a verification code must come by the DKIM route).
+
 Verification is done here on the raw bytes (DKIM/ARC survive the Worker untouched), not delegated
 to Cloudflare. Whose account an authenticated sender files into (and whether they may at all) is
 senders.py's business.
@@ -20,7 +28,7 @@ import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
-from email.utils import parseaddr
+from email.utils import getaddresses, parseaddr
 from typing import Any
 
 import dkim
@@ -72,18 +80,38 @@ def ingest_id_for(raw: bytes, user: str) -> str:
     )
 
 
+def _signed_names(h: bytes) -> list[bytes]:
+    """The header names a signature's h= tag lists, lower-cased, repeats kept."""
+    return [name.strip().lower() for name in h.split(b":") if name.strip()]
+
+
 def _dkim_domains(raw: bytes, dnsfunc: DnsFunc) -> set[str]:
-    """Domains (d=) of every DKIM signature on the message that verifies."""
+    """Domains (d=) of every DKIM signature on the message that verifies and covers From."""
     d = dkim.DKIM(raw)
     count = sum(1 for name, _ in d.headers if name.lower() == b"dkim-signature")
     good: set[str] = set()
     for i in range(count):
         try:
-            if d.verify(idx=i, dnsfunc=dnsfunc) and d.domain:
+            if (
+                d.verify(idx=i, dnsfunc=dnsfunc)
+                and d.domain
+                and b"from" in _signed_names(d.signature_fields.get(b"h", b""))
+            ):
                 good.add(d.domain.decode().lower())
         except dkim.DKIMException:
             continue
     return good
+
+
+def author(raw: bytes) -> str | None:
+    """The one address in the message's one From header, lower-cased; None if it has more or fewer
+    (a second From is how a signed message gets a different one shown)."""
+    msg = email.message_from_bytes(raw, policy=email.policy.compat32)
+    froms = msg.get_all("from") or []
+    if len(froms) != 1:
+        return None
+    addresses = [a for _, a in getaddresses([str(froms[0])]) if a]
+    return addresses[0].strip().lower() if len(addresses) == 1 else None
 
 
 def _arc_sealer(raw: bytes, dnsfunc: DnsFunc) -> str | None:
@@ -122,15 +150,20 @@ def verify(
         raise Rejected("no sender address")
 
     domain = sender.rpartition("@")[2]
-    if any(_aligned(s, domain) for s in _dkim_domains(raw, dnsfunc)):
+    if author(raw) == sender and any(_aligned(s, domain) for s in _dkim_domains(raw, dnsfunc)):
         return Accepted(sender, f"dkim:{domain}")
     if domain in GOOGLE_DOMAINS and _arc_sealer(raw, dnsfunc) == "google.com":
         return Accepted(sender, "arc:google.com")
-    raise Rejected(f"could not authenticate {sender} (no aligned DKIM signature or trusted ARC seal)")
+    raise Rejected(
+        f"could not authenticate {sender} (it needs to be From {sender} with a DKIM signature from"
+        f" {domain}, or a Gmail auto-forward)"
+    )
 
 
 def _forwarding_confirmation(raw: bytes, dnsfunc: DnsFunc) -> ForwardingConfirmation:
-    if not any(_aligned(s, "google.com") for s in _dkim_domains(raw, dnsfunc)):
+    if author(raw) != GMAIL_FORWARDING_VERIFIER or not any(
+        _aligned(s, "google.com") for s in _dkim_domains(raw, dnsfunc)
+    ):
         raise Rejected("forwarding confirmation not signed by google.com")
     msg = email.message_from_bytes(raw, policy=email.policy.default)
     body = msg.get_body(preferencelist=("plain", "html"))
