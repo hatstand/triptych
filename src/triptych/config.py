@@ -2,7 +2,10 @@
 
 import os
 from dataclasses import dataclass
+from typing import Literal
 from urllib.parse import urlsplit
+
+Signups = Literal["closed", "waitlist", "open"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,10 +56,20 @@ class Settings:
     allowed_origins: tuple[str, ...]
     # Where the admin pages are served from (the tailnet name), when that isn't the public UI's.
     admin_origins: tuple[str, ...]
+    # Who may sign up at /signup (signup.py): nobody, everyone once an admin approves them, or
+    # everyone. Admin invites work whatever this says.
+    signups: Signups
 
     @property
     def secure_cookies(self) -> bool:
         return self.public_base_url.startswith("https://")
+
+
+def signups_setting(value: str) -> Signups:
+    match value:
+        case "closed" | "waitlist" | "open":
+            return value
+    raise ValueError(f"SIGNUPS must be closed, waitlist or open, not {value!r}")
 
 
 def origin_of(url: str) -> str:
@@ -95,6 +108,7 @@ def load() -> Settings:
         webauthn_rp_id=env("WEBAUTHN_RP_ID") or urlsplit(public_base_url).hostname or "localhost",
         allowed_origins=allowed_origins,
         admin_origins=origins(env("ADMIN_ORIGINS", "")) or allowed_origins,
+        signups=signups_setting(env("SIGNUPS", "closed")),
         # Tailscale logins (Tailscale-User-Login) allowed into the admin app; empty = nobody.
         admin_logins=frozenset(
             a.strip().lower() for a in env("ADMIN_TAILSCALE_LOGINS", "").split(",") if a.strip()

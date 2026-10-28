@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Annotated, Any, Literal, TypedDict, cast
-from urllib.parse import quote
+from urllib.parse import quote, urlencode
 from zoneinfo import available_timezones
 
 import restate
@@ -24,7 +24,7 @@ from limits import RateLimitItem
 from pydantic import BaseModel, field_validator, model_validator
 from starlette.middleware.base import RequestResponseEndpoint
 
-from triptych import auth, db, enrich, ical, inbound, journeys, llm, senders, sharing, telemetry
+from triptych import auth, db, enrich, ical, inbound, journeys, llm, senders, sharing, signup, telemetry
 from triptych.config import settings
 from triptych.models import (
     AddReservation,
@@ -115,6 +115,7 @@ def limiter(request: Request) -> ratelimit.Limiter:
 # __Host- pins the cookie to this exact host over HTTPS (no Domain, Path=/); plain HTTP is local dev.
 SESSION_COOKIE = "__Host-session" if settings.secure_cookies else "session"
 CEREMONY_COOKIE = "webauthn-ceremony"  # signed ceremony state, see auth.py
+SIGNUP_COOKIE = "__Host-signup" if settings.secure_cookies else "signup"  # see signup.py
 
 
 @app.middleware("http")
@@ -261,6 +262,99 @@ async def register_page(request: Request, invite: str) -> Response:
     return templates.TemplateResponse(
         request, "register.html", {"invite": invite, "invite_email": email}, status_code=200 if email else 404
     )
+
+
+# --- signing up (signup.py) -------------------------------------------------------------------
+
+
+def signups_open() -> None:
+    if settings.signups == "closed":
+        raise HTTPException(404)
+
+
+async def current_signup(request: Request) -> signup.Signup | None:
+    token = request.cookies.get(SIGNUP_COOKIE)
+    return await signup.get(token) if token else None
+
+
+Signup = Annotated[signup.Signup | None, Depends(current_signup)]
+
+
+async def live_signup(s: Signup) -> signup.Signup:
+    if s is None:
+        raise HTTPException(404)
+    return s
+
+
+def compose_links(s: signup.Signup) -> dict[str, str]:
+    """The same message as a mailto: link and as Gmail's and Outlook's web compose pages, for people
+    whose browser has no mail app to hand a mailto: link to."""
+    to, subject = settings.inbound_address, f"Sign me up to Triptych ({s.code})"
+    body = f"Please sign {s.email} up to Triptych. My code is {s.code}."
+    return {
+        "mailto": f"mailto:{to}?" + urlencode({"subject": subject, "body": body}, quote_via=quote),
+        "gmail": "https://mail.google.com/mail/?"
+        + urlencode({"view": "cm", "fs": "1", "to": to, "su": subject, "body": body}),
+        "outlook": "https://outlook.live.com/mail/0/deeplink/compose?"
+        + urlencode({"to": to, "subject": subject, "body": body}),
+    }
+
+
+def signup_context(s: signup.Signup | None) -> dict[str, Any]:
+    return {
+        "signup": s,
+        "links": compose_links(s) if s else None,
+        "inbound_address": settings.inbound_address,
+    }
+
+
+@app.get("/signup", response_class=HTMLResponse, dependencies=[Depends(signups_open)])
+async def signup_page(request: Request, s: Signup) -> Response:
+    if await signed_in(request):
+        return RedirectResponse("/", status_code=303)
+    return templates.TemplateResponse(request, "signup.html", signup_context(s))
+
+
+@app.post(
+    "/signup",
+    response_class=HTMLResponse,
+    dependencies=[Depends(signups_open), per_client(ratelimit.SIGNUP, "signup")],
+)
+async def signup_start(request: Request, email: Annotated[str, Form()]) -> Response:
+    try:
+        token = await signup.start(email)
+    except signup.SignupError as e:
+        ctx = signup_context(None) | {"error": str(e), "entered": email}
+        return templates.TemplateResponse(request, "signup.html", ctx, status_code=400)
+    resp = RedirectResponse("/signup", status_code=303)
+    set_cookie(resp, SIGNUP_COOKIE, token, int(signup.TTL.total_seconds()))
+    return resp
+
+
+@app.post("/signup/cancel", dependencies=[Depends(signups_open)])
+async def signup_cancel(request: Request) -> Response:
+    if token := request.cookies.get(SIGNUP_COOKIE):
+        await signup.cancel(token)
+    resp = RedirectResponse("/signup", status_code=303)
+    resp.delete_cookie(SIGNUP_COOKIE, path="/", secure=settings.secure_cookies, httponly=True)
+    return resp
+
+
+@app.get("/signup/events", response_class=EventSourceResponse, dependencies=[Depends(signups_open)])
+async def signup_events(
+    s: Annotated[signup.Signup, Depends(live_signup)],
+    hub: Annotated[live.Hub, Depends(live_hub)],
+    request: Request,
+) -> AsyncIterable[ServerSentEvent]:
+    """The signup page's step, re-sent when mail proves the address (see live.py, signup.html)."""
+    token = request.cookies.get(SIGNUP_COOKIE, "")
+
+    async def render() -> dict[str, str]:
+        ctx = signup_context(await signup.get(token))
+        return {"signup": templates.get_template("_signup.html").render(ctx)}
+
+    async for e in live.stream(hub, s.channel, render):
+        yield e
 
 
 @app.post("/logout")
@@ -860,10 +954,12 @@ async def inbound_mail(request: Request, client: Client) -> dict[str, str]:
     # Who may file is checked before authenticating, so mail from strangers costs no DNS lookups.
     sender = inbound.canonical_sender(request.headers.get("x-envelope-from", ""))
     code = inbound.verification_code(raw)
+    signup_code = None
     if code is not None and not await senders.is_pending(code, sender):
+        signup_code = code if await signup.is_pending(code, sender) else None
         code = None
     owner = await senders.owner(sender)
-    if sender != inbound.GMAIL_FORWARDING_VERIFIER and owner is None and code is None:
+    if sender != inbound.GMAIL_FORWARDING_VERIFIER and owner is None and code is None and signup_code is None:
         raise HTTPException(
             403,
             f"{sender or 'this address'} isn't a Triptych sender. Add it on your Triptych account page,"
@@ -887,12 +983,20 @@ async def inbound_mail(request: Request, client: Client) -> dict[str, str]:
         )
         return {"status": "forwarding-confirmation", "user": owners[0]}
 
+    if (code is not None or signup_code is not None) and not result.how.startswith("dkim:"):
+        # An ARC seal says the mail passed through Gmail, not whose mailbox it left from.
+        raise HTTPException(
+            403, f"send the verification code from {result.sender} directly, not by auto-forward"
+        )
+
+    if signup_code is not None:
+        try:
+            await signup.confirm(signup_code, result.sender)
+        except signup.SignupError as e:
+            raise HTTPException(403, str(e)) from e
+        return {"status": "signup-verified", "auth": result.how}
+
     if code is not None:
-        if not result.how.startswith("dkim:"):
-            # An ARC seal says the mail passed through Gmail, not whose mailbox it left from.
-            raise HTTPException(
-                403, f"send the verification code from {result.sender} directly, not by auto-forward"
-            )
         try:
             owner = await senders.confirm(code, result.sender)
         except senders.SenderError as e:

@@ -302,6 +302,21 @@ CREATE TABLE public.share_link (
 
 
 --
+-- Name: signup; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.signup (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    token_hash bytea NOT NULL,
+    code_hash bytea NOT NULL,
+    email text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone NOT NULL,
+    verified_at timestamp with time zone
+);
+
+
+--
 -- Name: trip; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -539,6 +554,30 @@ ALTER TABLE ONLY public.trip
 
 
 --
+-- Name: signup signup_code_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.signup
+    ADD CONSTRAINT signup_code_hash_key UNIQUE (code_hash);
+
+
+--
+-- Name: signup signup_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.signup
+    ADD CONSTRAINT signup_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: signup signup_token_hash_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.signup
+    ADD CONSTRAINT signup_token_hash_key UNIQUE (token_hash);
+
+
+--
 -- Name: trip_member trip_member_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -674,6 +713,13 @@ CREATE INDEX share_link_trip_idx ON public.share_link USING btree (trip_id);
 --
 
 CREATE INDEX trip_owner_idx ON public.trip USING btree (owner);
+
+
+--
+-- Name: signup_email_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX signup_email_idx ON public.signup USING btree (email);
 
 
 --
@@ -934,4 +980,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261027230000'),
     ('20261028000000'),
     ('20261028010000'),
-    ('20261028120000');
+    ('20261028120000'),
+    ('20261028130000');
