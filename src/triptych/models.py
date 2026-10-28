@@ -156,7 +156,7 @@ class ExtractedReservation(BaseModel):
     notes: str | None = Field(None, description="Other useful facts: cabin, room type, party size…")
 
     @model_validator(mode="after")
-    def _no_port_codes(self) -> "ExtractedReservation":
+    def _no_port_codes(self) -> ExtractedReservation:
         # Ports have no IATA codes: one the model gives a ferry is the nearest airport's, or a guess.
         if self.kind is Kind.FERRY:
             self.start_iata = self.end_iata = None
@@ -292,7 +292,7 @@ class Role(StrEnum):
     EDIT = "edit"
     OWNER = "owner"
 
-    def allows(self, need: "Role") -> bool:
+    def allows(self, need: Role) -> bool:
         roles = list(Role)
         return roles.index(self) >= roles.index(need)
 

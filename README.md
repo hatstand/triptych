@@ -5,7 +5,7 @@ emails, PDFs or screenshots; a local **Gemma 4** model extracts the reservations
 into trips automatically. You get a day-by-day itinerary, an iCal feed, check-in reminders and
 "ask about my trip" Q&A.
 
-Typed Python 3.13 (checked with Astral's `ty`, pydantic models). **Postgres** is the system of
+Typed Python 3.14 (checked with Astral's `ty`, pydantic models). **Postgres** is the system of
 record, with hand-written migrations. **Restate** handles durable workflows, ordering, queuing,
 timers and retries. **Ollama** runs the model, and **docker compose + Tilt** drive the dev loop.
 
@@ -271,7 +271,7 @@ way. `LOG_FORMAT=text` prints plain lines instead, which Tilt uses (`compose/dev
 ## Development
 
 ```bash
-uv sync                          # Python 3.13 venv with dev tools
+uv sync                          # Python 3.14 venv with dev tools
 uv run pytest -q                 # unit tests; DB tests too if TEST_DATABASE_URL is set
 TEST_DATABASE_URL=postgresql://triptych:triptych@127.0.0.1:5432/postgres uv run pytest -q
 uv run ty check && uv run ruff check src tests

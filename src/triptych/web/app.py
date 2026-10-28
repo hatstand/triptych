@@ -873,7 +873,7 @@ class ReservationForm(ReservationFields):
         return v
 
     @model_validator(mode="after")
-    def ends_after_it_starts(self) -> "ReservationForm":
+    def ends_after_it_starts(self) -> ReservationForm:
         """The timeline runs forward in time, so nothing may end before it starts. Wall clocks in two
         zones are compared as instants; without both zones, as the times written."""
         if self.end_local is None:

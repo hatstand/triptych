@@ -98,7 +98,7 @@ def country_name(code: str) -> str | None:
 def _zone_file(name: str) -> bytes | None:
     try:
         return importlib.resources.files("tzdata").joinpath("zoneinfo", *name.split("/")).read_bytes()
-    except (OSError, ValueError):
+    except OSError, ValueError:
         return None
 
 

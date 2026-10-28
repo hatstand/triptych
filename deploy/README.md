@@ -103,7 +103,7 @@ it died mid-request (journal: `runc ... unable to signal init: permission denied
 sudo mv /etc/apparmor.d/docker /root/apparmor.d-docker.old
 sudo apparmor_parser -R /root/apparmor.d-docker.old && sudo systemctl restart docker
 # check: well under a second, not 10 (the sleep lets Python install its handler first)
-docker run -d --name sigtest python:3.13-slim python -c \
+docker run -d --name sigtest python:3.14-slim python -c \
   "import signal,time; signal.signal(signal.SIGTERM, lambda *a: exit(0)); time.sleep(300)"
 sleep 3; time docker stop sigtest; docker rm sigtest
 ```

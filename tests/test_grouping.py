@@ -16,7 +16,7 @@ def res(kind: Kind, start: str, end: str | None = None, city: str | None = None)
     )
 
 
-def ids() -> "itertools.count[int]":
+def ids() -> itertools.count[int]:
     return itertools.count(1)
 
 

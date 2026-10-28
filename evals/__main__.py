@@ -102,7 +102,7 @@ def received(path: Path, data: bytes) -> datetime:
         if date:
             try:
                 return email.utils.parsedate_to_datetime(date)
-            except (TypeError, ValueError):
+            except TypeError, ValueError:
                 pass
     return datetime.fromtimestamp(path.stat().st_mtime, UTC)
 
