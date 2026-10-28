@@ -1,6 +1,8 @@
 // Passkey ceremonies: fetch options from the server, hand them to the browser's WebAuthn API, and
 // post the result back. Buttons opt in with data-passkey="login" or data-passkey="register" (plus
-// data-invite when registering from an invite link); errors go to the page's [data-passkey-error].
+// data-invite when registering from an invite link, or data-signup when creating the account a
+// verified signup asked for); errors go to the page's [data-passkey-error]. Clicks are handled on
+// the document, so a button swapped in later (the signup page's, over SSE) works too.
 
 interface Redirect {
   redirect: string;
@@ -27,8 +29,10 @@ async function login(): Promise<Redirect> {
 
 async function register(button: HTMLButtonElement): Promise<Redirect> {
   const invite = button.dataset.invite ?? null;
+  const signup = button.dataset.signup !== undefined;
   const options = await postJSON<PublicKeyCredentialCreationOptionsJSON>("/auth/register/options", {
     invite,
+    signup,
   });
   const credential = (await navigator.credentials.create({
     publicKey: PublicKeyCredential.parseCreationOptionsFromJSON(options),
@@ -49,24 +53,31 @@ function showError(message: string): void {
 
 // Older browsers lack the JSON helpers even where they have WebAuthn itself.
 const supported = typeof window.PublicKeyCredential?.parseRequestOptionsFromJSON === "function";
+const UNSUPPORTED = "This browser doesn't support passkeys. Try an up-to-date Safari, Chrome, Edge or Firefox.";
 
-for (const button of document.querySelectorAll<HTMLButtonElement>("button[data-passkey]")) {
-  if (!supported) {
+if (!supported && document.querySelector("button[data-passkey]")) {
+  for (const button of document.querySelectorAll<HTMLButtonElement>("button[data-passkey]")) {
     button.disabled = true;
-    showError("This browser doesn't support passkeys. Try an up-to-date Safari, Chrome, Edge or Firefox.");
-    continue;
   }
-  button.addEventListener("click", async () => {
-    button.disabled = true;
-    try {
-      const { redirect } = await (button.dataset.passkey === "login" ? login() : register(button));
-      window.location.assign(redirect);
-    } catch (e) {
-      // NotAllowedError: the user cancelled or the prompt timed out. Nothing to explain.
-      if (!(e instanceof DOMException && e.name === "NotAllowedError")) {
-        showError(e instanceof Error ? e.message : String(e));
-      }
-      button.disabled = false;
-    }
-  });
+  showError(UNSUPPORTED);
 }
+
+document.addEventListener("click", async (event) => {
+  const button = (event.target as Element | null)?.closest<HTMLButtonElement>("button[data-passkey]");
+  if (!button || button.disabled) return;
+  if (!supported) {
+    showError(UNSUPPORTED);
+    return;
+  }
+  button.disabled = true;
+  try {
+    const { redirect } = await (button.dataset.passkey === "login" ? login() : register(button));
+    window.location.assign(redirect);
+  } catch (e) {
+    // NotAllowedError: the user cancelled or the prompt timed out. Nothing to explain.
+    if (!(e instanceof DOMException && e.name === "NotAllowedError")) {
+      showError(e instanceof Error ? e.message : String(e));
+    }
+    button.disabled = false;
+  }
+});

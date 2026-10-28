@@ -8,6 +8,7 @@ from dataclasses import replace
 import httpx
 import pytest
 
+from tests.test_auth import Authenticator, sign_in
 from tests.test_inbound import (  # noqa: F401 (fixtures)
     FakeRestate,
     Mail,
@@ -19,7 +20,8 @@ from tests.test_inbound import (  # noqa: F401 (fixtures)
     needs_db,
     sign,
 )
-from triptych import db, signup
+from tests.test_trip_members import a_trip
+from triptych import auth, db, senders, sharing, signup
 from triptych.web import app as web
 from triptych.web import live, ratelimit
 
@@ -136,3 +138,72 @@ async def test_the_event_stream_needs_a_signup(browser: httpx.AsyncClient) -> No
 def test_codes_are_derived_from_the_token() -> None:
     assert signup.code_for("a") == signup.code_for("a") != signup.code_for("b")
     assert CODE.fullmatch(signup.code_for("a"))
+
+
+async def create_passkey(browser: httpx.AsyncClient, device: Authenticator) -> httpx.Response:
+    options = await browser.post("/auth/register/options", json={"signup": True})
+    if options.status_code != 200:
+        return options
+    return await browser.post(
+        "/auth/register/verify", json={"credential": device.create(options.json()), "name": "Phone"}
+    )
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_a_verified_signup_becomes_an_account_with_its_passkey(
+    browser: httpx.AsyncClient, mail: Mail, keys: tuple[bytes, bytes]
+) -> None:
+    device = Authenticator()
+    code = await start(browser)
+    # Not before the address is proven.
+    early = await browser.post("/auth/register/options", json={"signup": True})
+    assert early.status_code == 400 and "expired" in early.json()["error"]
+
+    await mail(signed(code, "me@gmail.com", keys[0]), "me@gmail.com")
+    page = (await browser.get("/signup")).text
+    assert "is yours" in page and 'data-passkey="register" data-signup' in page
+
+    done = await create_passkey(browser, device)
+    assert done.status_code == 200 and done.json() == {"redirect": "/"}, done.text
+    assert 'signup=""' in done.headers.get("set-cookie", "")  # cleared
+    me = await senders.owner("me@gmail.com")
+    assert me is not None
+    (address,) = await senders.addresses(me)
+    assert address.verified_at is not None
+    assert [k.name for k in await auth.passkeys(me)] == ["Phone"]
+    assert (await browser.get("/")).status_code == 200  # signed in
+
+    # The signup is spent: no second account from it.
+    assert (await browser.post("/auth/register/options", json={"signup": True})).status_code == 400
+    browser.cookies.clear()
+    assert (await sign_in(browser, device)).status_code == 200
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_an_address_with_an_account_is_told_to_sign_in(
+    browser: httpx.AsyncClient, mail: Mail, keys: tuple[bytes, bytes]
+) -> None:
+    await db.user_for_email("me@gmail.com")
+    code = await start(browser)
+    await mail(signed(code, "me@gmail.com", keys[0]), "me@gmail.com")
+    assert "already have an account" in (await browser.get("/signup")).text
+    refused = await create_passkey(browser, Authenticator())
+    assert refused.status_code == 400 and "Sign in instead" in refused.json()["error"]
+
+
+@needs_db
+@pytest.mark.anyio
+async def test_trips_shared_with_the_address_wait_for_the_new_account(
+    browser: httpx.AsyncClient, mail: Mail, keys: tuple[bytes, bytes]
+) -> None:
+    owner = await db.user_for_email("owner@example.com")
+    trip_id = await a_trip(owner)
+    await sharing.invite(owner, trip_id, "me@gmail.com")
+    code = await start(browser)
+    await mail(signed(code, "me@gmail.com", keys[0]), "me@gmail.com")
+    assert (await create_passkey(browser, Authenticator())).status_code == 200
+    me = await senders.owner("me@gmail.com")
+    assert me is not None
+    assert [i.trip_id for i in await sharing.pending_invites(me)] == [trip_id]

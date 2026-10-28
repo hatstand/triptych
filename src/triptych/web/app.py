@@ -477,6 +477,7 @@ def signed_in_response(redirect: str, session_token: str | None = None) -> Respo
 
 class RegisterStart(BaseModel):
     invite: str | None = None
+    signup: bool = False  # create the account a verified signup (its cookie) asked for
 
 
 class RegisterFinish(BaseModel):
@@ -497,8 +498,19 @@ async def login_verify(request: Request, credential: Annotated[dict[str, Any], B
 
 @app.post("/auth/register/options", dependencies=[per_client(ratelimit.REGISTER, "register")])
 async def register_options(request: Request, body: RegisterStart) -> Response:
-    """With an invite: a passkey for the user the invited address belongs to (new or not).
-    Without: another passkey for whoever is signed in."""
+    """With a verified signup: the first passkey of the account it creates. With an invite: a passkey
+    for the user the invited address belongs to (new or not). Otherwise: another passkey for whoever
+    is signed in."""
+    if body.signup:
+        token = request.cookies.get(SIGNUP_COOKIE, "")
+        s = await signup.get(token) if token and settings.signups != "closed" else None
+        if s is None or not s.verified:
+            raise auth.AuthError("This signup has expired. Please start again.")
+        if s.taken:
+            raise auth.AuthError(f"{s.email} already has an account. Sign in instead.")
+        return options_response(
+            *await auth.start_registration(str(uuid.uuid4()), s.email, signup_token=token)
+        )
     if body.invite is not None:
         email = await auth.invite_email(body.invite)
         if email is None:
@@ -516,7 +528,9 @@ async def register_verify(request: Request, body: RegisterFinish) -> Response:
     user_id = await auth.finish_registration(request.cookies.get(CEREMONY_COOKIE), body.credential, body.name)
     if (me := await signed_in(request)) and me.id == user_id:
         return signed_in_response("/account")
-    return signed_in_response("/", await auth.create_session(user_id))
+    resp = signed_in_response("/", await auth.create_session(user_id))
+    resp.delete_cookie(SIGNUP_COOKIE, path="/", secure=settings.secure_cookies, httponly=True)
+    return resp
 
 
 def google_calendar_link(feed_url: str) -> str:
