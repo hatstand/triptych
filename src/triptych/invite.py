@@ -1,5 +1,6 @@
-"""Print a one-time link that registers a passkey for an address: how the first user signs up, how
-someone else is let in, and how a user who has lost every passkey gets back in.
+"""Print a one-time link that lets someone prove an address (by mailing a code from it, signup.py) and
+make a passkey for it: how the first user signs up, how someone is let in while signing up is closed
+or waitlisted, and how a user who has lost every passkey gets back in.
 
     docker compose exec web python -m triptych.invite you@example.com
 """

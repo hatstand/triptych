@@ -313,7 +313,8 @@ CREATE TABLE public.signup (
     email text NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
-    verified_at timestamp with time zone
+    verified_at timestamp with time zone,
+    invite_hash bytea
 );
 
 
@@ -983,4 +984,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261028010000'),
     ('20261028120000'),
     ('20261028130000'),
-    ('20261028140000');
+    ('20261028140000'),
+    ('20261028150000');

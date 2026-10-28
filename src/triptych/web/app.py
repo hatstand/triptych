@@ -269,6 +269,7 @@ async def waitlist_page(request: Request) -> Response:
     dependencies=[per_client(ratelimit.INVITE_PAGE, "invite-page")],
 )
 async def register_page(request: Request, invite: str) -> Response:
+    """An admin invite link: a button that starts a signup for the address it names (signup.py)."""
     email = await auth.invite_email(invite)
     return templates.TemplateResponse(
         request, "register.html", {"invite": invite, "invite_email": email}, status_code=200 if email else 404
@@ -276,11 +277,6 @@ async def register_page(request: Request, invite: str) -> Response:
 
 
 # --- signing up (signup.py) -------------------------------------------------------------------
-
-
-def signups_open() -> None:
-    if settings.signups == "closed":
-        raise HTTPException(404)
 
 
 async def current_signup(request: Request) -> signup.Signup | None:
@@ -311,6 +307,11 @@ def compose_links(s: signup.Signup) -> dict[str, str]:
     }
 
 
+def signups_open(s: signup.Signup | None = None) -> bool:
+    """Whether signing up is on, or this signup came from an admin invite, which works regardless."""
+    return settings.signups != "closed" or (s is not None and s.invited)
+
+
 def signup_context(s: signup.Signup | None) -> dict[str, Any]:
     return {
         "signup": s,
@@ -319,8 +320,10 @@ def signup_context(s: signup.Signup | None) -> dict[str, Any]:
     }
 
 
-@app.get("/signup", response_class=HTMLResponse, dependencies=[Depends(signups_open)])
+@app.get("/signup", response_class=HTMLResponse)
 async def signup_page(request: Request, s: Signup) -> Response:
+    if not signups_open(s):
+        raise HTTPException(404)
     if await signed_in(request):
         return RedirectResponse("/", status_code=303)
     return templates.TemplateResponse(request, "signup.html", signup_context(s))
@@ -329,11 +332,21 @@ async def signup_page(request: Request, s: Signup) -> Response:
 @app.post(
     "/signup",
     response_class=HTMLResponse,
-    dependencies=[Depends(signups_open), per_client(ratelimit.SIGNUP, "signup")],
+    dependencies=[per_client(ratelimit.SIGNUP, "signup")],
 )
-async def signup_start(request: Request, email: Annotated[str, Form()]) -> Response:
+async def signup_start(
+    request: Request, email: Annotated[str, Form()] = "", invite: Annotated[str, Form()] = ""
+) -> Response:
+    """Start signing up as the address typed in, or the one an admin invite names."""
+    if invite:
+        invited = await auth.invite_email(invite)
+        if invited is None:
+            return templates.TemplateResponse(request, "register.html", {}, status_code=404)
+        email = invited
+    elif not signups_open():
+        raise HTTPException(404)
     try:
-        token = await signup.start(email)
+        token = await signup.start(email, auth.invite_hash(invite) if invite else None)
     except signup.SignupError as e:
         ctx = signup_context(None) | {"error": str(e), "entered": email}
         return templates.TemplateResponse(request, "signup.html", ctx, status_code=400)
@@ -342,7 +355,7 @@ async def signup_start(request: Request, email: Annotated[str, Form()]) -> Respo
     return resp
 
 
-@app.post("/signup/cancel", dependencies=[Depends(signups_open)])
+@app.post("/signup/cancel")
 async def signup_cancel(request: Request) -> Response:
     if token := request.cookies.get(SIGNUP_COOKIE):
         await signup.cancel(token)
@@ -351,7 +364,7 @@ async def signup_cancel(request: Request) -> Response:
     return resp
 
 
-@app.get("/signup/events", response_class=EventSourceResponse, dependencies=[Depends(signups_open)])
+@app.get("/signup/events", response_class=EventSourceResponse)
 async def signup_events(
     s: Annotated[signup.Signup, Depends(live_signup)],
     hub: Annotated[live.Hub, Depends(live_hub)],
@@ -487,7 +500,6 @@ def signed_in_response(redirect: str, session_token: str | None = None) -> Respo
 
 
 class RegisterStart(BaseModel):
-    invite: str | None = None
     signup: bool = False  # create the account a verified signup (its cookie) asked for
 
 
@@ -509,29 +521,20 @@ async def login_verify(request: Request, credential: Annotated[dict[str, Any], B
 
 @app.post("/auth/register/options", dependencies=[per_client(ratelimit.REGISTER, "register")])
 async def register_options(request: Request, body: RegisterStart) -> Response:
-    """With a verified signup: the first passkey of the account it creates. With an invite: a passkey
-    for the user the invited address belongs to (new or not). Otherwise: another passkey for whoever
-    is signed in."""
+    """With a verified signup: the first passkey of the account it creates (or, invited, of the
+    address's existing account). Otherwise: another passkey for whoever is signed in."""
     if body.signup:
         token = request.cookies.get(SIGNUP_COOKIE, "")
-        s = await signup.get(token) if token and settings.signups != "closed" else None
-        if s is None or not s.verified:
+        s = await signup.get(token) if token else None
+        if s is None or not s.verified or not signups_open(s):
             raise auth.AuthError("This signup has expired. Please start again.")
-        if s.taken:
+        user_id = await senders.owner(s.email) if s.taken else str(uuid.uuid4())
+        if user_id is None or (s.taken and not s.invited):
             raise auth.AuthError(f"{s.email} already has an account. Sign in instead.")
-        return options_response(
-            *await auth.start_registration(str(uuid.uuid4()), s.email, signup_token=token)
-        )
-    if body.invite is not None:
-        email = await auth.invite_email(body.invite)
-        if email is None:
-            raise auth.AuthError("This invite has expired or was already used.")
-        user_id = await db.user_for_email(email)
-    elif me := await signed_in(request):
-        user_id, email = me.id, me.email
-    else:
+        return options_response(*await auth.start_registration(user_id, s.email, signup_token=token))
+    if (me := await signed_in(request)) is None:
         raise auth.AuthError("Sign in first.")
-    return options_response(*await auth.start_registration(user_id, email, body.invite))
+    return options_response(*await auth.start_registration(me.id, me.email))
 
 
 @app.post("/auth/register/verify", dependencies=[per_client(ratelimit.REGISTER, "register")])

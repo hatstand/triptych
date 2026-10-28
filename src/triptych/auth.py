@@ -2,15 +2,16 @@
 
 Users are app_user ids, with email addresses pointing at them (see db.py); those addresses are
 also the only ones mail is accepted from (senders.py). Nothing here proves control of an address:
-the first passkey for a user comes either from a signup whose address mail has proven (signup.py),
-which creates the account with it, or from an invite naming one of their addresses
-(`python -m triptych.invite`), which is also the recovery path for someone who has lost every
-passkey. Further passkeys are added while signed in.
+the first passkey for a user comes from a signup whose address mail has proven (signup.py), which
+creates the account with it. An invite (`python -m triptych.invite`) starts such a signup for the
+address it names; it's also the recovery path for someone who has lost every passkey, since an
+invited signup for an existing account adds the passkey to it. Further passkeys are added while
+signed in.
 
-Ceremony state (challenge, purpose, user, invite) travels in a short-lived HMAC-signed cookie
+Ceremony state (challenge, purpose, user, signup) travels in a short-lived HMAC-signed cookie
 rather than a table. A challenge can therefore be presented more than once within its few
 minutes, but replaying it needs both that cookie and the authenticator's response from the same
-ceremony; invites themselves are still spent in the database.
+ceremony; signups and invites themselves are still spent in the database.
 """
 
 import base64
@@ -105,6 +106,11 @@ async def pending_invites() -> list[PendingInvite]:
         return [PendingInvite(email=e, created_at=c, expires_at=x) for e, c, x in await cur.fetchall()]
 
 
+def invite_hash(token: str) -> bytes:
+    """How an invite's token is stored, and how a signup started from it names it (signup.py)."""
+    return _hash(token)
+
+
 async def invite_email(token: str) -> str | None:
     async with db.connection() as conn:
         cur = await conn.execute(
@@ -188,7 +194,6 @@ class Ceremony(BaseModel):
     challenge: str  # base64url
     expires: float  # unix time
     user_id: str | None = None  # registration: who the passkey is for
-    invite_hash: str | None = None  # registration from an invite: hex sha256 of its token
     signup_hash: str | None = (
         None  # registration that creates its account (signup.py): hex sha256 of its token
     )
@@ -221,11 +226,9 @@ def _ceremony(purpose: Purpose, challenge: bytes, **kw: Any) -> str:
 # --- ceremonies ------------------------------------------------------------------------------
 
 
-async def start_registration(
-    user_id: str, email: str, invite: str | None = None, signup_token: str | None = None
-) -> tuple[str, str]:
-    """(sealed ceremony state, PublicKeyCredentialCreationOptions JSON). Without an invite or a
-    signup, `user_id` must be whoever is signed in; with a signup, it's the id the account will get."""
+async def start_registration(user_id: str, email: str, signup_token: str | None = None) -> tuple[str, str]:
+    """(sealed ceremony state, PublicKeyCredentialCreationOptions JSON). Without a signup, `user_id`
+    must be whoever is signed in; with one, it's the account the signup creates or (invited) recovers."""
     async with db.connection() as conn:
         cur = await conn.execute(
             "SELECT credential_id, transports FROM passkey WHERE user_id = %s", (user_id,)
@@ -251,7 +254,6 @@ async def start_registration(
         "register",
         options.challenge,
         user_id=user_id,
-        invite_hash=_hash(invite).hex() if invite else None,
         signup_hash=signup.token_hash(signup_token).hex() if signup_token else None,
     )
     return state, webauthn.options_to_json(options)
@@ -275,16 +277,6 @@ async def finish_registration(state: str | None, credential: dict[str, Any], nam
 
     transports = [t.value for t in parsed.response.transports or []]
     async with db.connection() as conn, conn.transaction():
-        if c.invite_hash is not None:
-            # Spend the invite, and check it still names one of this user's addresses.
-            cur = await conn.execute(
-                """DELETE FROM invite i USING user_email e
-                   WHERE i.token_hash = %s AND i.expires_at > now() AND e.email = i.email AND e.user_id = %s
-                   RETURNING 1""",
-                (bytes.fromhex(c.invite_hash), c.user_id),
-            )
-            if await cur.fetchone() is None:
-                raise AuthError("This invite has expired or was already used.")
         if c.signup_hash is not None:
             try:
                 await signup.create_account(conn, bytes.fromhex(c.signup_hash), c.user_id)

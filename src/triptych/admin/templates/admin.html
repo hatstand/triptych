@@ -17,7 +17,7 @@
 <section class="card">
   <h2>Invites</h2>
   {% if invite_link %}
-  <p>Send this link to <b>{{ invite_for }}</b>. It registers a passkey once, and isn't shown again:</p>
+  <p>Send this link to <b>{{ invite_for }}</b>. It works once: they mail us a code from that address, then make a passkey. If the address already has an account (a lost passkey), the new passkey is added to it. The link isn't shown again:</p>
   <input class="mono" readonly value="{{ invite_link }}">
   {% endif %}
   <form method="post" class="invite-form">
