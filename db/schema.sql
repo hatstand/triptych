@@ -341,7 +341,8 @@ CREATE TABLE public.trip_member (
 CREATE TABLE public.user_email (
     email text NOT NULL,
     user_id uuid NOT NULL,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    verified_at timestamp with time zone
 );
 
 
@@ -932,4 +933,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261027220000'),
     ('20261027230000'),
     ('20261028000000'),
-    ('20261028010000');
+    ('20261028010000'),
+    ('20261028120000');

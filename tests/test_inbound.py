@@ -237,6 +237,22 @@ async def test_mail_files_under_the_senders_user(
 
 @pytest.mark.anyio
 @needs_db
+async def test_an_invited_address_is_verified_by_its_first_signed_mail(
+    mail: Mail, keys: tuple[bytes, bytes]
+) -> None:
+    me = await db.user_for_email("me@gmail.com")  # as an admin invite makes it: unproven
+    assert (await senders.addresses(me))[0].verified_at is None
+    raw = autoforward(keys[0], "me@gmail.com", "Booking ref QZ7K2M")
+    assert (await mail(raw, "me+caf_=plans=triptych.purplehatstands.com@gmail.com")).status_code == 200
+    assert (await senders.addresses(me))[0].verified_at is None  # Gmail vouches for the route, not you
+    assert (
+        await mail(sign(message("me@gmail.com"), "gmail.com", keys[0]), "me@gmail.com")
+    ).status_code == 200
+    assert (await senders.addresses(me))[0].verified_at is not None
+
+
+@pytest.mark.anyio
+@needs_db
 async def test_unknown_sender_is_refused_before_authenticating(mail: Mail, fake_restate: FakeRestate) -> None:
     resp = await mail(message("stranger@gmail.com"), "stranger@gmail.com")  # unsigned, too
     assert resp.status_code == 403
@@ -264,6 +280,7 @@ async def test_new_address_is_verified_by_mailing_its_code(
     assert resp.status_code == 200 and resp.json()["status"] == "sender-verified", resp.text
     assert fake_restate.sent == []  # the verification mail itself isn't a booking
     assert await senders.owner("me@gmail.com") == me
+    assert [s.verified_at is not None for s in await senders.addresses(me)] == [False, True]
     assert await senders.pending(me) == []
     assert "will now be filed" in (await db.notifications(me))[0].text
 

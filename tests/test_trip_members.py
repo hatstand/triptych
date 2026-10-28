@@ -8,7 +8,7 @@ from datetime import datetime
 import pytest
 from fastapi.testclient import TestClient
 
-from triptych import db, sharing
+from triptych import db, senders, sharing
 from triptych.auth import Me
 from triptych.models import AddReservation, Answer, AskTrip, Kind, Reservation, Role, Trip, TripAccess
 from triptych.services import assistant
@@ -44,7 +44,9 @@ async def owner(database: str) -> str:
 
 @pytest.fixture
 async def friend(database: str) -> str:
-    return await db.user_for_email("friend@example.com")
+    friend = await db.user_for_email("friend@example.com")
+    await senders.mark_verified("friend@example.com")
+    return friend
 
 
 async def a_trip(owner: str, **changes: object) -> str:
@@ -89,6 +91,9 @@ async def test_an_invite_waits_for_its_address_to_join_an_account(owner: str, fr
         await conn.execute(
             "INSERT INTO user_email (email, user_id) VALUES ('later@example.com', %s)", (friend,)
         )
+    assert await sharing.pending_invites(friend) == []  # not until it's proven to be theirs
+    assert not await sharing.accept(friend, trip_id)
+    await senders.mark_verified("Later@example.com")
     (invite,) = await sharing.pending_invites(friend)
     assert invite.trip_id == trip_id
     assert await sharing.accept(friend, trip_id)
