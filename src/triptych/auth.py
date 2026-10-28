@@ -1,8 +1,9 @@
 """Passkeys (WebAuthn), sign-in sessions and invites. Passkeys are the only way to sign in.
 
 Users are app_user ids, with email addresses pointing at them (see db.py); those addresses are
-also the only ones mail is accepted from (senders.py). Nothing here proves control of an address,
-so the first passkey for a user needs an invite naming one of their addresses
+also the only ones mail is accepted from (senders.py). Nothing here proves control of an address:
+the first passkey for a user comes either from a signup whose address mail has proven (signup.py),
+which creates the account with it, or from an invite naming one of their addresses
 (`python -m triptych.invite`), which is also the recovery path for someone who has lost every
 passkey. Further passkeys are added while signed in.
 
@@ -32,7 +33,7 @@ from webauthn.helpers import (
 )
 from webauthn.helpers.exceptions import WebAuthnException
 
-from triptych import db
+from triptych import db, signup
 from triptych.config import settings
 
 SESSION_TTL = timedelta(days=30)
@@ -185,6 +186,9 @@ class Ceremony(BaseModel):
     expires: float  # unix time
     user_id: str | None = None  # registration: who the passkey is for
     invite_hash: str | None = None  # registration from an invite: hex sha256 of its token
+    signup_hash: str | None = (
+        None  # registration that creates its account (signup.py): hex sha256 of its token
+    )
 
 
 def _sign(payload: str) -> str:
@@ -214,9 +218,11 @@ def _ceremony(purpose: Purpose, challenge: bytes, **kw: Any) -> str:
 # --- ceremonies ------------------------------------------------------------------------------
 
 
-async def start_registration(user_id: str, email: str, invite: str | None) -> tuple[str, str]:
-    """(sealed ceremony state, PublicKeyCredentialCreationOptions JSON). Without an invite,
-    `user_id` must be whoever is signed in."""
+async def start_registration(
+    user_id: str, email: str, invite: str | None = None, signup_token: str | None = None
+) -> tuple[str, str]:
+    """(sealed ceremony state, PublicKeyCredentialCreationOptions JSON). Without an invite or a
+    signup, `user_id` must be whoever is signed in; with a signup, it's the id the account will get."""
     async with db.connection() as conn:
         cur = await conn.execute(
             "SELECT credential_id, transports FROM passkey WHERE user_id = %s", (user_id,)
@@ -239,7 +245,11 @@ async def start_registration(user_id: str, email: str, invite: str | None) -> tu
         ],
     )
     state = _ceremony(
-        "register", options.challenge, user_id=user_id, invite_hash=_hash(invite).hex() if invite else None
+        "register",
+        options.challenge,
+        user_id=user_id,
+        invite_hash=_hash(invite).hex() if invite else None,
+        signup_hash=signup.token_hash(signup_token).hex() if signup_token else None,
     )
     return state, webauthn.options_to_json(options)
 
@@ -272,6 +282,11 @@ async def finish_registration(state: str | None, credential: dict[str, Any], nam
             )
             if await cur.fetchone() is None:
                 raise AuthError("This invite has expired or was already used.")
+        if c.signup_hash is not None:
+            try:
+                await signup.create_account(conn, bytes.fromhex(c.signup_hash), c.user_id)
+            except signup.SignupError as e:
+                raise AuthError(str(e)) from e
         await conn.execute(
             """INSERT INTO passkey
                    (credential_id, user_id, public_key, sign_count, transports, backed_up, name)

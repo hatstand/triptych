@@ -2,9 +2,19 @@
 {% if not signup %}
 <h1>This signup has expired</h1>
 <p class="muted">Signups last half an hour. <a href="/signup">Start again</a>.</p>
+{% elif signup.verified and signup.taken %}
+<h1>You already have an account</h1>
+<p>{{ signup.email }} already belongs to a Triptych account. <a href="/login">Sign in</a> with its passkey.
+  Lost it? Ask for a new invite link.</p>
 {% elif signup.verified %}
 <h1>{{ signup.email }} is yours</h1>
-<p>Thanks, your email arrived. Next you'll create a passkey to sign in with.</p>
+<p>Thanks, your email arrived. Last step: create a passkey to sign in with. Your device keeps it,
+  protected by your fingerprint, face or screen lock.</p>
+<label class="stack small">Name this passkey (optional)
+  <input name="passkey-name" placeholder="e.g. iPhone, YubiKey" maxlength="60">
+</label>
+<button type="button" data-passkey="register" data-signup>Create passkey</button>
+<p class="error" data-passkey-error hidden></p>
 {% else %}
 <h1>Send us one email</h1>
 <p>From <strong>{{ signup.email }}</strong>, send the email below to <code>{{ inbound_address }}</code>. It's
