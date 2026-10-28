@@ -36,7 +36,7 @@ from playwright.async_api import (
     async_playwright,
 )
 
-from triptych import auth, db, photos
+from triptych import auth, db, photos, sharing
 from triptych.config import settings
 from triptych.models import (
     Extraction,
@@ -356,7 +356,9 @@ async def serve(app: str, url: str, env: dict[str, str]) -> asyncio.subprocess.P
     sys.exit(f"{app} didn't start listening on {url}")
 
 
-async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_id: str) -> list[str]:
+async def capture(
+    browser: Browser, out: Path, scheme: str, session: str, trip_id: str, link_token: str
+) -> list[str]:
     """Saves each page's screenshots, and returns whatever the Content-Security-Policy refused."""
     refused: list[str] = []
 
@@ -394,6 +396,7 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
         (user, "05-account-senders", f"{WEB}/account/senders"),
         (admin, "06-admin", f"{ADMIN}/?batch={BATCH}"),
         (user, "09-account-sharing", f"{WEB}/account/sharing"),
+        (anon, "14-shared-link", f"{WEB}/s/{link_token}"),
     ]
     (out / scheme).mkdir(parents=True, exist_ok=True)
     for ctx, name, url in shots:
@@ -427,6 +430,11 @@ async def capture(browser: Browser, out: Path, scheme: str, session: str, trip_i
     await page.locator("button[commandfor=trip-edit][command=show-modal]").click()
     await page.locator("dialog[open]").wait_for()
     await page.screenshot(path=out / scheme / "11-trip-edit.png", animations="disabled")
+    # Its share dialog: the links anyone can open, to copy or revoke, and a new one.
+    await page.keyboard.press("Escape")
+    await page.locator("button[commandfor=share][command=show-modal]").click()
+    await page.locator("dialog[open]").wait_for()
+    await page.screenshot(path=out / scheme / "15-share.png", animations="disabled")
     await page.close()
     # One trip card dropped on another on the home page asks before merging them (merge.ts).
     page = await user.new_page()
@@ -469,7 +477,13 @@ async def main() -> None:
     load_schema(url)
     db.init(url)
     session = await seed()
-    trips = await db.trip_summaries(await db.user_for_email(EMAIL))
+    me = await db.user_for_email(EMAIL)
+    trips = await db.trip_summaries(me)
+    # The upcoming trip with the connecting flight, shared by two links.
+    upcoming = min((t for t in trips if t.start_date >= date.today()), key=lambda t: t.start_date)
+    link_id = await sharing.create_link(me, upcoming.id, "Mum")
+    await sharing.create_link(me, upcoming.id, "Airbnb host")
+    assert link_id is not None
     await db.close()
 
     env = os.environ | {
@@ -490,11 +504,11 @@ async def main() -> None:
     try:
         async with async_playwright() as p:
             browser = await p.chromium.launch(executable_path=os.environ.get("PLAYWRIGHT_CHROMIUM") or None)
-            # The upcoming trip with the connecting flight.
-            upcoming = min((t for t in trips if t.start_date >= date.today()), key=lambda t: t.start_date)
             refused: list[str] = []
             for scheme in ("light", "dark"):
-                refused += await capture(browser, args.out, scheme, session, upcoming.id)
+                refused += await capture(
+                    browser, args.out, scheme, session, upcoming.id, sharing.token_for(link_id)
+                )
             await browser.close()
     finally:
         for proc in servers:

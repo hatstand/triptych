@@ -12,7 +12,7 @@ import psycopg
 import pytest
 from psycopg import conninfo, sql
 
-from triptych import db
+from triptych import db, sharing
 from triptych.models import Role, TripAccess
 
 ADMIN_URL = os.environ.get("TEST_DATABASE_URL")
@@ -47,11 +47,16 @@ async def database() -> AsyncIterator[str]:
 
 @pytest.fixture
 def own_every_trip(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Web tests without a database: whoever asks owns every trip, except ones named someone-elses*."""
+    """Web tests without a database: whoever asks owns every trip, except ones named someone-elses*,
+    and none of them is shared."""
 
     async def trip_access(user_id: str, trip_id: str) -> TripAccess | None:
         if trip_id.startswith("someone-elses"):
             return None
         return TripAccess(trip_id=trip_id, owner=user_id, role=Role.OWNER)
 
+    async def links(owner: str, trip_id: str) -> list[sharing.ShareLink]:
+        return []
+
     monkeypatch.setattr(db, "trip_access", trip_access)
+    monkeypatch.setattr(sharing, "links", links)

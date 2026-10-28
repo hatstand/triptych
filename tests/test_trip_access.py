@@ -31,6 +31,8 @@ NEEDS = {
     ("POST", "/trips/{trip_id}/ask"): Role.OWNER,
     ("POST", "/trips/{trip_id}/merge"): Role.OWNER,
     ("POST", "/trips/{trip_id}/delete"): Role.OWNER,
+    ("POST", "/trips/{trip_id}/links"): Role.OWNER,
+    ("POST", "/trips/{trip_id}/links/{link_id}/delete"): Role.OWNER,
 }
 
 

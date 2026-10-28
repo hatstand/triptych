@@ -286,6 +286,21 @@ CREATE TABLE public.sender_verification (
 
 
 --
+-- Name: share_link; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.share_link (
+    id uuid NOT NULL,
+    trip_id uuid NOT NULL,
+    token_sha256 bytea NOT NULL,
+    label text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    expires_at timestamp with time zone,
+    last_used_at timestamp with time zone
+);
+
+
+--
 -- Name: trip; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -480,6 +495,22 @@ ALTER TABLE ONLY public.sender_verification
 
 
 --
+-- Name: share_link share_link_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.share_link
+    ADD CONSTRAINT share_link_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: share_link share_link_token_sha256_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.share_link
+    ADD CONSTRAINT share_link_token_sha256_key UNIQUE (token_sha256);
+
+
+--
 -- Name: trip trip_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -593,6 +624,13 @@ CREATE INDEX reservation_trip_start_idx ON public.reservation USING btree (trip_
 --
 
 CREATE INDEX sender_verification_user_idx ON public.sender_verification USING btree (user_id);
+
+
+--
+-- Name: share_link_trip_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX share_link_trip_idx ON public.share_link USING btree (trip_id);
 
 
 --
@@ -737,6 +775,14 @@ ALTER TABLE ONLY public.sender_verification
 
 
 --
+-- Name: share_link share_link_trip_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.share_link
+    ADD CONSTRAINT share_link_trip_id_fkey FOREIGN KEY (trip_id) REFERENCES public.trip(id) ON DELETE CASCADE;
+
+
+--
 -- Name: trip trip_owner_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -801,4 +847,5 @@ INSERT INTO public.schema_migrations (version) VALUES
     ('20261026140000'),
     ('20261026150000'),
     ('20261026210000'),
-    ('20261027110000');
+    ('20261027110000'),
+    ('20261027220000');
