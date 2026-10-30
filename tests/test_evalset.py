@@ -27,8 +27,8 @@ from triptych.models import (
     Kind,
     ReservationFields,
 )
+from triptych.web import account, deps, ratelimit
 from triptych.web import app as web
-from triptych.web import deps, ratelimit
 
 pytestmark = [
     pytest.mark.anyio,
@@ -221,7 +221,7 @@ async def browser(
     me: str, monkeypatch: pytest.MonkeyPatch
 ) -> AsyncIterator[tuple[httpx.AsyncClient, FakeRestate]]:
     monkeypatch.setattr(
-        web, "settings", dataclasses.replace(settings, inputs_bucket=INPUTS, evals_bucket=EVALS)
+        account, "settings", dataclasses.replace(settings, inputs_bucket=INPUTS, evals_bucket=EVALS)
     )
     fake = FakeRestate()
     web.app.dependency_overrides[deps.current_user] = lambda: Me(id=me, email="me@example.com")
@@ -242,7 +242,7 @@ async def test_opting_in_shares_everything_and_opting_out_stops(
 
     assert (await client.post("/account/sharing", data={"share": "true"})).status_code == 303
     assert await db.eval_sharing(me) is not None
-    assert fake.sent == [(web.eval_share_svc.share_all, me)]
+    assert fake.sent == [(account.eval_share_svc.share_all, me)]
     assert "Sharing since" in (await client.get("/account/sharing")).text
 
     assert (await client.post("/account/sharing", data={"share": "false"})).status_code == 303
