@@ -13,7 +13,7 @@ from triptych import db, sharing, telemetry
 from triptych.auth import Me
 from triptych.models import Kind, Reservation, Trip
 from triptych.web import app as web
-from triptych.web import deps, ratelimit
+from triptych.web import deps, links, ratelimit
 
 needs_db = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not set")
 
@@ -172,12 +172,12 @@ async def test_the_owner_opening_their_own_link_gets_the_trip_page(owner: str, c
     async def signed_in(_: object) -> Me:
         return Me(id=owner, email="me@example.com")
 
-    original = web.signed_in
-    web.signed_in = signed_in  # ty: ignore[invalid-assignment]
+    original = links.signed_in
+    links.signed_in = signed_in  # ty: ignore[invalid-assignment]
     try:
         resp = client.get(f"/s/{sharing.token_for(link_id)}")
     finally:
-        web.signed_in = original
+        links.signed_in = original
     assert (resp.status_code, resp.headers["location"]) == (303, f"/trips/{trip_id}")
 
 
