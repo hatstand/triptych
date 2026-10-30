@@ -1,0 +1,41 @@
+name: Tilt
+
+# Brings the dev stack up with `tilt ci`, which fails if any resource in the Tiltfile fails to
+# build, start or become ready, so a change that breaks `tilt up` shows on the pull request.
+# Runners have no GPU, so the LLM is `--llm=host` with no Ollama behind it: nothing here extracts.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  TILT_VERSION: 0.35.2
+
+jobs:
+  ci:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      # The `frontend` and `check` local resources run npm and uv on the runner itself.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.14"
+          enable-cache: true
+      - run: uv sync --locked
+      - name: Install Tilt
+        run: |
+          curl -fsSL "https://github.com/tilt-dev/tilt/releases/download/v${TILT_VERSION}/tilt.${TILT_VERSION}.linux.x86_64.tar.gz" \
+            | sudo tar -xz -C /usr/local/bin tilt
+          tilt version
+      - name: tilt ci
+        run: tilt ci --timeout 20m -- --llm=host
