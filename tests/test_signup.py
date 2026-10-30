@@ -22,16 +22,22 @@ from tests.test_inbound import (  # noqa: F401 (fixtures)
 )
 from tests.test_trip_members import a_trip
 from triptych import auth, db, senders, sharing, signup
+from triptych.config import settings
 from triptych.web import app as web
-from triptych.web import deps, live, ratelimit
+from triptych.web import deps, live, login, ratelimit, signup_pages
 
-ORIGIN = web.settings.allowed_origins[0]
+ORIGIN = settings.allowed_origins[0]
 CODE = re.compile(r"TRIPTYCH-[A-Z0-9]{10}")
+
+
+def set_signups(monkeypatch: pytest.MonkeyPatch, signups: str) -> None:
+    for module in (login, signup_pages):
+        monkeypatch.setattr(module, "settings", replace(settings, signups=signups))
 
 
 @pytest.fixture
 async def browser(database: str, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[httpx.AsyncClient]:
-    monkeypatch.setattr(web, "settings", replace(web.settings, signups="open"))
+    set_signups(monkeypatch, "open")
     lim = ratelimit.limiter()
     web.app.dependency_overrides[deps.limiter] = lambda: lim
     web.app.dependency_overrides[web.live_hub] = lambda: live.Hub(database)
@@ -59,7 +65,7 @@ def signed(code: str, frm: str, priv: bytes) -> bytes:
 async def test_signup_is_off_unless_configured(
     browser: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(web, "settings", replace(web.settings, signups="closed"))
+    set_signups(monkeypatch, "closed")
     assert (await browser.get("/signup")).status_code == 404
     assert (await browser.post("/signup", data={"email": "me@gmail.com"})).status_code == 404
 
@@ -264,7 +270,7 @@ async def test_sign_in_page_offers_signing_up_only_when_its_on(
     browser: httpx.AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     assert 'href="/signup"' in (await browser.get("/login")).text
-    monkeypatch.setattr(web, "settings", replace(web.settings, signups="closed"))
+    set_signups(monkeypatch, "closed")
     assert 'href="/signup"' not in (await browser.get("/login")).text
 
 
