@@ -11,13 +11,12 @@ from collections.abc import AsyncGenerator, AsyncIterable
 from contextlib import asynccontextmanager
 from datetime import UTC, date, datetime
 from typing import Annotated, Any
-from urllib.parse import quote, urlencode
+from urllib.parse import quote
 
 import restate
-from fastapi import Body, Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.sse import EventSourceResponse, ServerSentEvent
-from pydantic import BaseModel
 from starlette.middleware.base import RequestResponseEndpoint
 
 from triptych import (
@@ -42,12 +41,9 @@ from triptych.models import (
 )
 from triptych.services import ingest as ingest_svc
 from triptych.services import reprocess as reprocess_svc
-from triptych.web import account, csp, links, live, ratelimit, trips
+from triptych.web import account, csp, links, live, login, ratelimit, signup_pages, trips
 from triptych.web.assets import STATIC, Static
 from triptych.web.deps import (
-    CEREMONY_COOKIE,
-    SESSION_COOKIE,
-    SIGNUP_COOKIE,
     AppState,
     CanView,
     Client,
@@ -55,10 +51,7 @@ from triptych.web.deps import (
     ics,
     live_hub,
     load_trip,
-    per_client,
     per_user,
-    set_cookie,
-    signed_in,
     templates,
 )
 
@@ -87,6 +80,8 @@ app.middleware("http")(csp.content_security_policy)
 app.include_router(trips.router)
 app.include_router(links.router)
 app.include_router(account.router)
+app.include_router(login.router)
+app.include_router(signup_pages.router)
 
 
 @app.middleware("http")
@@ -144,217 +139,6 @@ async def overview(owner: str) -> Overview:
         db.trip_summaries(owner), db.inbox(owner), db.notifications(owner)
     )
     return Overview(trips=trips, inbox=inbox, notifications=notifications)
-
-
-# --- pages -----------------------------------------------------------------------------------
-
-
-@app.get("/login", response_class=HTMLResponse)
-async def login_page(request: Request) -> Response:
-    if await signed_in(request):
-        return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "login.html", {"signups": settings.signups != "closed"})
-
-
-@app.get("/waitlist", response_class=HTMLResponse)
-async def waitlist_page(request: Request) -> Response:
-    """Where a signed-in account still waiting to be let in (signup.py) lands, whatever it asks for."""
-    me = await signed_in(request)
-    if me is None or not me.waitlisted:
-        return RedirectResponse("/" if me else "/login", status_code=303)
-    return templates.TemplateResponse(request, "waitlist.html", {"waiting": me.email})
-
-
-@app.get(
-    "/register/{invite}",
-    response_class=HTMLResponse,
-    dependencies=[per_client(ratelimit.INVITE_PAGE, "invite-page")],
-)
-async def register_page(request: Request, invite: str) -> Response:
-    """An admin invite link: a button that starts a signup for the address it names (signup.py)."""
-    email = await auth.invite_email(invite)
-    return templates.TemplateResponse(
-        request, "register.html", {"invite": invite, "invite_email": email}, status_code=200 if email else 404
-    )
-
-
-# --- signing up (signup.py) -------------------------------------------------------------------
-
-
-async def current_signup(request: Request) -> signup.Signup | None:
-    token = request.cookies.get(SIGNUP_COOKIE)
-    return await signup.get(token) if token else None
-
-
-Signup = Annotated[signup.Signup | None, Depends(current_signup)]
-
-
-async def live_signup(s: Signup) -> signup.Signup:
-    if s is None:
-        raise HTTPException(404)
-    return s
-
-
-def compose_links(s: signup.Signup) -> dict[str, str]:
-    """The same message as a mailto: link and as Gmail's and Outlook's web compose pages, for people
-    whose browser has no mail app to hand a mailto: link to."""
-    to, subject = settings.inbound_address, f"Sign me up to Triptych ({s.code})"
-    body = f"Please sign {s.email} up to Triptych. My code is {s.code}."
-    return {
-        "mailto": f"mailto:{to}?" + urlencode({"subject": subject, "body": body}, quote_via=quote),
-        "gmail": "https://mail.google.com/mail/?"
-        + urlencode({"view": "cm", "fs": "1", "to": to, "su": subject, "body": body}),
-        "outlook": "https://outlook.live.com/mail/0/deeplink/compose?"
-        + urlencode({"to": to, "subject": subject, "body": body}),
-    }
-
-
-def signups_open(s: signup.Signup | None = None) -> bool:
-    """Whether signing up is on, or this signup came from an admin invite, which works regardless."""
-    return settings.signups != "closed" or (s is not None and s.invited)
-
-
-def signup_context(s: signup.Signup | None) -> dict[str, Any]:
-    return {
-        "signup": s,
-        "links": compose_links(s) if s else None,
-        "inbound_address": settings.inbound_address,
-    }
-
-
-@app.get("/signup", response_class=HTMLResponse)
-async def signup_page(request: Request, s: Signup) -> Response:
-    if not signups_open(s):
-        raise HTTPException(404)
-    if await signed_in(request):
-        return RedirectResponse("/", status_code=303)
-    return templates.TemplateResponse(request, "signup.html", signup_context(s))
-
-
-@app.post(
-    "/signup",
-    response_class=HTMLResponse,
-    dependencies=[per_client(ratelimit.SIGNUP, "signup")],
-)
-async def signup_start(
-    request: Request, email: Annotated[str, Form()] = "", invite: Annotated[str, Form()] = ""
-) -> Response:
-    """Start signing up as the address typed in, or the one an admin invite names."""
-    if invite:
-        invited = await auth.invite_email(invite)
-        if invited is None:
-            return templates.TemplateResponse(request, "register.html", {}, status_code=404)
-        email = invited
-    elif not signups_open():
-        raise HTTPException(404)
-    try:
-        token = await signup.start(email, auth.invite_hash(invite) if invite else None)
-    except signup.SignupError as e:
-        ctx = signup_context(None) | {"error": str(e), "entered": email}
-        return templates.TemplateResponse(request, "signup.html", ctx, status_code=400)
-    resp = RedirectResponse("/signup", status_code=303)
-    set_cookie(resp, SIGNUP_COOKIE, token, int(signup.TTL.total_seconds()))
-    return resp
-
-
-@app.post("/signup/cancel")
-async def signup_cancel(request: Request) -> Response:
-    if token := request.cookies.get(SIGNUP_COOKIE):
-        await signup.cancel(token)
-    resp = RedirectResponse("/signup", status_code=303)
-    resp.delete_cookie(SIGNUP_COOKIE, path="/", secure=settings.secure_cookies, httponly=True)
-    return resp
-
-
-@app.get("/signup/events", response_class=EventSourceResponse)
-async def signup_events(
-    s: Annotated[signup.Signup, Depends(live_signup)],
-    hub: Annotated[live.Hub, Depends(live_hub)],
-    request: Request,
-) -> AsyncIterable[ServerSentEvent]:
-    """The signup page's step, re-sent when mail proves the address (see live.py, signup.html)."""
-    token = request.cookies.get(SIGNUP_COOKIE, "")
-
-    async def render() -> dict[str, str]:
-        ctx = signup_context(await signup.get(token))
-        return {"signup": templates.get_template("_signup.html").render(ctx)}
-
-    async for e in live.stream(hub, s.channel, render):
-        yield e
-
-
-@app.post("/logout")
-async def logout(request: Request) -> Response:
-    if token := request.cookies.get(SESSION_COOKIE):
-        await auth.end_session(token)
-    resp = RedirectResponse("/login", status_code=303)
-    resp.delete_cookie(SESSION_COOKIE, path="/", secure=settings.secure_cookies, httponly=True)
-    return resp
-
-
-# --- passkey ceremonies (driven by static/passkey.js) ----------------------------------------
-
-
-def options_response(state: str, options_json: str) -> Response:
-    resp = Response(options_json, media_type="application/json")
-    set_cookie(resp, CEREMONY_COOKIE, state, int(auth.CHALLENGE_TTL.total_seconds()), path="/auth")
-    return resp
-
-
-def signed_in_response(redirect: str, session_token: str | None = None) -> Response:
-    resp = JSONResponse({"redirect": redirect})
-    resp.delete_cookie(CEREMONY_COOKIE, path="/auth")
-    if session_token is not None:
-        set_cookie(resp, SESSION_COOKIE, session_token, int(auth.SESSION_TTL.total_seconds()))
-    return resp
-
-
-class RegisterStart(BaseModel):
-    signup: bool = False  # create the account a verified signup (its cookie) asked for
-
-
-class RegisterFinish(BaseModel):
-    credential: dict[str, Any]
-    name: str = ""
-
-
-@app.post("/auth/login/options", dependencies=[per_client(ratelimit.LOGIN, "login")])
-async def login_options() -> Response:
-    return options_response(*auth.start_login())
-
-
-@app.post("/auth/login/verify", dependencies=[per_client(ratelimit.LOGIN, "login")])
-async def login_verify(request: Request, credential: Annotated[dict[str, Any], Body()]) -> Response:
-    user_id = await auth.finish_login(request.cookies.get(CEREMONY_COOKIE), credential)
-    return signed_in_response("/", await auth.create_session(user_id))
-
-
-@app.post("/auth/register/options", dependencies=[per_client(ratelimit.REGISTER, "register")])
-async def register_options(request: Request, body: RegisterStart) -> Response:
-    """With a verified signup: the first passkey of the account it creates (or, invited, of the
-    address's existing account). Otherwise: another passkey for whoever is signed in."""
-    if body.signup:
-        token = request.cookies.get(SIGNUP_COOKIE, "")
-        s = await signup.get(token) if token else None
-        if s is None or not s.verified or not signups_open(s):
-            raise auth.AuthError("This signup has expired. Please start again.")
-        user_id = await senders.owner(s.email) if s.taken else str(uuid.uuid4())
-        if user_id is None or (s.taken and not s.invited):
-            raise auth.AuthError(f"{s.email} already has an account. Sign in instead.")
-        return options_response(*await auth.start_registration(user_id, s.email, signup_token=token))
-    if (me := await signed_in(request)) is None:
-        raise auth.AuthError("Sign in first.")
-    return options_response(*await auth.start_registration(me.id, me.email))
-
-
-@app.post("/auth/register/verify", dependencies=[per_client(ratelimit.REGISTER, "register")])
-async def register_verify(request: Request, body: RegisterFinish) -> Response:
-    user_id = await auth.finish_registration(request.cookies.get(CEREMONY_COOKIE), body.credential, body.name)
-    if (me := await signed_in(request)) and me.id == user_id:
-        return signed_in_response("/account")
-    resp = signed_in_response("/", await auth.create_session(user_id))
-    resp.delete_cookie(SIGNUP_COOKIE, path="/", secure=settings.secure_cookies, httponly=True)
-    return resp
 
 
 def google_calendar_link(feed_url: str) -> str:
