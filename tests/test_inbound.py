@@ -13,6 +13,7 @@ from triptych import db, inbound, senders
 from triptych.models import IngestRequest
 from triptych.web import app as web
 from triptych.web import deps
+from triptych.web import inbound as inbound_routes
 
 
 @pytest.fixture(scope="module")
@@ -214,8 +215,8 @@ async def mail(
     and google.com."""
     real = inbound.verify
     lookup = dns(keys[1], {"gmail.com", "google.com"})
-    monkeypatch.setattr(web.inbound, "verify", lambda raw, sender: real(raw, sender, lookup))
-    monkeypatch.setattr(web, "settings", replace(web.settings, inbound_token=TOKEN))
+    monkeypatch.setattr(inbound, "verify", lambda raw, sender: real(raw, sender, lookup))
+    monkeypatch.setattr(inbound_routes, "settings", replace(inbound_routes.settings, inbound_token=TOKEN))
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=web.app), base_url="http://test") as c:
 
         async def deliver(raw: bytes, envelope_from: str) -> httpx.Response:
