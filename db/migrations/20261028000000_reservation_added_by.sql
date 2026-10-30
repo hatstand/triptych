@@ -4,6 +4,8 @@ SET statement_timeout = '60s';
 
 -- Who added a reservation by hand, when it wasn't the trip's owner but someone they shared it with
 -- to edit (sharing.py). The trip page says "Added by" them.
+-- The column is new and all NULL, so no row can fail the check (lock_timeout bounds the lock).
+-- squawk-ignore adding-foreign-key-constraint
 ALTER TABLE reservation ADD COLUMN added_by uuid REFERENCES app_user (id) ON DELETE SET NULL;
 
 -- migrate:down
