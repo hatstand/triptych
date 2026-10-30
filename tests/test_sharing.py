@@ -19,14 +19,15 @@ needs_db = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="T
 
 
 def flight(**changes: object) -> Reservation:
-    fields: dict[str, object] = dict(
-        id=str(uuid.uuid4()), kind=Kind.FLIGHT, title="TP 1351 LIS→OPO", provider="TAP",
-        confirmation_code="SECRET1", seat="12A", travelers=["Ada Lovelace"], notes="door code 4711",
-        start_local=datetime(2026, 11, 14, 9, 0), end_local=datetime(2026, 11, 14, 10, 0),
-        start_tz="Europe/Lisbon", end_tz="Europe/Lisbon", start_location="Lisbon (LIS)",
-        end_location="Porto (OPO)", city="Porto", service_number="TP 1351", source_ingest_id="mail-1",
-        edited_fields=["seat"],
-    )  # fmt: skip
+    fields: dict[str, object] = {
+        "id": str(uuid.uuid4()), "kind": Kind.FLIGHT, "title": "TP 1351 LIS→OPO", "provider": "TAP",
+        "confirmation_code": "SECRET1", "seat": "12A", "travelers": ["Ada Lovelace"],
+        "notes": "door code 4711",
+        "start_local": datetime(2026, 11, 14, 9, 0), "end_local": datetime(2026, 11, 14, 10, 0),
+        "start_tz": "Europe/Lisbon", "end_tz": "Europe/Lisbon", "start_location": "Lisbon (LIS)",
+        "end_location": "Porto (OPO)", "city": "Porto", "service_number": "TP 1351",
+        "source_ingest_id": "mail-1", "edited_fields": ["seat"],
+    }  # fmt: skip
     return Reservation.model_validate(fields | changes)
 
 
