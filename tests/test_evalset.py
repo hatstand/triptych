@@ -28,7 +28,7 @@ from triptych.models import (
     ReservationFields,
 )
 from triptych.web import app as web
-from triptych.web import ratelimit
+from triptych.web import deps, ratelimit
 
 pytestmark = [
     pytest.mark.anyio,
@@ -224,9 +224,9 @@ async def browser(
         web, "settings", dataclasses.replace(settings, inputs_bucket=INPUTS, evals_bucket=EVALS)
     )
     fake = FakeRestate()
-    web.app.dependency_overrides[web.current_user] = lambda: Me(id=me, email="me@example.com")
-    web.app.dependency_overrides[web.rs] = lambda: fake
-    web.app.dependency_overrides[web.limiter] = ratelimit.limiter
+    web.app.dependency_overrides[deps.current_user] = lambda: Me(id=me, email="me@example.com")
+    web.app.dependency_overrides[deps.rs] = lambda: fake
+    web.app.dependency_overrides[deps.limiter] = ratelimit.limiter
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
         yield c, fake
@@ -251,8 +251,8 @@ async def test_opting_in_shares_everything_and_opting_out_stops(
 
 
 async def test_sharing_isnt_offered_without_an_eval_bucket(me: str) -> None:
-    web.app.dependency_overrides[web.current_user] = lambda: Me(id=me, email="me@example.com")
-    web.app.dependency_overrides[web.rs] = FakeRestate
+    web.app.dependency_overrides[deps.current_user] = lambda: Me(id=me, email="me@example.com")
+    web.app.dependency_overrides[deps.rs] = FakeRestate
     transport = httpx.ASGITransport(app=web.app)
     try:
         async with httpx.AsyncClient(transport=transport, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:

@@ -12,6 +12,7 @@ import pytest
 from triptych import db, inbound, senders
 from triptych.models import IngestRequest
 from triptych.web import app as web
+from triptych.web import deps
 
 
 @pytest.fixture(scope="module")
@@ -200,7 +201,7 @@ class FakeRestate:
 @pytest.fixture
 def fake_restate() -> Iterator[FakeRestate]:
     fake = FakeRestate()
-    web.app.dependency_overrides[web.rs] = lambda: fake
+    web.app.dependency_overrides[deps.rs] = lambda: fake
     yield fake
     web.app.dependency_overrides.clear()
 

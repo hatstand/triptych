@@ -23,7 +23,7 @@ from tests.test_inbound import (  # noqa: F401 (fixtures)
 from tests.test_trip_members import a_trip
 from triptych import auth, db, senders, sharing, signup
 from triptych.web import app as web
-from triptych.web import live, ratelimit
+from triptych.web import deps, live, ratelimit
 
 ORIGIN = web.settings.allowed_origins[0]
 CODE = re.compile(r"TRIPTYCH-[A-Z0-9]{10}")
@@ -33,12 +33,12 @@ CODE = re.compile(r"TRIPTYCH-[A-Z0-9]{10}")
 async def browser(database: str, monkeypatch: pytest.MonkeyPatch) -> AsyncIterator[httpx.AsyncClient]:
     monkeypatch.setattr(web, "settings", replace(web.settings, signups="open"))
     lim = ratelimit.limiter()
-    web.app.dependency_overrides[web.limiter] = lambda: lim
+    web.app.dependency_overrides[deps.limiter] = lambda: lim
     web.app.dependency_overrides[web.live_hub] = lambda: live.Hub(database)
     transport = httpx.ASGITransport(app=web.app)
     async with httpx.AsyncClient(transport=transport, base_url=ORIGIN, headers={"Origin": ORIGIN}) as c:
         yield c
-    web.app.dependency_overrides.pop(web.limiter, None)
+    web.app.dependency_overrides.pop(deps.limiter, None)
     web.app.dependency_overrides.pop(web.live_hub, None)
 
 

@@ -24,7 +24,8 @@ from triptych import auth, db, signup
 from triptych.config import settings
 from triptych.models import Kind, Reservation
 from triptych.web import ratelimit
-from triptych.web.app import SESSION_COOKIE, app, limiter
+from triptych.web.app import app
+from triptych.web.deps import SESSION_COOKIE, limiter
 
 pytestmark = [
     pytest.mark.anyio,
