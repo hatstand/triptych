@@ -101,9 +101,11 @@ class Applied(NamedTuple):
 
 def _set_by(c: Correction, fixed: ExtractedReservation) -> list[str]:
     fields = list(as_extracted(dict.fromkeys(c.edited)))
-    for side in ("start", "end"):
-        if f"{side}_location" in c.edited and iata_of(c.fields.get(f"{side}_location")) is not None:
-            fields.append(f"{side}_iata")
+    fields.extend(
+        f"{side}_iata"
+        for side in ("start", "end")
+        if f"{side}_location" in c.edited and iata_of(c.fields.get(f"{side}_location")) is not None
+    )
     return [f for f in dict.fromkeys(fields) if f not in ("start_iata", "end_iata") or fixed.kind in CODED]
 
 

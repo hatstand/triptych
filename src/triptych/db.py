@@ -1595,7 +1595,7 @@ async def ingest_counts(since: datetime) -> dict[str, int]:
         cur = await conn.execute(
             "SELECT state, count(*)::int FROM inbox_item WHERE received_at >= %s GROUP BY state", (since,)
         )
-        return {state: n for state, n in await cur.fetchall()}
+        return dict(await cur.fetchall())
 
 
 async def recent_ingests(state: str | None = None, limit: int = 100) -> list[AdminInboxItem]:

@@ -60,7 +60,7 @@ line-length = 110
 target-version = "py314"
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "RUF"]
+select = ["E", "F", "I", "UP", "B", "SIM", "RUF", "C4", "PERF", "PIE", "RET", "PTH", "LOG", "G", "FURB", "RUF100"]
 # Trip names span months with an en dash ("November–December 2026").
 allowed-confusables = ["–"]
 
