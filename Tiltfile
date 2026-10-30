@@ -17,7 +17,11 @@ else:
     fail("unknown --llm=%s" % llm)
 files.append("compose/dev.yaml")
 
-docker_compose(files, env_file=".env" if os.path.exists(".env") else None)
+# Tilt rejects env_file=None, so a checkout without .env (e.g. CI) must leave it out.
+if os.path.exists(".env"):
+    docker_compose(files, env_file=".env")
+else:
+    docker_compose(files)
 
 docker_build(
     "triptych-app",
