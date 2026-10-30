@@ -19,11 +19,12 @@ needs_db = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="T
 
 
 def flight(**changes: object) -> Reservation:
-    fields: dict[str, object] = dict(
-        id=str(uuid.uuid4()), kind=Kind.FLIGHT, title="TP 1351 LIS→OPO", confirmation_code="SECRET1",
-        seat="12A", start_local=datetime(2026, 11, 14, 9, 0), end_local=datetime(2026, 11, 14, 10, 0),
-        start_location="Lisbon (LIS)", end_location="Porto (OPO)", source_ingest_id="mail-1",
-    )  # fmt: skip
+    fields: dict[str, object] = {
+        "id": str(uuid.uuid4()), "kind": Kind.FLIGHT, "title": "TP 1351 LIS→OPO",
+        "confirmation_code": "SECRET1", "seat": "12A",
+        "start_local": datetime(2026, 11, 14, 9, 0), "end_local": datetime(2026, 11, 14, 10, 0),
+        "start_location": "Lisbon (LIS)", "end_location": "Porto (OPO)", "source_ingest_id": "mail-1",
+    }  # fmt: skip
     return Reservation.model_validate(fields | changes)
 
 
