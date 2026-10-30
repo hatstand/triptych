@@ -13,7 +13,7 @@ from triptych import db, sharing, telemetry
 from triptych.auth import Me
 from triptych.models import Kind, Reservation, Trip
 from triptych.web import app as web
-from triptych.web import ratelimit
+from triptych.web import deps, ratelimit
 
 needs_db = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not set")
 
@@ -139,7 +139,7 @@ async def test_merging_keeps_the_links_and_deleting_ends_them(owner: str) -> Non
 
 @pytest.fixture
 def client() -> Iterator[TestClient]:
-    web.app.dependency_overrides[web.limiter] = ratelimit.limiter
+    web.app.dependency_overrides[deps.limiter] = ratelimit.limiter
     yield TestClient(web.app, follow_redirects=False)
     web.app.dependency_overrides.clear()
 
@@ -185,7 +185,7 @@ async def test_the_owner_opening_their_own_link_gets_the_trip_page(owner: str, c
 @pytest.mark.anyio
 async def test_the_owner_makes_and_revokes_links_from_the_trip_page(owner: str, client: TestClient) -> None:
     trip_id = await a_trip(owner)
-    web.app.dependency_overrides[web.current_user] = lambda: Me(id=owner, email="me@example.com")
+    web.app.dependency_overrides[deps.current_user] = lambda: Me(id=owner, email="me@example.com")
     assert client.post(f"/trips/{trip_id}/links", data={"label": "Host"}).status_code == 303
     (link,) = await sharing.links(owner, trip_id)
     page = client.get(f"/trips/{trip_id}").text

@@ -12,7 +12,7 @@ from PIL import Image
 from triptych.auth import Me
 from triptych.models import AddReservation, InboxItem, IngestRequest, ReprocessRequest
 from triptych.web import app as web
-from triptych.web import assets, ratelimit
+from triptych.web import assets, deps, ratelimit
 
 SAMPLES = Path(__file__).parents[1] / "samples"
 
@@ -37,7 +37,7 @@ def restate_client(monkeypatch: pytest.MonkeyPatch, own_every_trip: None) -> Ite
         fake.inbox.append(item)
 
     monkeypatch.setattr(web.db, "add_inbox_item", add_inbox_item)
-    web.app.dependency_overrides[web.rs] = lambda: fake
+    web.app.dependency_overrides[deps.rs] = lambda: fake
     yield fake
     web.app.dependency_overrides.clear()
 
@@ -48,8 +48,8 @@ ME = Me(id="user-1", email="me@example.com")
 @pytest.fixture
 def client() -> TestClient:
     # Not used as a context manager, so the lifespan (Postgres, Restate) never runs.
-    web.app.dependency_overrides[web.current_user] = lambda: ME
-    web.app.dependency_overrides[web.limiter] = ratelimit.limiter  # a fresh one per request: no limits
+    web.app.dependency_overrides[deps.current_user] = lambda: ME
+    web.app.dependency_overrides[deps.limiter] = ratelimit.limiter  # a fresh one per request: no limits
     return TestClient(web.app, follow_redirects=False)
 
 
@@ -101,7 +101,7 @@ def test_signed_out_drop_goes_to_login(restate_client: FakeRestate, monkeypatch:
     async def nobody(_request: object) -> None:
         return None
 
-    monkeypatch.setattr(web, "signed_in", nobody)
+    monkeypatch.setattr(deps, "signed_in", nobody)
     resp = TestClient(web.app, follow_redirects=False).post(
         "/plans", files=[("file", ("a.eml", b"Subject: hi\r\n\r\nx", "message/rfc822"))]
     )

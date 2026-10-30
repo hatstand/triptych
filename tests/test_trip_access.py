@@ -9,11 +9,13 @@ from typing import Any
 import pytest
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from starlette.routing import BaseRoute
 
 from triptych import db
 from triptych.auth import Me
 from triptych.models import Kind, Reservation, Role, TripAccess
 from triptych.web import app as web
+from triptych.web import deps
 
 needs_db = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not set")
 
@@ -52,11 +54,21 @@ def needed(route: APIRoute) -> Role | None:
     return None
 
 
+def api_routes(routes: list[BaseRoute]) -> Iterator[APIRoute]:
+    """Every route, including those of routers the app includes (FastAPI keeps each included router
+    as one route that holds it, with the prefix already in its routes' paths)."""
+    for route in routes:
+        if isinstance(route, APIRoute):
+            yield route
+        elif (router := getattr(route, "original_router", None)) is not None:
+            yield from api_routes(router.routes)
+
+
 def test_every_trip_route_says_who_may_use_it() -> None:
     found = {
         (method, route.path): needed(route)
-        for route in web.app.routes
-        if isinstance(route, APIRoute) and "{trip_id}" in route.path
+        for route in api_routes(web.app.routes)
+        if "{trip_id}" in route.path
         for method in route.methods or ()
     }
     assert found == NEEDS
@@ -84,7 +96,7 @@ def as_role(monkeypatch: pytest.MonkeyPatch) -> Iterator[list[Role | None]]:
 
     monkeypatch.setattr(db, "trip_access", trip_access)
     monkeypatch.setattr(db, "trip_photo", trip_photo)
-    web.app.dependency_overrides[web.current_user] = lambda: ME
+    web.app.dependency_overrides[deps.current_user] = lambda: ME
     yield role
     web.app.dependency_overrides.clear()
 
@@ -100,7 +112,7 @@ def test_too_little_access_looks_like_no_trip(as_role: list[Role | None], role: 
         async def object_call(self, *_: Any) -> None:
             pass
 
-    web.app.dependency_overrides[web.rs] = Restate
+    web.app.dependency_overrides[deps.rs] = Restate
     resp = TestClient(web.app, follow_redirects=False).post("/trips/t1/rename", data={"name": "Porto"})
     assert resp.status_code == (303 if role in (Role.EDIT, Role.OWNER) else 404)
 
@@ -115,8 +127,8 @@ def test_merging_needs_both_trips_to_be_yours(monkeypatch: pytest.MonkeyPatch) -
             pass
 
     monkeypatch.setattr(db, "trip_access", trip_access)
-    web.app.dependency_overrides[web.current_user] = lambda: ME
-    web.app.dependency_overrides[web.rs] = Restate
+    web.app.dependency_overrides[deps.current_user] = lambda: ME
+    web.app.dependency_overrides[deps.rs] = Restate
     try:
         client = TestClient(web.app, follow_redirects=False)
         assert client.post("/trips/mine/merge", data={"into": "shared"}).status_code == 404

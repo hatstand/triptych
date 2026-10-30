@@ -14,7 +14,7 @@ from triptych import db
 from triptych.auth import Me
 from triptych.models import InboxItem, Kind, MergeTrips, Reservation, Trip, TripSummary
 from triptych.web import app as web
-from triptych.web import ratelimit
+from triptych.web import deps, ratelimit
 
 needs_db = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not set")
 
@@ -144,9 +144,9 @@ class FakeRestate:
 @pytest.fixture
 def restate_client(own_every_trip: None) -> Iterator[FakeRestate]:
     fake = FakeRestate()
-    web.app.dependency_overrides[web.rs] = lambda: fake
-    web.app.dependency_overrides[web.current_user] = lambda: ME
-    web.app.dependency_overrides[web.limiter] = ratelimit.limiter
+    web.app.dependency_overrides[deps.rs] = lambda: fake
+    web.app.dependency_overrides[deps.current_user] = lambda: ME
+    web.app.dependency_overrides[deps.limiter] = ratelimit.limiter
     yield fake
     web.app.dependency_overrides.clear()
 

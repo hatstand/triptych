@@ -13,7 +13,7 @@ from triptych.auth import Me
 from triptych.models import AddReservation, Answer, AskTrip, Kind, Reservation, Role, Trip, TripAccess
 from triptych.services import assistant
 from triptych.web import app as web
-from triptych.web import ratelimit
+from triptych.web import deps, ratelimit
 
 needs_db = pytest.mark.skipif(not os.environ.get("TEST_DATABASE_URL"), reason="TEST_DATABASE_URL not set")
 
@@ -142,8 +142,8 @@ async def test_merging_keeps_everyone_with_the_more_generous_role(owner: str, fr
 @pytest.fixture
 def as_user() -> Iterator[list[Me]]:
     who: list[Me] = []
-    web.app.dependency_overrides[web.current_user] = lambda: who[0]
-    web.app.dependency_overrides[web.limiter] = ratelimit.limiter
+    web.app.dependency_overrides[deps.current_user] = lambda: who[0]
+    web.app.dependency_overrides[deps.limiter] = ratelimit.limiter
     yield who
     web.app.dependency_overrides.clear()
 
@@ -195,7 +195,7 @@ async def test_an_editor_can_change_the_trip_but_not_share_or_delete_it(
         async def object_call(self, _handler: object, key: str, req: object) -> None:
             calls.append((key, req))
 
-    web.app.dependency_overrides[web.rs] = Restate
+    web.app.dependency_overrides[deps.rs] = Restate
     as_user.append(Me(id=friend, email="friend@example.com"))
     client = TestClient(web.app, follow_redirects=False)
     page = client.get(f"/trips/{trip_id}").text
@@ -287,7 +287,7 @@ async def test_members_can_ask_but_a_viewers_answer_never_sees_the_codes(
             asked.append(req)
             return Answer(text="Leave at 7.")
 
-    web.app.dependency_overrides[web.rs] = Restate
+    web.app.dependency_overrides[deps.rs] = Restate
     as_user.append(Me(id=friend, email="friend@example.com"))
     client = TestClient(web.app, follow_redirects=False)
     assert "Ask about this trip" in client.get(f"/trips/{trip_id}").text
