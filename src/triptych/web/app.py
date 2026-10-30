@@ -24,7 +24,20 @@ from limits import RateLimitItem
 from pydantic import BaseModel, field_validator, model_validator
 from starlette.middleware.base import RequestResponseEndpoint
 
-from triptych import auth, db, enrich, ical, inbound, journeys, llm, senders, sharing, signup, telemetry
+from triptych import (
+    auth,
+    db,
+    enrich,
+    ical,
+    inbound,
+    journeys,
+    llm,
+    photos,
+    senders,
+    sharing,
+    signup,
+    telemetry,
+)
 from triptych.config import settings
 from triptych.models import (
     AddReservation,
@@ -674,13 +687,16 @@ async def trip_page(request: Request, me: User, access: CanView) -> Response:
 
 
 @app.get("/trips/{trip_id}/photo")
-async def trip_photo(trip_id: str, access: CanView) -> Response:
-    """The trip's destination photo. Pages link it with the photo's version in the query string, so
-    a new photo is a new URL and this one can be cached for good."""
+async def trip_photo(trip_id: str, access: CanView, size: Literal["thumb", "card"] | None = None) -> Response:
+    """The trip's destination photo, or with `size` a smaller copy for a trip card (photos.SIZES).
+    Pages link it with the photo's version in the query string, so a new photo is a new URL and this
+    one can be cached for good."""
     photo = await db.trip_photo(access.owner, trip_id)
     if photo is None:
         raise HTTPException(404)
     image, content_type = photo
+    if size:
+        image, content_type = await asyncio.to_thread(photos.resized, image, photos.SIZES[size]), "image/webp"
     return Response(
         image, media_type=content_type, headers={"Cache-Control": "private, max-age=31536000, immutable"}
     )

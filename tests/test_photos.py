@@ -202,6 +202,20 @@ def test_aspect_reads_the_image_and_refuses_what_isnt_one() -> None:
         photos.aspect(b"<html>")
 
 
+def size_of(image: bytes) -> tuple[str | None, tuple[int, int]]:
+    with Image.open(BytesIO(image)) as im:
+        return im.format, im.size
+
+
+def test_resized_just_covers_the_box_keeping_the_photos_shape() -> None:
+    assert size_of(photos.resized(png(960, 640), (144, 144))) == ("WEBP", (216, 144))
+    assert size_of(photos.resized(png(640, 960), (432, 288))) == ("WEBP", (432, 648))
+    # Never scaled up: the browser can do that as well as we can.
+    assert size_of(photos.resized(png(300, 200), (432, 288))) == ("WEBP", (300, 200))
+    with pytest.raises(photos.PhotoError):
+        photos.resized(b"<html>", (144, 144))
+
+
 def box(left: float, top: float, right: float, bottom: float) -> SubjectBox:
     return SubjectBox(subject="Tower", left=left, top=top, right=right, bottom=bottom)
 

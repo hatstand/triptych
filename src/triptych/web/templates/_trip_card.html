@@ -6,12 +6,15 @@
 <a class="card trip-card{{ ' featured' if featured }}" href="/trips/{{ t.id }}"
    {%- if not theirs %} draggable="true" data-trip-id="{{ t.id }}" data-trip-name="{{ t.name }}"{% endif %}>
   {% if t.photo and featured %}
-  {#- 3:2 beside the text, 5:2 across the top of the card on a phone (style.css) -#}
-  <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}" alt=""
+  {#- 3:2 beside the text, 5:2 across the top of the card on a phone (style.css), where it's as wide
+      as the screen and the full photo (photos.THUMB_WIDTH wide) is worth it -#}
+  {% set photo_url = "/trips/" ~ t.id ~ "/photo?v=" ~ t.photo.version %}
+  <img class="trip-thumb" src="{{ photo_url }}&amp;size=card" alt=""
+       srcset="{{ photo_url }}&amp;size=card 432w, {{ photo_url }} 960w" sizes="(max-width: 520px) 100vw, 216px"
        width="216" height="144" data-focus="{{ t.photo.position(1.5) }}" data-focus-narrow="{{ t.photo.position(2.5) }}"
        title="{{ photo_title(t.photo) }}">
   {% elif t.photo %}
-  <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}" alt="" loading="lazy"
+  <img class="trip-thumb" src="/trips/{{ t.id }}/photo?v={{ t.photo.version }}&amp;size=thumb" alt="" loading="lazy"
        width="72" height="72" data-focus="{{ t.photo.position(1) }}" title="{{ photo_title(t.photo) }}">
   {% else %}
   <div class="trip-thumb placeholder">{{ icon('place') }}</div>

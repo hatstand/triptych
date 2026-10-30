@@ -14,7 +14,7 @@ from io import BytesIO
 
 import httpx
 from bs4 import BeautifulSoup
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageOps, UnidentifiedImageError
 
 from triptych import db, llm
 from triptych.models import LlmSubjectRequest, PhotoChoice, PhotoSubject, SubjectBox
@@ -139,6 +139,25 @@ def aspect(image: bytes) -> float:
     except (UnidentifiedImageError, OSError) as e:
         raise PhotoError(f"not an image we can read: {e}") from e
     return width / height
+
+
+SIZES = {"thumb": (144, 144), "card": (432, 288)}
+"""Smaller copies for the trip cards, at twice their CSS size for high-density screens."""
+
+
+def resized(image: bytes, size: tuple[int, int]) -> bytes:
+    """The image scaled down to just cover a box of `size`, as WebP. It keeps its shape: pages crop it
+    with object-fit: cover, at the position models.Photo.position works out for the whole image."""
+    try:
+        with Image.open(BytesIO(image)) as im:
+            small = ImageOps.cover(im, size) if im.width > size[0] and im.height > size[1] else im.copy()
+    except (UnidentifiedImageError, OSError) as e:
+        raise PhotoError(f"not an image we can read: {e}") from e
+    if small.mode not in ("RGB", "RGBA"):
+        small = small.convert("RGBA" if "A" in small.getbands() else "RGB")
+    out = BytesIO()
+    small.save(out, "WEBP", quality=80)
+    return out.getvalue()
 
 
 MIN_SUBJECT = 0.02

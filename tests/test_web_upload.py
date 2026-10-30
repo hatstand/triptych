@@ -1,11 +1,13 @@
 import json
 import os
 from collections.abc import Iterator
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
+from PIL import Image
 
 from triptych.auth import Me
 from triptych.models import AddReservation, InboxItem, IngestRequest, ReprocessRequest
@@ -121,6 +123,25 @@ def test_trip_photo_is_served_cacheably_and_only_to_its_owner(
     assert resp.headers["content-type"] == "image/jpeg"
     assert "immutable" in resp.headers["cache-control"]
     assert client.get("/trips/someone-elses/photo").status_code == 404
+
+
+def test_trip_card_photos_are_resized(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, own_every_trip: None
+) -> None:
+    out = BytesIO()
+    Image.new("RGB", (960, 640)).save(out, "JPEG")
+
+    async def trip_photo(owner: str, trip_id: str) -> tuple[bytes, str] | None:
+        return out.getvalue(), "image/jpeg"
+
+    monkeypatch.setattr(web.db, "trip_photo", trip_photo)
+    resp = client.get("/trips/t1/photo?v=abc&size=thumb")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/webp"
+    assert "immutable" in resp.headers["cache-control"]
+    with Image.open(BytesIO(resp.content)) as im:
+        assert im.size == (216, 144)
+    assert client.get("/trips/t1/photo?v=abc&size=huge").status_code == 422
 
 
 def manifest(static: Path, css: str, mtime_ns: int) -> None:
