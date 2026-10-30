@@ -25,7 +25,6 @@ from triptych import (
     db,
     ical,
     inbound,
-    journeys,
     llm,
     senders,
     sharing,
@@ -44,7 +43,7 @@ from triptych.models import (
 from triptych.services import eval_share as eval_share_svc
 from triptych.services import ingest as ingest_svc
 from triptych.services import reprocess as reprocess_svc
-from triptych.web import csp, live, ratelimit, trips
+from triptych.web import csp, links, live, ratelimit, trips
 from triptych.web.assets import STATIC, Static
 from triptych.web.deps import (
     CEREMONY_COOKIE,
@@ -87,6 +86,7 @@ app = FastAPI(title="Triptych", lifespan=lifespan, docs_url=None, redoc_url=None
 app.mount("/static", Static(directory=STATIC, check_dir=False), name="static")
 app.middleware("http")(csp.content_security_policy)
 app.include_router(trips.router)
+app.include_router(links.router)
 
 
 @app.middleware("http")
@@ -540,71 +540,6 @@ async def add_plans(
         # Show it in the inbox now rather than when the workflow first runs.
         await db.add_inbox_item(me.id, ingest_svc.queued_item(key, req))
     return RedirectResponse("/", status_code=303)
-
-
-# --- shared links (no sign-in) ---------------------------------------------------------------
-
-LINK_HEADERS = {
-    # The token is in the URL: keep it out of Referer headers, search indexes and shared caches.
-    "Referrer-Policy": "no-referrer",
-    "X-Robots-Tag": "noindex, nofollow",
-    "Cache-Control": "private, no-store",
-}
-
-
-async def linked_trip(token: str) -> sharing.LinkedTrip:
-    found = await sharing.open_link(token)
-    if found is None:
-        raise HTTPException(404, "this link doesn't work any more")
-    return found
-
-
-@app.get(
-    "/s/{token}", response_class=HTMLResponse, dependencies=[per_client(ratelimit.SHARE_VIEW, "share-view")]
-)
-async def shared_page(request: Request, token: str) -> Response:
-    found = await linked_trip(token)
-    if me := await signed_in(request):
-        access = await db.trip_access(me.id, found.trip_id)
-        if access is not None:
-            return RedirectResponse(f"/trips/{found.trip_id}", status_code=303)
-    t = await db.get_trip(found.owner, found.trip_id)
-    if t is None:
-        raise HTTPException(404)
-    shown = sharing.shared_view(t)
-    context = {
-        "role": None,
-        "trip": shown,
-        "trip_url": f"/s/{token}",
-        "summary": shown.summary(),
-        "days": journeys.timeline(shown.reservations),
-    }
-    return templates.TemplateResponse(request, "trip.html", context, headers=LINK_HEADERS)
-
-
-@app.get("/s/{token}/calendar.ics", dependencies=[per_client(ratelimit.SHARE_VIEW, "share-view")])
-async def shared_ics(token: str) -> Response:
-    """The shared trip as a calendar to download or subscribe to, as redacted as its page. It goes
-    quiet when the link is revoked or expires."""
-    found = await linked_trip(token)
-    t = await db.get_trip(found.owner, found.trip_id)
-    if t is None:
-        raise HTTPException(404)
-    resp = ics(ical.calendar([sharing.shared_view(t)], t.name), "trip.ics")
-    resp.headers.update(LINK_HEADERS)
-    return resp
-
-
-@app.get("/s/{token}/photo", dependencies=[per_client(ratelimit.SHARE_VIEW, "share-view")])
-async def shared_photo(token: str) -> Response:
-    found = await linked_trip(token)
-    photo = await db.trip_photo(found.owner, found.trip_id)
-    if photo is None:
-        raise HTTPException(404)
-    image, content_type = photo
-    # Cached only by this viewer's browser, so a revoked link's photo lingers nowhere else.
-    headers = LINK_HEADERS | {"Cache-Control": "private, max-age=86400"}
-    return Response(image, media_type=content_type, headers=headers)
 
 
 @app.post("/inbox/{ingest_id}/booking")
