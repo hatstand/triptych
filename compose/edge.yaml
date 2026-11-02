@@ -1,0 +1,19 @@
+# Serving PUBLIC_HOST through marvin's shared edge Caddy (hatstand/marvin-edge), in place of
+# compose/direct.yaml (deploy/README.md → "Behind the shared edge"). The edge owns 80 and 443
+# for every site on marvin and reaches proxy as `triptych-proxy` on the external `edge`
+# network, which the edge stack creates.
+#
+# The edge sends to proxy's :8000, whose clients are private addresses it already trusts, so
+# the X-Forwarded-For the edge set from the visitor's connection reaches web unchanged and the
+# rate limits still key on visitors. Add to COMPOSE_FILE after compose/public.yaml.
+
+services:
+  proxy:
+    networks:
+      default:
+      edge:
+        aliases: [triptych-proxy]
+
+networks:
+  edge:
+    external: true
