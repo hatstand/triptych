@@ -36,7 +36,8 @@ Add to the tailnet policy file:
   {"src": ["autogroup:member"], "dst": ["tag:marvin"], "ip": ["*"]},
 ],
 "ssh": [
-  {"action": "accept", "src": ["tag:ci"], "dst": ["tag:marvin"], "users": ["deploy"]},
+  // metabeer-deploy and edge-deploy belong to Metabeer and hatstand/marvin-edge.
+  {"action": "accept", "src": ["tag:ci"], "dst": ["tag:marvin"], "users": ["deploy", "metabeer-deploy", "edge-deploy"]},
   // autogroup:self no longer covers marvin once it's tagged.
   {"action": "check", "src": ["autogroup:member"], "dst": ["tag:marvin"], "users": ["autogroup:nonroot", "root"]},
 ],
@@ -50,7 +51,7 @@ Add to the tailnet policy file:
    "deny": ["tag:marvin:8000", "tag:marvin:9070", "tag:marvin:11434"]},
 ],
 "sshTests": [
-  {"src": "tag:ci", "dst": ["tag:marvin"], "accept": ["deploy"], "deny": ["root"]},
+  {"src": "tag:ci", "dst": ["tag:marvin"], "accept": ["deploy", "metabeer-deploy", "edge-deploy"], "deny": ["root"]},
 ],
 ```
 
@@ -254,6 +255,29 @@ the admin pages load their CSS and scripts from it.
 To go back to tailnet-only, remove `:compose/public.yaml:compose/direct.yaml` and the lines above
 from `.env` and redeploy. Passkeys registered on the public name then stop working on the ts.net
 name instead.
+
+### Behind the shared edge
+
+marvin also serves other sites (Metabeer), so 80 and 443 belong to a separate Caddy stack,
+[hatstand/marvin-edge](https://github.com/hatstand/marvin-edge), deployed from its own repo.
+`compose/edge.yaml` replaces `compose/direct.yaml`: `proxy` stops publishing 80/443 and joins the
+edge's `edge` network as `triptych-proxy`, and the edge's `triptych.purplehatstands.com` block
+sends everything to `triptych-proxy:8000`. `proxy` keeps loopback `:8000` for `tailscale serve`,
+and docker-rollout works as before.
+
+To switch (a few seconds without the public site, between steps 3 and 4):
+
+1. Bring up the edge stack's containers without starting them, so its network and volume exist:
+   `cd /srv/edge && sudo -u edge-deploy docker compose create`.
+2. Copy the certificate and ACME account across, so the edge doesn't order a new one:
+   `docker run --rm -v triptych_caddy-data:/from:ro -v edge-caddy-data:/to alpine cp -a /from/. /to/`.
+3. In `/srv/triptych/.env`, change `:compose/direct.yaml` to `:compose/edge.yaml` at the end of
+   `COMPOSE_FILE` and remove `PUBLIC_BIND`, then redeploy (`tailscale ssh deploy@marvin <sha>`).
+4. Start the edge: `cd /srv/edge && sudo -u edge-deploy docker compose up -d`.
+5. Check as in step 5 above: the site loads from mobile data, and `docker compose logs web` shows
+   visitors' public addresses.
+
+To go back, reverse step 3 after stopping the edge (`docker compose down` in `/srv/edge`).
 
 ## Keeping originals (R2)
 
