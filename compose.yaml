@@ -111,6 +111,11 @@ services:
       FORWARDED_ALLOW_IPS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     # No host port and no container_name: a deploy runs a second copy beside the old one
     # (`docker rollout web`, see deploy/triptych-deploy), and proxy sends traffic to both.
+    # proxy dials the alias, not `web`: proxy also sits on marvin's shared `edge` network
+    # (compose/edge.yaml), where Docker resolves `web` to other stacks' web services too.
+    networks:
+      default:
+        aliases: [triptych-web]
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/livez', timeout=2)"]
       interval: 10s
@@ -119,8 +124,8 @@ services:
       start_interval: 1s
     depends_on: *after-migrations
 
-  # The stable front door for web, whose containers come and go on deploys. Resolving `web` on
-  # the compose network returns every running copy; Caddy dials them per request and keeps
+  # The stable front door for web, whose containers come and go on deploys. Resolving
+  # `triptych-web` returns every running copy; Caddy dials them per request and keeps
   # retrying for a while when none answers, so a request arriving mid-swap waits instead of
   # failing. `tailscale serve` reaches it on loopback :8000; compose/direct.yaml adds the public 443.
   proxy:
@@ -172,7 +177,7 @@ configs:
         }
       }
       (web) {
-        reverse_proxy web:8000 {
+        reverse_proxy triptych-web:8000 {
           lb_try_duration 30s
         }
       }
