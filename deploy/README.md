@@ -341,8 +341,9 @@ Stopping sharing stops new copies; copies already made stay.
 ## Zero-downtime deploys
 
 `web` has no host port. `proxy` (Caddy, in `compose.yaml`) owns loopback `:8000` (and, with
-`compose/direct.yaml`, the public 80 and 443), and passes every request to `web:8000`, which resolves
-to every running `web` container. The deploy script runs
+`compose/direct.yaml`, the public 80 and 443), and passes every request to `triptych-web:8000`, web's
+alias, which resolves to every running `web` container. (Not plain `web`: on marvin's shared
+`edge` network that name also resolves to other stacks' `web`.) The deploy script runs
 [docker-rollout](https://github.com/wowu/docker-rollout): it starts a second `web` on the new
 image, waits for its healthcheck (`GET /livez`), then stops the old one. For those seconds both
 serve. Uvicorn stops accepting before it exits (and cuts live-update streams after 2s, which
