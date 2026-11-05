@@ -23,17 +23,13 @@ from triptych import (
     auth,
     db,
     ical,
-    inbound,
     llm,
-    senders,
     sharing,
-    signup,
     telemetry,
 )
 from triptych.config import settings
 from triptych.models import (
     IngestRequest,
-    Notification,
     Overview,
     ReprocessRequest,
     Role,
@@ -42,6 +38,7 @@ from triptych.models import (
 from triptych.services import ingest as ingest_svc
 from triptych.services import reprocess as reprocess_svc
 from triptych.web import account, csp, links, live, login, ratelimit, signup_pages, trips
+from triptych.web import inbound as inbound_routes
 from triptych.web.assets import STATIC, Static
 from triptych.web.deps import (
     AppState,
@@ -57,7 +54,6 @@ from triptych.web.deps import (
 
 log = logging.getLogger("triptych.web")
 MAX_UPLOAD = 15 * 1024 * 1024
-MAX_INBOUND = 25 * 1024 * 1024  # Cloudflare Email Routing's own limit
 
 
 @asynccontextmanager
@@ -82,6 +78,7 @@ app.include_router(links.router)
 app.include_router(account.router)
 app.include_router(login.router)
 app.include_router(signup_pages.router)
+app.include_router(inbound_routes.router)
 
 
 @app.middleware("http")
@@ -252,94 +249,6 @@ async def inbox_booking(ingest_id: str, me: User, client: Client) -> Response:
 async def notifications_dismiss(me: User) -> Response:
     await db.dismiss_notifications(me.id)
     return RedirectResponse("/", status_code=303)
-
-
-# --- inbound mail (Cloudflare Email Worker → here) -------------------------------------------
-
-
-@app.post("/inbound")
-async def inbound_mail(request: Request, client: Client) -> dict[str, str]:
-    """Raw RFC 822 body. 403 = permanent reject (the Worker bounces it to the sender with our
-    reason); 5xx/network errors = the Worker retries, then falls back to forwarding to a mailbox."""
-    expected = settings.inbound_token
-    supplied = request.headers.get("authorization", "").removeprefix("Bearer ")
-    if not expected or not hmac.compare_digest(supplied, expected):
-        raise HTTPException(404)
-    raw = await request.body()
-    if len(raw) > MAX_INBOUND:
-        raise HTTPException(413, "message too large")
-
-    # Who may file is checked before authenticating, so mail from strangers costs no DNS lookups.
-    sender = inbound.canonical_sender(request.headers.get("x-envelope-from", ""))
-    code = inbound.verification_code(raw)
-    signup_code = None
-    if code is not None and not await senders.is_pending(code, sender):
-        signup_code = code if await signup.is_pending(code, sender) else None
-        code = None
-    owner = await senders.owner(sender)
-    if sender != inbound.GMAIL_FORWARDING_VERIFIER and owner is None and code is None and signup_code is None:
-        raise HTTPException(
-            403,
-            f"{sender or 'this address'} isn't a Triptych sender. Add it on your Triptych account page,"
-            f" or forward from an address you have already added.",
-        )
-    try:
-        result = await asyncio.to_thread(inbound.verify, raw, sender)
-    except inbound.Rejected as e:
-        raise HTTPException(403, str(e)) from e
-
-    now = datetime.now(UTC)
-    if isinstance(result, inbound.ForwardingConfirmation):
-        owners = [o for a in result.addresses if (o := await senders.owner(a))]
-        if not owners:
-            raise HTTPException(403, "forwarding was requested by an address that isn't a Triptych sender")
-        text = "Gmail forwarding confirmation"
-        text += f" — code {result.code}" if result.code else ""
-        text += f" — confirm at {result.link}" if result.link else ""
-        await db.add_notification(
-            owners[0], Notification(id=str(uuid.uuid4()), at=now, trip_id=None, text=text)
-        )
-        return {"status": "forwarding-confirmation", "user": owners[0]}
-
-    if (code is not None or signup_code is not None) and not result.how.startswith("dkim:"):
-        # An ARC seal says the mail passed through Gmail, not whose mailbox it left from.
-        raise HTTPException(
-            403, f"send the verification code from {result.sender} directly, not by auto-forward"
-        )
-
-    if signup_code is not None:
-        try:
-            await signup.confirm(signup_code, result.sender)
-        except signup.SignupError as e:
-            raise HTTPException(403, str(e)) from e
-        return {"status": "signup-verified", "auth": result.how}
-
-    if code is not None:
-        try:
-            owner = await senders.confirm(code, result.sender)
-        except senders.SenderError as e:
-            raise HTTPException(403, str(e)) from e
-        text = f"Mail from {result.sender} will now be filed in your account."
-        await db.add_notification(owner, Notification(id=str(uuid.uuid4()), at=now, trip_id=None, text=text))
-        return {"status": "sender-verified", "user": owner, "auth": result.how}
-
-    assert owner is not None
-    if await signup.is_waitlisted(owner):
-        raise HTTPException(
-            403, "your Triptych account is still on the waitlist; try again once you're let in"
-        )
-    if result.how.startswith("dkim:"):
-        await senders.mark_verified(result.sender)
-    req = IngestRequest(
-        user=owner,
-        source="email",
-        content_type="message/rfc822",
-        data_b64=base64.b64encode(raw).decode(),
-        received_at=now,
-    )
-    key = inbound.ingest_id_for(raw, result.sender)
-    await client.workflow_send(ingest_svc.run, key, req)
-    return {"status": "queued", "ingest_id": key, "user": owner, "auth": result.how}
 
 
 # --- calendar feeds --------------------------------------------------------------------------
