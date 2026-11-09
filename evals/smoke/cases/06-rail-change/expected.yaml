@@ -1,6 +1,8 @@
 # yaml-language-server: $schema=../../expected.schema.json
+# An anonymised Deutsche Bahn booking: the email body lists the whole-journey ticket plus seat
+# reservations for two of the trains, and the PDF's connection table has all three trains.
 status: verified
-received_at: '2026-10-26T19:12:00Z'
+received_at: '2025-06-15T10:00:08Z'
 input: ../../../../samples/06-rail-change.eml
 source: email
 tags:
@@ -9,8 +11,8 @@ tags:
 is_travel_document: true
 reservations:
 - kind: rail
-  start_local: 2027-05-14T09:57
-  end_local: 2027-05-14T10:31
+  start_local: 2025-09-22T09:57
+  end_local: 2025-09-22T10:48
   city: Utrecht
   country_code: NL
   start_city: Leiden
@@ -18,36 +20,53 @@ reservations:
   start_timezone: Europe/Amsterdam
   end_timezone: Europe/Amsterdam
   confirmation_code: '731904426815'
-  service_number: IC 2147
-  title: IC 2147 Leiden→Utrecht
-  provider: Northline Rail
+  service_number: IC 3535
+  title: IC 3535 Leiden→Utrecht
+  provider: Deutsche Bahn
   start_location: Leiden Centraal
   end_location: Utrecht Centraal
-  travelers:
-  - Alex Example
   accept:
     end_iata:
     - ZYU
 - kind: rail
-  start_local: 2027-05-14T10:44
-  end_local: 2027-05-14T18:07
-  city: Munich
+  start_local: 2025-09-22T11:04
+  end_local: 2025-09-22T12:52
+  city: Düsseldorf
   country_code: DE
   start_city: Utrecht
   start_country_code: NL
   start_timezone: Europe/Amsterdam
   end_timezone: Europe/Berlin
   confirmation_code: '731904426815'
-  service_number: ICE 529
-  title: ICE 529 Utrecht→München
-  provider: Northline Rail
+  service_number: ICE 123
+  title: ICE 123 Utrecht→Düsseldorf
+  provider: Deutsche Bahn
   start_location: Utrecht Centraal
-  end_location: München Hbf
-  seat: Wg. 28, Pl. 12 13
-  travelers:
-  - Alex Example
+  end_location: Düsseldorf Hbf
+  seat: Wg. 28, Pl. 12 13 15 16
   accept:
     start_iata:
     - ZYU
+    end_iata:
+    - QDU
+- kind: rail
+  start_local: 2025-09-22T13:22
+  end_local: 2025-09-22T18:07
+  city: Munich
+  country_code: DE
+  start_city: Düsseldorf
+  start_country_code: DE
+  start_timezone: Europe/Berlin
+  end_timezone: Europe/Berlin
+  confirmation_code: '731904426815'
+  service_number: ICE 629
+  title: ICE 629 Düsseldorf→München
+  provider: Deutsche Bahn
+  start_location: Düsseldorf Hbf
+  end_location: München Hbf
+  seat: Wg. 29, Pl. 43 44 45 46
+  accept:
+    start_iata:
+    - QDU
     end_iata:
     - ZMU

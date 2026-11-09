@@ -161,7 +161,7 @@ def test_tally_by_tag() -> None:
     totals = score.tally(perfect)
     assert totals["all"].summary()["fully_correct"] == 6 / 7
     rail = totals["rail"].summary()
-    assert (rail["cases"], rail["errors"], rail["reservation_recall"]) == (3, 1, 0.75)
+    assert (rail["cases"], rail["errors"], rail["reservation_recall"]) == (3, 1, 0.8)
     assert rail["fields"]["kind"]["accuracy"] == 1
 
 

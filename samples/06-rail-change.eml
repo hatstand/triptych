@@ -1,28 +1,114 @@
-From: Northline Rail <buchung@northline-rail.example>
-To: me@example.com
-Subject: Ihre Buchungsbestätigung (Auftrag 731904426815)
-Message-ID: <sample-06-rail-change@northline-rail.example>
-Date: Mon, 26 Oct 2026 19:12:00 +0000
+From: Alex Example <alex@example.com>
+To: plans@example.com
+Subject: Fwd: Deutsche Bahn booking confirmation (order: 731904426815)
+Message-ID: <sample-06-rail-change@example.com>
+Date: Sun, 15 Jun 2025 20:00:08 +1000
 MIME-Version: 1.0
-Content-Type: text/plain; charset=utf-8
+Content-Type: multipart/mixed; boundary="===============1237656988547360315=="
 
-Vielen Dank für Ihre Buchung!
+--===============1237656988547360315==
+Content-Type: text/plain; charset="utf-8"
+Content-Transfer-Encoding: 8bit
 
-Auftragsnummer: 731904426815
-Reisender: Alex Example
+---------- Forwarded message ---------
+From: noreply@deutschebahn.com <noreply@deutschebahn.com>
+Date: Sun, 15 Jun 2025 at 19:59
+Subject: Deutsche Bahn booking confirmation (order: 731904426815)
+To: <alex@example.com>
 
-Hinfahrt am 14.05.2027
-Leiden Centraal -> München Hbf
-VIA: Utrecht*Düsseldorf
-Super Sparpreis Europa, 1. Klasse, 1 Erwachsener
 
-Ihre Reiseverbindung und Reservierung
-Halt                  Datum   Zeit       Gleis  Produkte  Reservierung
-Leiden Centraal       14.05.  ab 09:57   5b     IC 2147
-Utrecht Centraal      14.05.  an 10:31   18
-Utrecht Centraal      14.05.  ab 10:44   19     ICE 529   Wg. 28, Pl. 12 13
-München Hbf           14.05.  an 18:07   20
+Here is your booking confirmation.
 
-Umstiegszeit in Utrecht Centraal: 13 Min.
+Hello Mx Alex Example,
 
-Ihr Ticket ist nur gültig zusammen mit einem amtlichen Lichtbildausweis.
+thank you for your booking with Deutsche Bahn.
+
+The order with the order number 731904426815 was booked on 15.06.2025 at
+11:46 as follows:
+Services
+Super Sparpreis Europa, 1. Klasse
+
+from *Leiden Centraal, * 22.09.2025 09:57
+to *München Hbf, * 22.09.2025 18:07
+Sitzplatzreservierung, 1. Klasse, ICE 123
+
+from *Utrecht Centraal, * 22.09.2025 11:04
+to *Düsseldorf Hbf, * 22.09.2025 12:52
+4 Sitzplätze, Wg. 28, Pl. 12 13 15 16
+2 Fenster, 2 Gang, Abteil, Handy
+Res.no. 806000000001
+Sitzplatzreservierung, 1. Klasse, ICE 629
+
+from *Düsseldorf Hbf, * 22.09.2025 13:22
+to *München Hbf, * 22.09.2025 18:07
+4 Sitzplätze, Wg. 29, Pl. 43 44 45 46
+2 Fenster, 2 Gang, Tisch, Großraum, Handy
+Res.no. 806000000002
+
+Payment of the total price of this journey, amounting to 275,56 EUR, will
+be made by Credit card.
+
+This e-mail does not constitute a valid ticket or invoice.
+
+We hope you have a good trip!
+
+This e-mail was sent automatically, please do not reply to this.
+
+Yours sincerely,
+Your Deutsche Bahn
+
+--===============1237656988547360315==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment;
+ filename="Ticket_731904426815_22.09.2025__H.pdf"
+MIME-Version: 1.0
+
+JVBERi0xLjMKJZOMi54gUmVwb3J0TGFiIEdlbmVyYXRlZCBQREYgZG9jdW1lbnQgKG9wZW5zb3Vy
+Y2UpCjEgMCBvYmoKPDwKL0YxIDIgMCBSIC9GMiAzIDAgUgo+PgplbmRvYmoKMiAwIG9iago8PAov
+QmFzZUZvbnQgL0hlbHZldGljYSAvRW5jb2RpbmcgL1dpbkFuc2lFbmNvZGluZyAvTmFtZSAvRjEg
+L1N1YnR5cGUgL1R5cGUxIC9UeXBlIC9Gb250Cj4+CmVuZG9iagozIDAgb2JqCjw8Ci9CYXNlRm9u
+dCAvQ291cmllciAvRW5jb2RpbmcgL1dpbkFuc2lFbmNvZGluZyAvTmFtZSAvRjIgL1N1YnR5cGUg
+L1R5cGUxIC9UeXBlIC9Gb250Cj4+CmVuZG9iago0IDAgb2JqCjw8Ci9Db250ZW50cyA4IDAgUiAv
+TWVkaWFCb3ggWyAwIDAgNTk1LjI3NTYgODQxLjg4OTggXSAvUGFyZW50IDcgMCBSIC9SZXNvdXJj
+ZXMgPDwKL0ZvbnQgMSAwIFIgL1Byb2NTZXQgWyAvUERGIC9UZXh0IC9JbWFnZUIgL0ltYWdlQyAv
+SW1hZ2VJIF0KPj4gL1JvdGF0ZSAwIC9UcmFucyA8PAoKPj4gCiAgL1R5cGUgL1BhZ2UKPj4KZW5k
+b2JqCjUgMCBvYmoKPDwKL1BhZ2VNb2RlIC9Vc2VOb25lIC9QYWdlcyA3IDAgUiAvVHlwZSAvQ2F0
+YWxvZwo+PgplbmRvYmoKNiAwIG9iago8PAovQXV0aG9yIChhbm9ueW1vdXMpIC9DcmVhdGlvbkRh
+dGUgKEQ6MjAwMDAxMDEwMDAwMDArMDAnMDAnKSAvQ3JlYXRvciAoYW5vbnltb3VzKSAvS2V5d29y
+ZHMgKCkgL01vZERhdGUgKEQ6MjAwMDAxMDEwMDAwMDArMDAnMDAnKSAvUHJvZHVjZXIgKFJlcG9y
+dExhYiBQREYgTGlicmFyeSAtIFwob3BlbnNvdXJjZVwpKSAKICAvU3ViamVjdCAodW5zcGVjaWZp
+ZWQpIC9UaXRsZSAodW50aXRsZWQpIC9UcmFwcGVkIC9GYWxzZQo+PgplbmRvYmoKNyAwIG9iago8
+PAovQ291bnQgMSAvS2lkcyBbIDQgMCBSIF0gL1R5cGUgL1BhZ2VzCj4+CmVuZG9iago4IDAgb2Jq
+Cjw8Ci9GaWx0ZXIgWyAvQVNDSUk4NURlY29kZSAvRmxhdGVEZWNvZGUgXSAvTGVuZ3RoIDExODQK
+Pj4Kc3RyZWFtCkdhdFUyPkFyTFwnUmxaXUU/NlEkZShBWEE3JixsaiFTVWk1WFU4bUA7LWpraE0z
+bC4nLV5jIkpmQypcbFRRRG1CZVtnUFw/YlVVWV4xLmdxbjtsKVZNXUNZZSMkMyNOS1loTy9LXDZj
+RycsXSQvZUZPQiNbXGpvR0xLVyUsXC44LU8jQSx1PHJmRVAwcixPLCJDTDE+X2xuPWBLSikvcCIx
+cU9pSUxHNFRgWz5uNS5jK0VrdG1XJUlhPUI6O2lic2BLTVY3JjFhV0MmZ2ZTLGhzJjtbJ0VTSj9t
+KEVnRmVsMEhPXWFMRSoubXVtbjpiSzZzN09nXT0rJkZPQikrclYkME5JJmxnSCw4LzUyMl5FSmFI
+Ok8laT0kNmJgb046XS08NUpIMV40QFNLRlkxPl44TCJSLVNuS2RKNmZmKGglJG5aXzdaIVxKVjVn
+NS5MVl41YS8nKWVobihfJ0ojWi0/Wl8lPGQmV1szOFVVTis5R1llNWdTNWdUWFNGRCQ0OVsuLSlq
+XVVxRF9tJG5vaCpnXW0kOy8xTHU6XTBVN0hCJDpLb0Y3OUEjRWswc0dBYW1vRFotYTlsNDEnNHIx
+XGYzWUI6aCI3YHQkIj9NXjpeRkVgb0NqYiVnLTE+bilYOyxpJEVqMUxlTzszJCpSLC4iSkxTb1wk
+XWgsdV5FKF83TDVlcF9kRHNeWiI1NWZFZ2dTOicsbms6PmJsJS1iRlRvbWM6VmxHIjE8PnE2OWE8
+Mj04WzpoPFFsNXFsTUNaRkpvZVpWP2g7cis9KG8uL1cocystUGVMRW4iYl5XY19nbGBFcyMmNyRf
+RypkJVluYy87LFZBMF4mNGZOOzNcI1ssMnBLYmJyLyozQyQpZ1FMPV5tdGxTMSZlXVBLUSVIXzA/
+cCY1cFFSQEVkYkhKTUtSbE0uXG8hZGooa3RWaSg6MlpubUhtUE0sY11cQmFrRikjZktiRC5dKWU6
+XUgzJEM1JDFsJDxjSU48cnFUTCRsbTljaF48KCU2ZERMNVElOlAmZTA7bSpbOjw+Y1FULyZjb3FP
+LCYtJSQ5Xms2VShUUC42UlluaTM1UVc1UFw5SSllXzZiYCI+YDltQl4uQVtQIlEqJzgqQ3BIbmtd
+aCkkJ2RlYWRLb0JLUUhTQFcyTyZmKXRPJVFNS0hibU1aJS9fOT5RazI2QEBVSFVuSV0kITg5UkBj
+JVVTcyFwZHVNQWFLQ1k9WzUna2AuWTxqa0RbJD8sbEIiWkpbVUZKYkNbP2M+N29tJyxSVlhgNCp0
+USliIm87RkchIU9BXXAnOmtvTC5NKiFkITlIQGdKWDdVNHNHVWIpRihgazBUTGxhWiIiWlpNMm5i
+OXBsXWxNcTdBJHQ9QzVJRSVEWm02ZU01W081UTcjIy1TNyRdRyxYSj1UPiVYNz41XkBNZTQ+PDpn
+OWpba0diUzw2UEonW0Y6UDpBajw0c1I5azclXWFFaFhedXJaTV4ucUssN0c5NDYwWjE+bl44c0Vj
+TEJdOlsiai0xYCJaYmpDXkdVJXJFZ19iRidiYkY9KD4wPUlbQzVfQT0yTDtSITJPLlhtZn4+ZW5k
+c3RyZWFtCmVuZG9iagp4cmVmCjAgOQowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwNjEgMDAw
+MDAgbiAKMDAwMDAwMDEwMiAwMDAwMCBuIAowMDAwMDAwMjA5IDAwMDAwIG4gCjAwMDAwMDAzMTQg
+MDAwMDAgbiAKMDAwMDAwMDUxNyAwMDAwMCBuIAowMDAwMDAwNTg1IDAwMDAwIG4gCjAwMDAwMDA4
+NDYgMDAwMDAgbiAKMDAwMDAwMDkwNSAwMDAwMCBuIAp0cmFpbGVyCjw8Ci9JRCAKWzwxYzE3ODE5
+OGZiZGZhNTFiMjU5OTVkODlkNDEwMjA0Mz48MWMxNzgxOThmYmRmYTUxYjI1OTk1ZDg5ZDQxMDIw
+NDM+XQolIFJlcG9ydExhYiBnZW5lcmF0ZWQgUERGIGRvY3VtZW50IC0tIGRpZ2VzdCAob3BlbnNv
+dXJjZSkKCi9JbmZvIDYgMCBSCi9Sb290IDUgMCBSCi9TaXplIDkKPj4Kc3RhcnR4cmVmCjIxODAK
+JSVFT0YK
+
+--===============1237656988547360315==--
