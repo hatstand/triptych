@@ -1,0 +1,28 @@
+From: Northline Rail <buchung@northline-rail.example>
+To: me@example.com
+Subject: Ihre Buchungsbestätigung (Auftrag 731904426815)
+Message-ID: <sample-06-rail-change@northline-rail.example>
+Date: Mon, 26 Oct 2026 19:12:00 +0000
+MIME-Version: 1.0
+Content-Type: text/plain; charset=utf-8
+
+Vielen Dank für Ihre Buchung!
+
+Auftragsnummer: 731904426815
+Reisender: Alex Example
+
+Hinfahrt am 14.05.2027
+Leiden Centraal -> München Hbf
+VIA: Utrecht*Düsseldorf
+Super Sparpreis Europa, 1. Klasse, 1 Erwachsener
+
+Ihre Reiseverbindung und Reservierung
+Halt                  Datum   Zeit       Gleis  Produkte  Reservierung
+Leiden Centraal       14.05.  ab 09:57   5b     IC 2147
+Utrecht Centraal      14.05.  an 10:31   18
+Utrecht Centraal      14.05.  ab 10:44   19     ICE 529   Wg. 28, Pl. 12 13
+München Hbf           14.05.  an 18:07   20
+
+Umstiegszeit in Utrecht Centraal: 13 Min.
+
+Ihr Ticket ist nur gültig zusammen mit einem amtlichen Lichtbildausweis.

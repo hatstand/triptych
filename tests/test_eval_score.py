@@ -34,10 +34,11 @@ def smoke(case_id: str) -> Expected:
 def test_smoke_set_loads_with_its_inputs() -> None:
     cases = load_cases(SMOKE)
     assert [c.id for c in cases] == [
-        "01-flight-lisbon", "02-hotel-lisbon", "03-dinner-lisbon", "04-rail-paris", "05-newsletter"
+        "01-flight-lisbon", "02-hotel-lisbon", "03-dinner-lisbon", "04-rail-paris", "05-newsletter",
+        "06-rail-change",
     ]  # fmt: skip
     assert all(c.input.exists() and c.content_type == "message/rfc822" for c in cases)
-    assert [c.id for c in load_cases(SMOKE, tags=("rail",))] == ["04-rail-paris"]
+    assert [c.id for c in load_cases(SMOKE, tags=("rail",))] == ["04-rail-paris", "06-rail-change"]
 
 
 def test_a_perfect_answer_is_fully_correct() -> None:
@@ -158,9 +159,9 @@ def test_tally_by_tag() -> None:
     ]
     perfect.append((["rail"], score.score_case(smoke("04-rail-paris"), None, "boom")))
     totals = score.tally(perfect)
-    assert totals["all"].summary()["fully_correct"] == 5 / 6
+    assert totals["all"].summary()["fully_correct"] == 6 / 7
     rail = totals["rail"].summary()
-    assert (rail["cases"], rail["errors"], rail["reservation_recall"]) == (2, 1, 0.5)
+    assert (rail["cases"], rail["errors"], rail["reservation_recall"]) == (3, 1, 0.75)
     assert rail["fields"]["kind"]["accuracy"] == 1
 
 

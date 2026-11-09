@@ -30,6 +30,11 @@ You extract travel reservations from confirmation emails, receipts, boarding pas
 Rules:
 - Output one reservation per bookable segment. A round-trip flight is TWO flight reservations; a \
 connection (SFO→JFK→LIS) is one reservation per leg.
+- Trains work the same way: a ticket with a change of train (Umstieg, overstap, correspondance) is \
+one rail reservation per train, each with its own stations, times, train number and seats, all \
+sharing the booking's confirmation code. A "VIA" line on a ticket only lists stations the fare \
+is routed through, not changes: a train is a separate reservation only when the itinerary gives \
+it its own departure and arrival.
 - Hotels, apartments and other stays are kind "lodging": start_local is check-in, end_local is check-out.
 - Ferries are kind "ferry": start_location and end_location are the ports, start_iata and end_iata \
 are null (ports have no IATA codes), and service_number is the sailing number if one is given.

@@ -1,0 +1,53 @@
+# yaml-language-server: $schema=../../expected.schema.json
+status: verified
+received_at: '2026-10-26T19:12:00Z'
+input: ../../../../samples/06-rail-change.eml
+source: email
+tags:
+- email
+- rail
+is_travel_document: true
+reservations:
+- kind: rail
+  start_local: 2027-05-14T09:57
+  end_local: 2027-05-14T10:31
+  city: Utrecht
+  country_code: NL
+  start_city: Leiden
+  start_country_code: NL
+  start_timezone: Europe/Amsterdam
+  end_timezone: Europe/Amsterdam
+  confirmation_code: '731904426815'
+  service_number: IC 2147
+  title: IC 2147 Leiden→Utrecht
+  provider: Northline Rail
+  start_location: Leiden Centraal
+  end_location: Utrecht Centraal
+  travelers:
+  - Alex Example
+  accept:
+    end_iata:
+    - ZYU
+- kind: rail
+  start_local: 2027-05-14T10:44
+  end_local: 2027-05-14T18:07
+  city: Munich
+  country_code: DE
+  start_city: Utrecht
+  start_country_code: NL
+  start_timezone: Europe/Amsterdam
+  end_timezone: Europe/Berlin
+  confirmation_code: '731904426815'
+  service_number: ICE 529
+  title: ICE 529 Utrecht→München
+  provider: Northline Rail
+  start_location: Utrecht Centraal
+  end_location: München Hbf
+  seat: Wg. 28, Pl. 12 13
+  travelers:
+  - Alex Example
+  accept:
+    start_iata:
+    - ZYU
+    end_iata:
+    - ZMU
