@@ -7,7 +7,7 @@ workstation GPU while choosing models for marvin.
 
 The golden set is private: real mail lives in the `triptych-evals` R2 bucket (filled by accounts
 that opt in on the account page's Eval set tab) and the answers live in the private
-`hatstand/triptych-evals` repo. `evals/smoke/` is a five-case public set over `samples/`, for
+`hatstand/triptych-evals` repo. `evals/smoke/` is a six-case public set over `samples/`, for
 trying the harness and for CI.
 
 ## Workstation setup (3090 Ti)
